@@ -1,0 +1,212 @@
+# S&P 500 ticker seed list — STARTER SET, NOT EXHAUSTIVE.
+#
+# This is ~180 large, well-known constituents across all 11 GICS sectors —
+# high confidence on accuracy, but it is NOT the complete ~500-ticker index.
+# I deliberately did not hand-type the full list from memory: smaller/
+# lesser-known constituents are exactly where a memorized list would risk
+# silent errors (wrong ticker, delisted name, recent index change).
+#
+# For the COMPLETE, actively-maintained list: 
+#   https://github.com/datasets/s-and-p-500-companies/blob/main/data/constituents.csv
+#   Click "Raw", save as this file (or a new one), pass via --tickers-file.
+#
+# Bad/stale tickers in this file are NOT fatal — ingest_sp500.py isolates
+# failures per-ticker and reports them at the end, so an imperfect list
+# degrades gracefully rather than breaking the batch.
+
+# Technology
+AAPL
+MSFT
+NVDA
+AVGO
+ORCL
+CRM
+ADBE
+AMD
+CSCO
+ACN
+IBM
+TXN
+QCOM
+INTU
+NOW
+AMAT
+MU
+ADI
+LRCX
+KLAC
+PANW
+SNPS
+CDNS
+FTNT
+APH
+
+# Communication Services
+GOOGL
+GOOG
+META
+NFLX
+DIS
+CMCSA
+T
+VZ
+TMUS
+CHTR
+EA
+TTWO
+WBD
+OMC
+
+# Consumer Discretionary
+AMZN
+TSLA
+HD
+MCD
+NKE
+LOW
+SBUX
+TJX
+BKNG
+CMG
+MAR
+GM
+F
+ORLY
+AZO
+YUM
+ROST
+DHI
+LEN
+
+# Consumer Staples
+PG
+KO
+PEP
+COST
+WMT
+PM
+MO
+MDLZ
+CL
+KMB
+GIS
+STZ
+KHC
+SYY
+KR
+
+# Financials
+BRK-B
+JPM
+V
+MA
+BAC
+WFC
+GS
+MS
+AXP
+SPGI
+BLK
+C
+SCHW
+CB
+PGR
+MMC
+ICE
+CME
+AON
+USB
+PNC
+TFC
+COF
+
+# Healthcare
+UNH
+LLY
+JNJ
+ABBV
+MRK
+TMO
+ABT
+PFE
+DHR
+BMY
+AMGN
+ISRG
+MDT
+GILD
+VRTX
+CVS
+CI
+ELV
+SYK
+BSX
+REGN
+ZTS
+
+# Industrials
+GE
+CAT
+UNP
+HON
+UPS
+BA
+RTX
+DE
+LMT
+ADP
+GD
+NOC
+ETN
+ITW
+EMR
+CSX
+NSC
+WM
+FDX
+
+# Energy
+XOM
+CVX
+COP
+EOG
+SLB
+MPC
+PSX
+OXY
+WMB
+KMI
+
+# Utilities
+NEE
+DUK
+SO
+D
+AEP
+EXC
+SRE
+XEL
+ED
+WEC
+
+# Materials
+LIN
+SHW
+FCX
+ECL
+APD
+NEM
+DOW
+DD
+NUE
+
+# Real Estate
+AMT
+PLD
+EQIX
+PSA
+O
+SPG
+WELL
+DLR
+CCI

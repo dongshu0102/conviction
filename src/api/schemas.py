@@ -1,0 +1,282 @@
+"""API response schemas.
+
+Deliberately separate from domain entities. The API's shape is a
+presentation concern (what a client needs) and will diverge from the
+domain's shape (what the business logic needs) as the platform grows —
+e.g. we'll add computed ratios here later without touching the domain.
+"""
+from __future__ import annotations
+
+from datetime import date, datetime
+
+from pydantic import BaseModel, ConfigDict
+
+
+class CompanySchema(BaseModel):
+    ticker: str
+    name: str
+    sector: str
+    industry: str
+    exchange: str
+    country: str
+    ipo_date: date | None
+    description: str | None
+    website: str | None
+    is_active: bool
+
+
+class IncomeStatementSchema(BaseModel):
+    fiscal_year: int
+    fiscal_quarter: int | None
+    period: str
+    fiscal_date_ending: date
+    reported_currency: str
+    revenue: float | None
+    gross_profit: float | None
+    operating_income: float | None
+    net_income: float | None
+    eps_diluted: float | None
+    ebitda: float | None
+
+
+class BalanceSheetSchema(BaseModel):
+    fiscal_year: int
+    fiscal_quarter: int | None
+    period: str
+    fiscal_date_ending: date
+    reported_currency: str
+    total_assets: float | None
+    total_liabilities: float | None
+    total_equity: float | None
+    cash_and_equivalents: float | None
+    total_debt: float | None
+
+
+class CashFlowStatementSchema(BaseModel):
+    fiscal_year: int
+    fiscal_quarter: int | None
+    period: str
+    fiscal_date_ending: date
+    reported_currency: str
+    operating_cash_flow: float | None
+    capital_expenditures: float | None
+    free_cash_flow: float | None
+
+
+class CompanyFinancialsSchema(BaseModel):
+    company: CompanySchema
+    income_statements: list[IncomeStatementSchema]
+    balance_sheets: list[BalanceSheetSchema]
+    cash_flow_statements: list[CashFlowStatementSchema]
+
+
+class ChatMessageSchema(BaseModel):
+    role: str
+    content: str
+
+
+class ChatMessagePartSchema(BaseModel):
+    type: str
+    text: str | None = None
+
+
+class VercelChatMessageSchema(BaseModel):
+    """The real shape this SDK version sends: a `parts` array of typed
+    blocks, not a flat `content` string — confirmed directly from a
+    422 validation error against the actual installed frontend package,
+    not assumed from documentation."""
+
+    role: str
+    parts: list[ChatMessagePartSchema] = []
+
+    @property
+    def text_content(self) -> str:
+        return "".join(p.text or "" for p in self.parts if p.type == "text")
+
+
+class VercelChatRequestSchema(BaseModel):
+    messages: list[VercelChatMessageSchema]
+
+
+class ChatRequestSchema(BaseModel):
+    message: str
+    history: list[ChatMessageSchema] = []
+
+
+class ChatResponseSchema(BaseModel):
+    reply: str
+
+
+class SP500ConstituentsSchema(BaseModel):
+    tickers: list[str]
+    count: int
+
+
+class IngestResultSchema(BaseModel):
+    ticker: str
+    income_statements_ingested: int
+    balance_sheets_ingested: int
+    cash_flow_statements_ingested: int
+
+
+class YearlyRatiosSchema(BaseModel):
+    fiscal_year: int
+    revenue_growth_yoy: float | None
+    gross_margin: float | None
+    operating_margin: float | None
+    net_margin: float | None
+    free_cash_flow_margin: float | None
+    return_on_equity: float | None
+    return_on_assets: float | None
+    debt_to_equity: float | None
+    current_ratio: float | None
+
+
+class CompanyFinancialAnalysisSchema(BaseModel):
+    ticker: str
+    yearly_ratios: list[YearlyRatiosSchema]
+
+
+class ValuationSnapshotSchema(BaseModel):
+    ticker: str
+    as_of: datetime
+    price: float
+    market_cap: float
+    enterprise_value: float | None
+    fundamentals_fiscal_year: int
+    price_to_earnings: float | None
+    price_to_sales: float | None
+    price_to_book: float | None
+    price_to_free_cash_flow: float | None
+    ev_to_ebitda: float | None
+
+
+class PortfolioHoldingSchema(BaseModel):
+    ticker: str
+    shares: float
+    cost_basis_per_share: float
+    acquired_at: date | None
+
+
+class PortfolioSchema(BaseModel):
+    portfolio_id: str
+    user_id: str
+    name: str
+    created_at: datetime
+    holdings: list[PortfolioHoldingSchema]
+
+
+class PositionValueSchema(BaseModel):
+    ticker: str
+    shares: float
+    cost_basis_per_share: float
+    current_price: float
+    market_value: float
+    cost_basis_total: float
+    unrealized_gain: float
+    unrealized_gain_pct: float | None
+    weight: float | None
+
+
+class PortfolioValuationSchema(BaseModel):
+    portfolio_id: str
+    name: str
+    as_of: datetime
+    positions: list[PositionValueSchema]
+    total_market_value: float
+    total_cost_basis: float
+    total_unrealized_gain: float
+    total_unrealized_gain_pct: float | None
+
+
+class SectorExposureSchema(BaseModel):
+    sector: str
+    weight: float
+
+
+class PortfolioRiskAnalysisSchema(BaseModel):
+    portfolio_id: str
+    as_of: datetime
+    largest_position_weight: float | None
+    herfindahl_index: float | None
+    sector_exposures: list[SectorExposureSchema]
+    weighted_avg_debt_to_equity: float | None
+    excluded_from_leverage_calc: list[str]
+
+
+class ApiKeyCreatedSchema(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    plaintext_key: str
+    key_prefix: str
+    user_id: str
+    name: str
+    created_at: datetime
+    warning: str = "Save this key now — it will not be shown again."
+
+
+class ApiKeySummarySchema(BaseModel):
+    key_prefix: str
+    user_id: str
+    name: str
+    is_active: bool
+    created_at: datetime
+
+
+class WatchlistPriceMoveSchema(BaseModel):
+    ticker: str
+    current_price: float
+    prior_price: float | None
+    change_pct: float | None
+
+
+class PortfolioBriefSummarySchema(BaseModel):
+    portfolio_id: str
+    name: str
+    total_market_value: float
+    total_unrealized_gain_pct: float | None
+    largest_position_weight: float | None
+    herfindahl_index: float | None
+
+
+class DailyBriefSchema(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    user_id: str
+    generated_at: datetime
+    narrative: str
+    model_used: str
+    unread_alert_count: int
+    watchlist_moves: list[WatchlistPriceMoveSchema]
+    portfolio_summaries: list[PortfolioBriefSummarySchema]
+
+
+class AlertSchema(BaseModel):
+    id: int | None
+    user_id: str
+    ticker: str
+    alert_type: str
+    message: str
+    change_pct: float
+    is_read: bool
+    created_at: datetime
+
+
+class WatchlistItemSchema(BaseModel):
+    user_id: str
+    ticker: str
+    added_at: datetime
+    notes: str | None
+
+
+class ResearchReportSchema(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    ticker: str
+    business_overview: str
+    financial_highlights: str
+    competitive_position: str
+    key_risks: str
+    generated_at: datetime
+    model_used: str
+    grounded_fiscal_year: int | None

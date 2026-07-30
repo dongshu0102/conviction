@@ -1,0 +1,139 @@
+:root {
+  /* Refined Terminal — dark, precise, professional-desk. Deliberately
+     not pure black (too harsh for long reading) and the accent is a
+     restrained cyan, not neon — this is a serious tool, not a gaming
+     rig. Gain/loss keep the universal green/red finance convention
+     rather than deviating for novelty's sake. */
+  --bg: #161a1f;
+  --surface: #1e242b;
+  --text: #e8eaed;
+  --text-soft: #8b939c;
+  --accent: #5eb8c7;
+  --gain: #4fbf8b;
+  --loss: #e0697a;
+  --rule: #2a3138;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body), -apple-system, sans-serif;
+}
+
+body {
+  min-height: 100vh;
+}
+
+a {
+  color: inherit;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display), Georgia, serif;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.num {
+  font-family: var(--font-mono), monospace;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.gain {
+  color: var(--gain);
+}
+.loss {
+  color: var(--loss);
+}
+
+/* Signature structural device, carried over from the original design:
+   a ledger row. Label left, tabular number right, hairline rule below
+   — a real financial-ledger convention, now restyled for a dark,
+   grid-like terminal surface. */
+.ledger-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+.ledger-row:last-child {
+  border-bottom: none;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 1.75rem;
+}
+
+.eyebrow {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
+
+button {
+  font-family: var(--font-body), sans-serif;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #0d1215;
+  border: none;
+  border-radius: 4px;
+  padding: 0.75rem 1.5rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  transition: opacity 0.15s ease;
+}
+.btn-primary:hover {
+  opacity: 0.85;
+}
+.btn-primary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+input {
+  font-family: var(--font-body), sans-serif;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 0.7rem 0.9rem;
+  font-size: 1rem;
+  background: var(--bg);
+  color: var(--text);
+}
+input::placeholder {
+  color: var(--text-soft);
+}
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
