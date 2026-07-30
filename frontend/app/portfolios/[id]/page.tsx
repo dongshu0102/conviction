@@ -192,7 +192,7 @@ export default function PortfolioDetailPage() {
                     <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(v: number) => usd(v)} />
+                <Tooltip formatter={(value) => usd(Number(value))} />
               </PieChart>
             </ResponsiveContainer>
           </div>
