@@ -24,6 +24,7 @@ from src.api.routers.portfolios import (
     get_portfolio_repository,
     get_risk_use_case,
 )
+from src.api.routers.portfolios import get_create_use_case as get_create_portfolio_use_case
 from src.api.routers.portfolios import get_delete_use_case as get_delete_portfolio_use_case
 from src.api.routers.portfolios import get_get_use_case as get_get_portfolio_use_case
 from src.api.routers.portfolios import get_list_use_case as get_list_portfolios_use_case
@@ -54,6 +55,7 @@ def get_chat_use_case(
     add_to_watchlist=Depends(get_add_to_watchlist_use_case),
     remove_from_watchlist=Depends(get_remove_from_watchlist_use_case),
     list_portfolios=Depends(get_list_portfolios_use_case),
+    create_portfolio=Depends(get_create_portfolio_use_case),
     get_portfolio=Depends(get_get_portfolio_use_case),
     compute_valuation=Depends(get_portfolio_valuation_use_case),
     compute_risk=Depends(get_risk_use_case),
@@ -71,6 +73,7 @@ def get_chat_use_case(
         add_to_watchlist=add_to_watchlist,
         remove_from_watchlist=remove_from_watchlist,
         list_portfolios=list_portfolios,
+        create_portfolio=create_portfolio,
         get_portfolio=get_portfolio,
         compute_valuation=compute_valuation,
         compute_risk=compute_risk,

@@ -31,6 +31,7 @@ from src.application.use_cases.compute_valuation import ComputeValuationUseCase
 from src.application.use_cases.get_company_financials import CompanyNotFoundError
 from src.application.use_cases.manage_portfolio import (
     AddHoldingUseCase,
+    CreatePortfolioUseCase,
     DeletePortfolioUseCase,
     GetPortfolioUseCase,
     ListPortfoliosUseCase,
@@ -82,6 +83,12 @@ _TOOLS = [
     ToolDefinition(
         "list_portfolios", "List the user's portfolios (name and id, no holdings detail).",
         {"type": "object", "properties": {}},
+    ),
+    ToolDefinition(
+        "create_portfolio",
+        "Create a new, empty portfolio with the given name. Use add_holding "
+        "afterward to actually put positions in it.",
+        {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
     ),
     ToolDefinition(
         "get_portfolio_valuation",
@@ -216,6 +223,7 @@ class ChatWithAgentUseCase:
         add_to_watchlist: AddToWatchlistUseCase,
         remove_from_watchlist: RemoveFromWatchlistUseCase,
         list_portfolios: ListPortfoliosUseCase,
+        create_portfolio: CreatePortfolioUseCase,
         get_portfolio: GetPortfolioUseCase,
         compute_valuation: ComputePortfolioValuationUseCase,
         compute_risk: ComputePortfolioRiskUseCase,
@@ -233,6 +241,7 @@ class ChatWithAgentUseCase:
         self._add_to_watchlist = add_to_watchlist
         self._remove_from_watchlist = remove_from_watchlist
         self._list_portfolios = list_portfolios
+        self._create_portfolio = create_portfolio
         self._get_portfolio = get_portfolio
         self._compute_valuation = compute_valuation
         self._compute_risk = compute_risk
@@ -297,6 +306,10 @@ class ChatWithAgentUseCase:
                     {"portfolio_id": p.portfolio_id, "name": p.name} for p in portfolios
                 ]
             }
+
+        if tool_name == "create_portfolio":
+            portfolio = self._create_portfolio.execute(self._user_id, tool_input["name"])
+            return {"portfolio_id": portfolio.portfolio_id, "name": portfolio.name, "status": "created"}
 
         if tool_name == "get_portfolio_valuation":
             err = self._own_portfolio_or_error(tool_input["portfolio_id"])

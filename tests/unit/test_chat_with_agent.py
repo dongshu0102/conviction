@@ -95,6 +95,7 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
         add_to_watchlist=AddToWatchlistUseCase(watchlist_repo, company_repo),
         remove_from_watchlist=RemoveFromWatchlistUseCase(watchlist_repo),
         list_portfolios=ListPortfoliosUseCase(portfolio_repo),
+        create_portfolio=CreatePortfolioUseCase(portfolio_repo),
         get_portfolio=GetPortfolioUseCase(portfolio_repo),
         compute_valuation=compute_valuation,
         compute_risk=compute_risk,
@@ -252,6 +253,23 @@ def test_remove_from_watchlist_reports_error_for_ticker_not_present() -> None:
     use_case.execute("alice", "remove ZZZZ from my watchlist", [])
 
     assert "error" in fake_agent.dispatch_results[0]
+
+
+def test_create_portfolio_dispatches_and_actually_persists() -> None:
+    use_case, fake_agent, portfolio_repo = _build_use_case(
+        scripted_calls=[("create_portfolio", {"name": "My New Portfolio"})],
+    )
+    use_case.execute("alice", "create a portfolio called My New Portfolio", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["name"] == "My New Portfolio"
+    assert result["status"] == "created"
+    assert "portfolio_id" in result
+
+    # Confirm it actually exists and belongs to alice, not just claims to
+    portfolios = ListPortfoliosUseCase(portfolio_repo).execute("alice")
+    assert len(portfolios) == 1
+    assert portfolios[0].name == "My New Portfolio"
 
 
 def test_delete_portfolio_blocks_access_to_another_users_portfolio() -> None:
