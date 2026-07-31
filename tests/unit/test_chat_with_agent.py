@@ -16,12 +16,14 @@ from src.application.use_cases.get_company_financials import GetCompanyFinancial
 from src.application.use_cases.manage_portfolio import (
     AddHoldingUseCase,
     CreatePortfolioUseCase,
+    DeletePortfolioUseCase,
     GetPortfolioUseCase,
     ListPortfoliosUseCase,
 )
 from src.application.use_cases.manage_watchlist import (
     AddToWatchlistUseCase,
     GetWatchlistUseCase,
+    RemoveFromWatchlistUseCase,
 )
 from src.application.use_cases.screen_stocks import ScreenStocksUseCase
 from src.application.use_cases.suggest_rebalancing import SuggestRebalancingUseCase
@@ -90,11 +92,13 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
         chat_agent=fake_agent,
         get_watchlist=GetWatchlistUseCase(watchlist_repo),
         add_to_watchlist=AddToWatchlistUseCase(watchlist_repo, company_repo),
+        remove_from_watchlist=RemoveFromWatchlistUseCase(watchlist_repo),
         list_portfolios=ListPortfoliosUseCase(portfolio_repo),
         get_portfolio=GetPortfolioUseCase(portfolio_repo),
         compute_valuation=compute_valuation,
         compute_risk=compute_risk,
         add_holding=AddHoldingUseCase(portfolio_repo, company_repo),
+        delete_portfolio=DeletePortfolioUseCase(portfolio_repo),
         compute_analysis=compute_analysis,
         compute_company_valuation=compute_company_valuation,
         research_repo=research_repo,
@@ -219,3 +223,70 @@ def test_suggest_rebalancing_blocks_access_to_another_users_portfolio() -> None:
     use_case.execute("bob", "should I rebalance alice's portfolio?", [])
 
     assert "error" in fake_agent.dispatch_results[0]
+
+
+def test_remove_from_watchlist_dispatches_correctly() -> None:
+    company_repo = _company_repo("AAPL")
+    watchlist_repo = FakeWatchlistRepository()
+    AddToWatchlistUseCase(watchlist_repo, company_repo).execute("alice", "AAPL")
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("remove_from_watchlist", {"ticker": "AAPL"})],
+        company_repo=company_repo,
+        watchlist_repo=watchlist_repo,
+    )
+    use_case.execute("alice", "remove AAPL from my watchlist", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result == {"ticker": "AAPL", "status": "removed"}
+    # Confirm it actually removed it, not just claimed to
+    assert GetWatchlistUseCase(watchlist_repo).execute("alice") == []
+
+
+def test_remove_from_watchlist_reports_error_for_ticker_not_present() -> None:
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("remove_from_watchlist", {"ticker": "ZZZZ"})],
+    )
+    use_case.execute("alice", "remove ZZZZ from my watchlist", [])
+
+    assert "error" in fake_agent.dispatch_results[0]
+
+
+def test_delete_portfolio_blocks_access_to_another_users_portfolio() -> None:
+    """The critical security test: delete_portfolio's underlying use case
+    has NO ownership check of its own (confirmed by reading
+    manage_portfolio.py directly) — the chat tool's ownership check is
+    the ONLY thing preventing a message from deleting someone else's
+    portfolio by guessing/referencing its id."""
+    portfolio_repo = FakePortfolioRepository()
+    alice_portfolio = CreatePortfolioUseCase(portfolio_repo).execute("alice", "Alice's Portfolio")
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("delete_portfolio", {"portfolio_id": alice_portfolio.portfolio_id})],
+        portfolio_repo=portfolio_repo,
+    )
+    use_case.execute("bob", "delete alice's portfolio", [])
+
+    assert "error" in fake_agent.dispatch_results[0]
+    # Must not actually have been deleted
+    assert GetPortfolioUseCase(portfolio_repo).execute(alice_portfolio.portfolio_id) is not None
+
+
+def test_delete_portfolio_succeeds_for_owner() -> None:
+    portfolio_repo = FakePortfolioRepository()
+    portfolio = CreatePortfolioUseCase(portfolio_repo).execute("alice", "To Delete")
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("delete_portfolio", {"portfolio_id": portfolio.portfolio_id})],
+        portfolio_repo=portfolio_repo,
+    )
+    use_case.execute("alice", "delete my To Delete portfolio", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result == {"portfolio_id": portfolio.portfolio_id, "status": "deleted"}
+    from src.application.use_cases.manage_portfolio import PortfolioNotFoundError
+    try:
+        GetPortfolioUseCase(portfolio_repo).execute(portfolio.portfolio_id)
+        assert False, "expected PortfolioNotFoundError after deletion"
+    except PortfolioNotFoundError:
+        pass

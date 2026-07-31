@@ -24,12 +24,14 @@ from src.api.routers.portfolios import (
     get_portfolio_repository,
     get_risk_use_case,
 )
+from src.api.routers.portfolios import get_delete_use_case as get_delete_portfolio_use_case
 from src.api.routers.portfolios import get_get_use_case as get_get_portfolio_use_case
 from src.api.routers.portfolios import get_list_use_case as get_list_portfolios_use_case
 from src.api.routers.portfolios import get_valuation_use_case as get_portfolio_valuation_use_case
 from src.api.routers.research import get_research_report_repository
 from src.api.routers.watchlist import get_add_use_case as get_add_to_watchlist_use_case
 from src.api.routers.watchlist import get_list_use_case as get_get_watchlist_use_case
+from src.api.routers.watchlist import get_remove_use_case as get_remove_from_watchlist_use_case
 from src.api.schemas import ChatRequestSchema, ChatResponseSchema, VercelChatRequestSchema
 from src.application.interfaces.chat_agent import ChatAgentError, ChatMessage
 from src.application.use_cases.chat_with_agent import ChatWithAgentUseCase
@@ -49,11 +51,13 @@ def get_chat_use_case(
     chat_agent: AnthropicChatAgent = Depends(get_chat_agent),
     get_watchlist=Depends(get_get_watchlist_use_case),
     add_to_watchlist=Depends(get_add_to_watchlist_use_case),
+    remove_from_watchlist=Depends(get_remove_from_watchlist_use_case),
     list_portfolios=Depends(get_list_portfolios_use_case),
     get_portfolio=Depends(get_get_portfolio_use_case),
     compute_valuation=Depends(get_portfolio_valuation_use_case),
     compute_risk=Depends(get_risk_use_case),
     add_holding=Depends(get_add_holding_use_case),
+    delete_portfolio=Depends(get_delete_portfolio_use_case),
     compute_analysis=Depends(get_analysis_use_case),
     compute_company_valuation=Depends(get_company_valuation_use_case),
     research_repo=Depends(get_research_report_repository),
@@ -62,11 +66,13 @@ def get_chat_use_case(
         chat_agent=chat_agent,
         get_watchlist=get_watchlist,
         add_to_watchlist=add_to_watchlist,
+        remove_from_watchlist=remove_from_watchlist,
         list_portfolios=list_portfolios,
         get_portfolio=get_portfolio,
         compute_valuation=compute_valuation,
         compute_risk=compute_risk,
         add_holding=add_holding,
+        delete_portfolio=delete_portfolio,
         compute_analysis=compute_analysis,
         compute_company_valuation=compute_company_valuation,
         research_repo=research_repo,

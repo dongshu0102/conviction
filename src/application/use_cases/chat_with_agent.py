@@ -31,6 +31,7 @@ from src.application.use_cases.compute_valuation import ComputeValuationUseCase
 from src.application.use_cases.get_company_financials import CompanyNotFoundError
 from src.application.use_cases.manage_portfolio import (
     AddHoldingUseCase,
+    DeletePortfolioUseCase,
     GetPortfolioUseCase,
     ListPortfoliosUseCase,
     PortfolioNotFoundError,
@@ -39,6 +40,7 @@ from src.application.use_cases.manage_portfolio import (
 from src.application.use_cases.manage_watchlist import (
     AddToWatchlistUseCase,
     GetWatchlistUseCase,
+    RemoveFromWatchlistUseCase,
 )
 from src.application.use_cases.screen_stocks import ScreenStocksUseCase
 from src.application.use_cases.suggest_rebalancing import SuggestRebalancingUseCase
@@ -58,13 +60,22 @@ concentrated, use suggest_rebalancing rather than reasoning about position \
 sizes yourself — it computes exact share counts, which you should not \
 estimate. It only flags single-position over-concentration, not sector-level \
 exposure; mention that scope limit if the user's question is really about \
-sector diversification."""
+sector diversification.
+
+delete_portfolio is permanent and cannot be undone. Never call it unless the \
+user has clearly confirmed which specific portfolio to delete — if there's \
+any ambiguity about which one they mean, ask first rather than guessing."""
 
 _TOOLS = [
     ToolDefinition("get_watchlist", "Get the user's watchlist.", {"type": "object", "properties": {}}),
     ToolDefinition(
         "add_to_watchlist",
         "Add a ticker to the user's watchlist. The ticker must already be ingested.",
+        {"type": "object", "properties": {"ticker": {"type": "string"}}, "required": ["ticker"]},
+    ),
+    ToolDefinition(
+        "remove_from_watchlist",
+        "Remove a ticker from the user's watchlist.",
         {"type": "object", "properties": {"ticker": {"type": "string"}}, "required": ["ticker"]},
     ),
     ToolDefinition(
@@ -102,6 +113,19 @@ _TOOLS = [
                 "cost_basis_per_share": {"type": "number"},
             },
             "required": ["portfolio_id", "ticker", "shares", "cost_basis_per_share"],
+        },
+    ),
+    ToolDefinition(
+        "delete_portfolio",
+        "PERMANENTLY delete one of the user's portfolios, including all its "
+        "holdings. This cannot be undone. Only call this after the user has "
+        "clearly confirmed they want to delete a SPECIFIC portfolio (use "
+        "list_portfolios first if you only know a name, not an id) — never "
+        "call this speculatively or without explicit confirmation.",
+        {
+            "type": "object",
+            "properties": {"portfolio_id": {"type": "string"}},
+            "required": ["portfolio_id"],
         },
     ),
     ToolDefinition(
@@ -168,11 +192,13 @@ class ChatWithAgentUseCase:
         chat_agent: ChatAgent,
         get_watchlist: GetWatchlistUseCase,
         add_to_watchlist: AddToWatchlistUseCase,
+        remove_from_watchlist: RemoveFromWatchlistUseCase,
         list_portfolios: ListPortfoliosUseCase,
         get_portfolio: GetPortfolioUseCase,
         compute_valuation: ComputePortfolioValuationUseCase,
         compute_risk: ComputePortfolioRiskUseCase,
         add_holding: AddHoldingUseCase,
+        delete_portfolio: DeletePortfolioUseCase,
         compute_analysis: ComputeFinancialAnalysisUseCase,
         compute_company_valuation: ComputeValuationUseCase,
         research_repo: ResearchReportRepository,
@@ -182,11 +208,13 @@ class ChatWithAgentUseCase:
         self._chat_agent = chat_agent
         self._get_watchlist = get_watchlist
         self._add_to_watchlist = add_to_watchlist
+        self._remove_from_watchlist = remove_from_watchlist
         self._list_portfolios = list_portfolios
         self._get_portfolio = get_portfolio
         self._compute_valuation = compute_valuation
         self._compute_risk = compute_risk
         self._add_holding = add_holding
+        self._delete_portfolio = delete_portfolio
         self._compute_analysis = compute_analysis
         self._compute_company_valuation = compute_company_valuation
         self._research_repo = research_repo
@@ -231,6 +259,12 @@ class ChatWithAgentUseCase:
                 return {"ticker": item.ticker, "status": "added"}
             except Exception as exc:
                 return {"error": str(exc)}
+
+        if tool_name == "remove_from_watchlist":
+            removed = self._remove_from_watchlist.execute(self._user_id, tool_input["ticker"])
+            if not removed:
+                return {"error": f"'{tool_input['ticker']}' was not on the watchlist."}
+            return {"ticker": tool_input["ticker"], "status": "removed"}
 
         if tool_name == "list_portfolios":
             portfolios = self._list_portfolios.execute(self._user_id)
@@ -283,6 +317,15 @@ class ChatWithAgentUseCase:
                 return {"ticker": h.ticker, "shares": h.shares, "status": "added"}
             except TickerNotIngestedError as exc:
                 return {"error": str(exc)}
+
+        if tool_name == "delete_portfolio":
+            err = self._own_portfolio_or_error(tool_input["portfolio_id"])
+            if err:
+                return err
+            deleted = self._delete_portfolio.execute(tool_input["portfolio_id"])
+            if not deleted:
+                return {"error": "Portfolio was not found or already deleted."}
+            return {"portfolio_id": tool_input["portfolio_id"], "status": "deleted"}
 
         if tool_name == "get_company_analysis":
             try:
