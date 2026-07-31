@@ -42,6 +42,7 @@ from src.application.use_cases.manage_watchlist import (
     GetWatchlistUseCase,
     RemoveFromWatchlistUseCase,
 )
+from src.application.use_cases.recommend_stocks import RecommendStocksUseCase
 from src.application.use_cases.screen_stocks import ScreenStocksUseCase
 from src.application.use_cases.suggest_rebalancing import SuggestRebalancingUseCase
 from src.domain.repositories.research_report_repository import ResearchReportRepository
@@ -183,6 +184,27 @@ _TOOLS = [
             "required": ["tickers"],
         },
     ),
+    ToolDefinition(
+        "recommend_stocks",
+        "Find and rank stock candidates to fill REAL gaps in one of the "
+        "user's portfolios — sectors they have little or no exposure to, "
+        "based on actual computed sector exposure, not a guess. Unlike "
+        "screen_stocks, you do NOT name the tickers here — this tool finds "
+        "them itself from the real ingested company universe. Use this when "
+        "asked for recommendations, diversification ideas, or 'what should "
+        "I add' without the user naming specific candidates.",
+        {
+            "type": "object",
+            "properties": {
+                "portfolio_id": {"type": "string"},
+                "max_recommendations": {
+                    "type": "integer",
+                    "description": "Optional. Defaults to 5.",
+                },
+            },
+            "required": ["portfolio_id"],
+        },
+    ),
 ]
 
 
@@ -204,6 +226,7 @@ class ChatWithAgentUseCase:
         research_repo: ResearchReportRepository,
         suggest_rebalancing: SuggestRebalancingUseCase,
         screen_stocks: ScreenStocksUseCase,
+        recommend_stocks: RecommendStocksUseCase,
     ) -> None:
         self._chat_agent = chat_agent
         self._get_watchlist = get_watchlist
@@ -220,6 +243,7 @@ class ChatWithAgentUseCase:
         self._research_repo = research_repo
         self._suggest_rebalancing = suggest_rebalancing
         self._screen_stocks = screen_stocks
+        self._recommend_stocks = recommend_stocks
         self._user_id: str = ""  # set per-request in execute()
 
     def execute(self, user_id: str, message: str, history: list[ChatMessage]) -> str:
@@ -412,6 +436,35 @@ class ChatWithAgentUseCase:
                         "composite_score": s.composite_score,
                     }
                     for s in result.results
+                ],
+            }
+
+        if tool_name == "recommend_stocks":
+            err = self._own_portfolio_or_error(tool_input["portfolio_id"])
+            if err:
+                return err
+            max_recs = tool_input.get("max_recommendations", 5)
+            result = self._recommend_stocks.execute(tool_input["portfolio_id"], max_recs)
+            if not result.gap_sectors:
+                return {
+                    "gap_sectors": [],
+                    "picks": [],
+                    "note": "Portfolio already has meaningful exposure across all sectors — no gaps to fill.",
+                }
+            return {
+                "gap_sectors": result.gap_sectors,
+                "scoring_note": "Within picks, lower value_score/quality_score/composite_score is better.",
+                "picks": [
+                    {
+                        "ticker": p.stock.ticker,
+                        "gap_sector": p.gap_sector,
+                        "current_sector_weight": p.current_sector_weight,
+                        "price": p.stock.price,
+                        "price_to_earnings": p.stock.price_to_earnings,
+                        "return_on_equity": p.stock.return_on_equity,
+                        "composite_score": p.stock.composite_score,
+                    }
+                    for p in result.picks
                 ],
             }
 

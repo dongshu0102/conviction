@@ -25,6 +25,7 @@ from src.application.use_cases.manage_watchlist import (
     GetWatchlistUseCase,
     RemoveFromWatchlistUseCase,
 )
+from src.application.use_cases.recommend_stocks import RecommendStocksUseCase
 from src.application.use_cases.screen_stocks import ScreenStocksUseCase
 from src.application.use_cases.suggest_rebalancing import SuggestRebalancingUseCase
 from src.domain.entities.company import Company, Sector
@@ -104,6 +105,7 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
         research_repo=research_repo,
         suggest_rebalancing=SuggestRebalancingUseCase(compute_valuation),
         screen_stocks=ScreenStocksUseCase(compute_company_valuation, compute_analysis),
+        recommend_stocks=RecommendStocksUseCase(compute_risk, company_repo, ScreenStocksUseCase(compute_company_valuation, compute_analysis)),
     )
     return use_case, fake_agent, portfolio_repo
 

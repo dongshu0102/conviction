@@ -35,6 +35,7 @@ from src.api.routers.watchlist import get_remove_use_case as get_remove_from_wat
 from src.api.schemas import ChatRequestSchema, ChatResponseSchema, VercelChatRequestSchema
 from src.application.interfaces.chat_agent import ChatAgentError, ChatMessage
 from src.application.use_cases.chat_with_agent import ChatWithAgentUseCase
+from src.application.use_cases.recommend_stocks import RecommendStocksUseCase
 from src.application.use_cases.screen_stocks import ScreenStocksUseCase
 from src.application.use_cases.suggest_rebalancing import SuggestRebalancingUseCase
 from src.infrastructure.config import get_settings
@@ -61,7 +62,9 @@ def get_chat_use_case(
     compute_analysis=Depends(get_analysis_use_case),
     compute_company_valuation=Depends(get_company_valuation_use_case),
     research_repo=Depends(get_research_report_repository),
+    company_repo=Depends(get_company_repository),
 ) -> ChatWithAgentUseCase:
+    screen_stocks = ScreenStocksUseCase(compute_company_valuation, compute_analysis)
     return ChatWithAgentUseCase(
         chat_agent=chat_agent,
         get_watchlist=get_watchlist,
@@ -77,7 +80,8 @@ def get_chat_use_case(
         compute_company_valuation=compute_company_valuation,
         research_repo=research_repo,
         suggest_rebalancing=SuggestRebalancingUseCase(compute_valuation),
-        screen_stocks=ScreenStocksUseCase(compute_company_valuation, compute_analysis),
+        screen_stocks=screen_stocks,
+        recommend_stocks=RecommendStocksUseCase(compute_risk, company_repo, screen_stocks),
     )
 
 
