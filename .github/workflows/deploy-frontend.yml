@@ -1,0 +1,80 @@
+name: Deploy Frontend to AWS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/deploy-frontend.yml'
+
+permissions:
+  id-token: write   # required for OIDC — no long-lived AWS keys stored in GitHub
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: fininsight-web
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build \
+            --build-arg NEXT_PUBLIC_API_URL=https://p8xpcshdn9.us-east-1.awsapprunner.com \
+            -t "$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" \
+            -t "$REGISTRY/$ECR_REPOSITORY:latest" .
+          docker push "$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          docker push "$REGISTRY/$ECR_REPOSITORY:latest"
+
+      # Using update-service (not start-deployment) so the runtime
+      # environment variable fix below is re-asserted on every deploy,
+      # not just inherited from whatever the service happened to be
+      # configured with previously. This is the single most important
+      # step in this file — without HOSTNAME/HOST explicitly set here,
+      # App Runner's runtime silently overrides the image's own
+      # Dockerfile ENV, and the TCP health check fails with no
+      # obviously-related error message. This took a full debugging
+      # session (including an AWS Support case) to diagnose — see
+      # case-512768499510-muen-2026-ec27abb990950b1a for the full
+      # investigation. Do not remove these two variables.
+      - name: Update App Runner service
+        run: |
+          aws apprunner update-service \
+            --service-arn "${{ secrets.FRONTEND_APP_RUNNER_SERVICE_ARN }}" \
+            --source-configuration '{
+              "AuthenticationConfiguration": {
+                "AccessRoleArn": "arn:aws:iam::512768499510:role/AppRunnerECRAccessRole"
+              },
+              "ImageRepository": {
+                "ImageIdentifier": "512768499510.dkr.ecr.us-east-1.amazonaws.com/fininsight-web:latest",
+                "ImageRepositoryType": "ECR",
+                "ImageConfiguration": {
+                  "Port": "8000",
+                  "RuntimeEnvironmentVariables": {
+                    "HOSTNAME": "0.0.0.0",
+                    "HOST": "0.0.0.0"
+                  }
+                }
+              },
+              "AutoDeploymentsEnabled": false
+            }'

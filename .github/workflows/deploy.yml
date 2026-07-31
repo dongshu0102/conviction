@@ -3,6 +3,14 @@ name: Deploy to AWS
 on:
   push:
     branches: [main]
+    paths:
+      - 'src/**'
+      - 'alembic/**'
+      - 'alembic.ini'
+      - 'requirements.txt'
+      - 'Dockerfile'
+      - 'entrypoint.sh'
+      - '.github/workflows/deploy.yml'
 
 permissions:
   id-token: write   # required for OIDC — no long-lived AWS keys stored in GitHub
