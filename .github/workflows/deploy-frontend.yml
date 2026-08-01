@@ -46,7 +46,7 @@ jobs:
           docker push "$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
           docker push "$REGISTRY/$ECR_REPOSITORY:latest"
 
-      # Using update-service (not start-deployment) so the runtime
+      # Using update-service (not start-deployment alone) so the runtime
       # environment variable fix below is re-asserted on every deploy,
       # not just inherited from whatever the service happened to be
       # configured with previously. This is the single most important
@@ -78,3 +78,32 @@ jobs:
               },
               "AutoDeploymentsEnabled": false
             }'
+
+      # CRITICAL — do not remove. update-service diffs the SOURCE
+      # CONFIGURATION TEXT, not the image digest behind the ":latest"
+      # tag. Since that JSON is byte-identical on every deploy (same
+      # tag, same env vars), App Runner sees "no config change" and
+      # silently skips pulling the new image — update-service can
+      # return success while the running container never changes.
+      # Confirmed in production: months of deploys produced zero
+      # UPDATE_SERVICE/DEPLOYMENT operations in `apprunner
+      # list-operations`, only the original CREATE_SERVICE — meaning
+      # every prior "successful" deploy was a no-op. wait first so we
+      # don't race a deployment update-service itself might have
+      # triggered, then force an unconditional redeploy, then wait for
+      # it to finish so the job doesn't report green before the new
+      # image is actually live.
+      - name: Wait for service to settle
+        run: |
+          aws apprunner wait service-updated \
+            --service-arn "${{ secrets.FRONTEND_APP_RUNNER_SERVICE_ARN }}"
+
+      - name: Force deployment of the newly pushed image
+        run: |
+          aws apprunner start-deployment \
+            --service-arn "${{ secrets.FRONTEND_APP_RUNNER_SERVICE_ARN }}"
+
+      - name: Wait for deployment to complete
+        run: |
+          aws apprunner wait service-updated \
+            --service-arn "${{ secrets.FRONTEND_APP_RUNNER_SERVICE_ARN }}"
