@@ -217,6 +217,11 @@ class PortfolioRiskAnalysisSchema(BaseModel):
     excluded_from_volatility_calc: list[str] = []
 
 
+class RiskParityRequestSchema(BaseModel):
+    tickers: list[str]
+    total_investment: float
+
+
 class RiskParityAllocationSchema(BaseModel):
     ticker: str
     daily_volatility: float

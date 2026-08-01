@@ -349,10 +349,12 @@ export const api = {
 
   // Risk parity construction
   constructRiskParity: (tickers: string[], totalInvestment: number) =>
-    request<RiskParityConstructionResponse>(
-      `/portfolios/construct-risk-parity?${new URLSearchParams({
-        total_investment: String(totalInvestment),
-      }).toString()}&${tickers.map((t) => `tickers=${encodeURIComponent(t.toUpperCase())}`).join("&")}`,
-      { method: "POST" }
-    ),
+    request<RiskParityConstructionResponse>(`/portfolios/construct-risk-parity`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tickers: tickers.map((t) => t.toUpperCase()),
+        total_investment: totalInvestment,
+      }),
+    }),
 };

@@ -23,6 +23,7 @@ from src.api.routers.companies import (
 from src.api.schemas import (
     PairwiseCorrelationSchema,
     RiskParityAllocationSchema,
+    RiskParityRequestSchema,
     RiskParityConstructionResponseSchema,
     PortfolioHoldingSchema,
     PortfolioRiskAnalysisSchema,
@@ -312,13 +313,12 @@ def get_risk_parity_use_case(
 
 @router.post("/construct-risk-parity", response_model=RiskParityConstructionResponseSchema)
 def construct_risk_parity(
-    tickers: list[str],
-    total_investment: float,
+    body: RiskParityRequestSchema,
     user_id: str = Depends(get_authenticated_user_id),
     use_case: ConstructRiskParityPortfolioUseCase = Depends(get_risk_parity_use_case),
 ) -> RiskParityConstructionResponseSchema:
     try:
-        result = use_case.execute(tickers, total_investment)
+        result = use_case.execute(body.tickers, body.total_investment)
     except (NoTickersProvidedError, InvalidInvestmentAmountError, NoAllocatableTickersError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
