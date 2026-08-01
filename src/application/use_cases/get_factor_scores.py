@@ -79,6 +79,13 @@ class GetFactorScoresUseCase:
 
     def _ensure_fresh(self) -> None:
         as_of = self._factor_repo.get_latest_as_of()
+        if as_of is not None and as_of.tzinfo is None:
+            # Defensive second layer: the repository is responsible for
+            # returning UTC-aware datetimes (Postgres strips tzinfo on
+            # plain `timestamp` columns), but this guards against ANY
+            # repository implementation forgetting that — the exact bug
+            # that crashed this method in production.
+            as_of = as_of.replace(tzinfo=timezone.utc)
         if as_of is not None and datetime.now(timezone.utc) - as_of <= self._max_staleness:
             return  # populated and fresh — nothing to do
         if not self._auto_refresh:

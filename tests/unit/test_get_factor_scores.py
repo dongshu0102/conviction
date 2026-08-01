@@ -184,3 +184,33 @@ def test_execute_for_ticker_not_found_returns_none() -> None:
     assert use_case.execute_for_ticker("NOTFOUND") is None
     found = use_case.execute_for_ticker("AAA")
     assert found is not None and found.ticker == "AAA"
+
+
+# ---- Regression: naive datetime from a real Postgres round-trip must
+# never crash staleness comparison (production incident: plain
+# `timestamp` columns strip tzinfo, so get_latest_as_of() can return a
+# naive datetime even though everything is saved as UTC-aware) ----
+
+
+class _NaiveDatetimeRepo(FakeFactorScoreRepository):
+    """Simulates exactly what SqlAlchemyFactorScoreRepository would
+    have returned BEFORE the fix: a naive datetime, even though the
+    application always saves UTC-aware ones."""
+
+    def get_latest_as_of(self):
+        aware = super().get_latest_as_of()
+        return aware.replace(tzinfo=None) if aware is not None else None
+
+
+def test_naive_datetime_from_repository_does_not_crash_staleness_check() -> None:
+    repo = _NaiveDatetimeRepo()
+    repo.save_batch([_score("AAA", datetime.now(timezone.utc))])
+    refresh = _CountingRefresh(repo, [])
+    use_case = GetFactorScoresUseCase(repo, refresh, max_staleness=timedelta(hours=24))
+
+    # Must not raise TypeError: can't subtract offset-naive and
+    # offset-aware datetimes — this is the exact production crash.
+    result = use_case.execute()
+
+    assert refresh.call_count == 0  # correctly recognized as fresh, not stale
+    assert len(result) == 1

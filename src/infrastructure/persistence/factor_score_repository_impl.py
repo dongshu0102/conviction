@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import delete, func, select
 
@@ -11,9 +11,19 @@ from src.infrastructure.persistence.models import FactorScoreModel
 
 
 def _to_domain(row: FactorScoreModel) -> FactorScore:
+    # Postgres's plain `timestamp` column (not `timestamptz`) strips
+    # timezone info on storage — SQLAlchemy reads it back as a NAIVE
+    # datetime even though it was saved with datetime.now(timezone.utc).
+    # Every value written by this app is UTC by convention (see
+    # ComputeUniverseFactorSnapshotUseCase), so re-attaching UTC here is
+    # correct, not an assumption. Without this, any arithmetic against
+    # a fresh datetime.now(timezone.utc) raises
+    # "can't subtract offset-naive and offset-aware datetimes" —
+    # confirmed in production (GetFactorScoresUseCase._ensure_fresh).
+    as_of = row.as_of if row.as_of.tzinfo is not None else row.as_of.replace(tzinfo=timezone.utc)
     return FactorScore(
         ticker=row.ticker,
-        as_of=row.as_of,
+        as_of=as_of,
         raw=FactorRawMetrics(
             price_to_earnings=row.price_to_earnings,
             return_on_equity=row.return_on_equity,
@@ -57,7 +67,14 @@ class SqlAlchemyFactorScoreRepository(FactorScoreRepository):
 
     def get_latest_as_of(self) -> datetime | None:
         with session_scope() as session:
-            return session.execute(select(func.max(FactorScoreModel.as_of))).scalar_one_or_none()
+            result = session.execute(select(func.max(FactorScoreModel.as_of))).scalar_one_or_none()
+            if result is None or result.tzinfo is not None:
+                return result
+            # Same Postgres-strips-tzinfo gap as _to_domain — this raw
+            # scalar query bypasses _to_domain entirely, so it needs its
+            # own fix. This is the exact call site that crashed
+            # GetFactorScoresUseCase._ensure_fresh() in production.
+            return result.replace(tzinfo=timezone.utc)
 
     def get(self, ticker: str) -> FactorScore | None:
         with session_scope() as session:
