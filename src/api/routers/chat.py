@@ -36,10 +36,16 @@ from src.api.routers.watchlist import get_remove_use_case as get_remove_from_wat
 from src.api.schemas import ChatRequestSchema, ChatResponseSchema, VercelChatRequestSchema
 from src.application.interfaces.chat_agent import ChatAgentError, ChatMessage
 from src.application.use_cases.chat_with_agent import ChatWithAgentUseCase
+from src.application.use_cases.compute_portfolio_greeks import ComputePortfolioGreeksUseCase
+from src.application.use_cases.manage_option_holdings import (
+    AddOptionHoldingUseCase,
+    RemoveOptionHoldingUseCase,
+)
 from src.application.use_cases.recommend_stocks import RecommendStocksUseCase
 from src.application.use_cases.screen_stocks import ScreenStocksUseCase
 from src.application.use_cases.suggest_rebalancing import SuggestRebalancingUseCase
 from src.infrastructure.config import get_settings
+from src.infrastructure.data_providers.marketdata_app_provider import MarketDataAppProvider
 from src.infrastructure.llm_providers.anthropic_chat_agent import AnthropicChatAgent
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -47,6 +53,10 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 def get_chat_agent() -> AnthropicChatAgent:
     return AnthropicChatAgent(settings=get_settings())
+
+
+def get_options_provider() -> MarketDataAppProvider:
+    return MarketDataAppProvider(settings=get_settings())
 
 
 def get_chat_use_case(
@@ -65,6 +75,8 @@ def get_chat_use_case(
     compute_company_valuation=Depends(get_company_valuation_use_case),
     research_repo=Depends(get_research_report_repository),
     company_repo=Depends(get_company_repository),
+    portfolio_repo=Depends(get_portfolio_repository),
+    options_provider: MarketDataAppProvider = Depends(get_options_provider),
 ) -> ChatWithAgentUseCase:
     screen_stocks = ScreenStocksUseCase(compute_company_valuation, compute_analysis)
     return ChatWithAgentUseCase(
@@ -85,6 +97,9 @@ def get_chat_use_case(
         suggest_rebalancing=SuggestRebalancingUseCase(compute_valuation),
         screen_stocks=screen_stocks,
         recommend_stocks=RecommendStocksUseCase(compute_risk, company_repo, screen_stocks),
+        add_option_holding=AddOptionHoldingUseCase(portfolio_repo),
+        remove_option_holding=RemoveOptionHoldingUseCase(portfolio_repo),
+        compute_portfolio_greeks=ComputePortfolioGreeksUseCase(portfolio_repo, options_provider),
     )
 
 

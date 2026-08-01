@@ -18,17 +18,28 @@ from __future__ import annotations
 
 import logging
 from dataclasses import asdict
+from datetime import date
 
 from src.application.interfaces.chat_agent import ChatAgent, ChatMessage, ToolDefinition
+from src.application.interfaces.options_data_provider import (
+    OptionsDataProvider,
+    OptionsDataProviderError,
+)
 from src.application.use_cases.compute_financial_analysis import (
     ComputeFinancialAnalysisUseCase,
 )
+from src.application.use_cases.compute_portfolio_greeks import ComputePortfolioGreeksUseCase
 from src.application.use_cases.compute_portfolio_risk import ComputePortfolioRiskUseCase
 from src.application.use_cases.compute_portfolio_valuation import (
     ComputePortfolioValuationUseCase,
 )
 from src.application.use_cases.compute_valuation import ComputeValuationUseCase
 from src.application.use_cases.get_company_financials import CompanyNotFoundError
+from src.application.use_cases.manage_option_holdings import (
+    AddOptionHoldingUseCase,
+    InvalidOptionTypeError,
+    RemoveOptionHoldingUseCase,
+)
 from src.application.use_cases.manage_portfolio import (
     AddHoldingUseCase,
     CreatePortfolioUseCase,
@@ -212,6 +223,61 @@ _TOOLS = [
             "required": ["portfolio_id"],
         },
     ),
+    ToolDefinition(
+        "add_option_holding",
+        "Add or replace an option position in one of the user's portfolios. "
+        "contracts_held can be negative for a short position. 1 contract "
+        "= 100 shares of the underlying, standard convention.",
+        {
+            "type": "object",
+            "properties": {
+                "portfolio_id": {"type": "string"},
+                "underlying_ticker": {"type": "string"},
+                "strike": {"type": "number"},
+                "expiration": {"type": "string", "description": "ISO date, e.g. '2026-12-18'."},
+                "option_type": {"type": "string", "description": "'call' or 'put'."},
+                "contracts_held": {
+                    "type": "integer",
+                    "description": "Positive = long, negative = short.",
+                },
+                "cost_basis_per_contract": {"type": "number"},
+            },
+            "required": [
+                "portfolio_id", "underlying_ticker", "strike", "expiration",
+                "option_type", "contracts_held", "cost_basis_per_contract",
+            ],
+        },
+    ),
+    ToolDefinition(
+        "remove_option_holding",
+        "Remove an option position from one of the user's portfolios, "
+        "identified by the full contract (underlying, strike, expiration, type).",
+        {
+            "type": "object",
+            "properties": {
+                "portfolio_id": {"type": "string"},
+                "underlying_ticker": {"type": "string"},
+                "strike": {"type": "number"},
+                "expiration": {"type": "string", "description": "ISO date, e.g. '2026-12-18'."},
+                "option_type": {"type": "string", "description": "'call' or 'put'."},
+            },
+            "required": ["portfolio_id", "underlying_ticker", "strike", "expiration", "option_type"],
+        },
+    ),
+    ToolDefinition(
+        "compute_portfolio_greeks",
+        "Get the portfolio-level aggregated Greeks (delta, gamma, theta, "
+        "vega) across all of a portfolio's option holdings, using LIVE "
+        "quotes. Deterministic — do not estimate Greeks yourself. If a "
+        "position has no live quote available, it's excluded from the "
+        "total and listed separately — mention this to the user rather "
+        "than presenting the total as if it covered everything.",
+        {
+            "type": "object",
+            "properties": {"portfolio_id": {"type": "string"}},
+            "required": ["portfolio_id"],
+        },
+    ),
 ]
 
 
@@ -235,6 +301,9 @@ class ChatWithAgentUseCase:
         suggest_rebalancing: SuggestRebalancingUseCase,
         screen_stocks: ScreenStocksUseCase,
         recommend_stocks: RecommendStocksUseCase,
+        add_option_holding: AddOptionHoldingUseCase,
+        remove_option_holding: RemoveOptionHoldingUseCase,
+        compute_portfolio_greeks: ComputePortfolioGreeksUseCase,
     ) -> None:
         self._chat_agent = chat_agent
         self._get_watchlist = get_watchlist
@@ -253,6 +322,9 @@ class ChatWithAgentUseCase:
         self._suggest_rebalancing = suggest_rebalancing
         self._screen_stocks = screen_stocks
         self._recommend_stocks = recommend_stocks
+        self._add_option_holding = add_option_holding
+        self._remove_option_holding = remove_option_holding
+        self._compute_portfolio_greeks = compute_portfolio_greeks
         self._user_id: str = ""  # set per-request in execute()
 
     def execute(self, user_id: str, message: str, history: list[ChatMessage]) -> str:
@@ -479,6 +551,74 @@ class ChatWithAgentUseCase:
                     }
                     for p in result.picks
                 ],
+            }
+
+        if tool_name == "add_option_holding":
+            err = self._own_portfolio_or_error(tool_input["portfolio_id"])
+            if err:
+                return err
+            try:
+                expiration = date.fromisoformat(tool_input["expiration"])
+            except ValueError:
+                return {"error": f"'{tool_input['expiration']}' is not a valid ISO date (YYYY-MM-DD)."}
+            try:
+                holding = self._add_option_holding.execute(
+                    tool_input["portfolio_id"],
+                    tool_input["underlying_ticker"],
+                    tool_input["strike"],
+                    expiration,
+                    tool_input["option_type"],
+                    tool_input["contracts_held"],
+                    tool_input["cost_basis_per_contract"],
+                )
+                return {
+                    "underlying_ticker": holding.contract.underlying_ticker,
+                    "strike": holding.contract.strike,
+                    "expiration": holding.contract.expiration.isoformat(),
+                    "option_type": holding.contract.option_type,
+                    "contracts_held": holding.contracts_held,
+                    "status": "added",
+                }
+            except InvalidOptionTypeError as exc:
+                return {"error": str(exc)}
+
+        if tool_name == "remove_option_holding":
+            err = self._own_portfolio_or_error(tool_input["portfolio_id"])
+            if err:
+                return err
+            try:
+                expiration = date.fromisoformat(tool_input["expiration"])
+            except ValueError:
+                return {"error": f"'{tool_input['expiration']}' is not a valid ISO date (YYYY-MM-DD)."}
+            try:
+                removed = self._remove_option_holding.execute(
+                    tool_input["portfolio_id"],
+                    tool_input["underlying_ticker"],
+                    tool_input["strike"],
+                    expiration,
+                    tool_input["option_type"],
+                )
+            except InvalidOptionTypeError as exc:
+                return {"error": str(exc)}
+            if not removed:
+                return {"error": "No matching option position found to remove."}
+            return {"status": "removed"}
+
+        if tool_name == "compute_portfolio_greeks":
+            err = self._own_portfolio_or_error(tool_input["portfolio_id"])
+            if err:
+                return err
+            try:
+                result = self._compute_portfolio_greeks.execute(tool_input["portfolio_id"])
+            except OptionsDataProviderError as exc:
+                return {"error": f"Couldn't fetch live options data: {exc}"}
+            return {
+                "total_delta": result.total_delta,
+                "total_gamma": result.total_gamma,
+                "total_theta": result.total_theta,
+                "total_vega": result.total_vega,
+                "positions_included": result.positions_included,
+                "positions_excluded": result.positions_excluded,
             }
 
         return {"error": f"Unknown tool: {tool_name}"}

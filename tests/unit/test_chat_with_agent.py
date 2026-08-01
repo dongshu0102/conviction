@@ -7,12 +7,17 @@ from src.application.use_cases.chat_with_agent import ChatWithAgentUseCase
 from src.application.use_cases.compute_financial_analysis import (
     ComputeFinancialAnalysisUseCase,
 )
+from src.application.use_cases.compute_portfolio_greeks import ComputePortfolioGreeksUseCase
 from src.application.use_cases.compute_portfolio_risk import ComputePortfolioRiskUseCase
 from src.application.use_cases.compute_portfolio_valuation import (
     ComputePortfolioValuationUseCase,
 )
 from src.application.use_cases.compute_valuation import ComputeValuationUseCase
 from src.application.use_cases.get_company_financials import GetCompanyFinancialsUseCase
+from src.application.use_cases.manage_option_holdings import (
+    AddOptionHoldingUseCase,
+    RemoveOptionHoldingUseCase,
+)
 from src.application.use_cases.manage_portfolio import (
     AddHoldingUseCase,
     CreatePortfolioUseCase,
@@ -34,6 +39,7 @@ from tests.unit.fakes import (
     FakeCompanyRepository,
     FakeDataProvider,
     FakeFinancialStatementRepository,
+    FakeOptionsDataProvider,
     FakePortfolioRepository,
     FakeResearchReportRepository,
     FakeWatchlistRepository,
@@ -74,12 +80,13 @@ def _company_repo(*tickers: str) -> FakeCompanyRepository:
     return repo
 
 
-def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watchlist_repo=None, provider=None):
+def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watchlist_repo=None, provider=None, options_provider=None):
     company_repo = company_repo or _company_repo()
     portfolio_repo = portfolio_repo or FakePortfolioRepository()
     watchlist_repo = watchlist_repo or FakeWatchlistRepository()
     statement_repo = FakeFinancialStatementRepository()
     provider = provider or FakeDataProvider(company=Company(ticker="X", name="X", sector=Sector.TECHNOLOGY, industry="X", exchange="X", country="US"))
+    options_provider = options_provider or FakeOptionsDataProvider()
     research_repo = FakeResearchReportRepository()
 
     get_financials = GetCompanyFinancialsUseCase(company_repo, statement_repo)
@@ -107,6 +114,9 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
         suggest_rebalancing=SuggestRebalancingUseCase(compute_valuation),
         screen_stocks=ScreenStocksUseCase(compute_company_valuation, compute_analysis),
         recommend_stocks=RecommendStocksUseCase(compute_risk, company_repo, ScreenStocksUseCase(compute_company_valuation, compute_analysis)),
+        add_option_holding=AddOptionHoldingUseCase(portfolio_repo),
+        remove_option_holding=RemoveOptionHoldingUseCase(portfolio_repo),
+        compute_portfolio_greeks=ComputePortfolioGreeksUseCase(portfolio_repo, options_provider),
     )
     return use_case, fake_agent, portfolio_repo
 
@@ -310,3 +320,154 @@ def test_delete_portfolio_succeeds_for_owner() -> None:
         assert False, "expected PortfolioNotFoundError after deletion"
     except PortfolioNotFoundError:
         pass
+
+
+def test_add_option_holding_dispatches_correctly() -> None:
+    portfolio_repo = FakePortfolioRepository()
+    portfolio = CreatePortfolioUseCase(portfolio_repo).execute("alice", "Options")
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[(
+            "add_option_holding",
+            {
+                "portfolio_id": portfolio.portfolio_id,
+                "underlying_ticker": "AAPL",
+                "strike": 150.0,
+                "expiration": "2026-12-18",
+                "option_type": "call",
+                "contracts_held": 5,
+                "cost_basis_per_contract": 320.0,
+            },
+        )],
+        portfolio_repo=portfolio_repo,
+    )
+    use_case.execute("alice", "buy 5 AAPL 150 calls exp 2026-12-18", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["status"] == "added"
+    assert result["underlying_ticker"] == "AAPL"
+    stored = portfolio_repo.get_by_id(portfolio.portfolio_id)
+    assert len(stored.option_holdings) == 1
+
+
+def test_add_option_holding_blocks_access_to_another_users_portfolio() -> None:
+    portfolio_repo = FakePortfolioRepository()
+    alice_portfolio = CreatePortfolioUseCase(portfolio_repo).execute("alice", "Alice's")
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[(
+            "add_option_holding",
+            {
+                "portfolio_id": alice_portfolio.portfolio_id,
+                "underlying_ticker": "AAPL",
+                "strike": 150.0,
+                "expiration": "2026-12-18",
+                "option_type": "call",
+                "contracts_held": 5,
+                "cost_basis_per_contract": 320.0,
+            },
+        )],
+        portfolio_repo=portfolio_repo,
+    )
+    use_case.execute("bob", "add an option to alice's portfolio", [])
+
+    assert "error" in fake_agent.dispatch_results[0]
+    stored = portfolio_repo.get_by_id(alice_portfolio.portfolio_id)
+    assert stored.option_holdings == []  # must not have been added
+
+
+def test_add_option_holding_reports_malformed_date_gracefully() -> None:
+    portfolio_repo = FakePortfolioRepository()
+    portfolio = CreatePortfolioUseCase(portfolio_repo).execute("alice", "Options")
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[(
+            "add_option_holding",
+            {
+                "portfolio_id": portfolio.portfolio_id,
+                "underlying_ticker": "AAPL",
+                "strike": 150.0,
+                "expiration": "not-a-date",
+                "option_type": "call",
+                "contracts_held": 5,
+                "cost_basis_per_contract": 320.0,
+            },
+        )],
+        portfolio_repo=portfolio_repo,
+    )
+    use_case.execute("alice", "add option", [])
+
+    assert "error" in fake_agent.dispatch_results[0]
+
+
+def test_compute_portfolio_greeks_blocks_access_to_another_users_portfolio() -> None:
+    """Same critical security pattern as every other portfolio-scoped
+    tool — a message referencing someone else's portfolio_id must not
+    leak their Greeks exposure."""
+    portfolio_repo = FakePortfolioRepository()
+    alice_portfolio = CreatePortfolioUseCase(portfolio_repo).execute("alice", "Alice's")
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("compute_portfolio_greeks", {"portfolio_id": alice_portfolio.portfolio_id})],
+        portfolio_repo=portfolio_repo,
+    )
+    use_case.execute("bob", "what's the delta on alice's portfolio?", [])
+
+    assert "error" in fake_agent.dispatch_results[0]
+
+
+def test_compute_portfolio_greeks_dispatches_correctly_for_owner() -> None:
+    from src.domain.entities.option import OptionContract, OptionQuote
+
+    portfolio_repo = FakePortfolioRepository()
+    portfolio = CreatePortfolioUseCase(portfolio_repo).execute("alice", "Options")
+    AddOptionHoldingUseCase(portfolio_repo).execute(
+        portfolio.portfolio_id, "AAPL", 150.0, date(2026, 12, 18), "call", 5, 320.0
+    )
+    contract = OptionContract("AAPL", 150.0, date(2026, 12, 18), "call")
+    quote = OptionQuote(
+        contract=contract, bid=1.0, ask=1.1, last=1.05, implied_volatility=0.3,
+        open_interest=100, volume=10, delta=0.5, gamma=0.02, theta=-0.03, vega=0.15,
+        underlying_price=150.0, as_of=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+    options_provider = FakeOptionsDataProvider(
+        {("AAPL", 150.0, date(2026, 12, 18), "call"): quote}
+    )
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("compute_portfolio_greeks", {"portfolio_id": portfolio.portfolio_id})],
+        portfolio_repo=portfolio_repo,
+        options_provider=options_provider,
+    )
+    use_case.execute("alice", "what's my portfolio delta?", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["positions_included"] == 1
+    assert abs(result["total_delta"] - 250.0) < 1e-9  # 0.5 * 5 * 100, same math as compute_portfolio_greeks tests
+
+
+def test_remove_option_holding_dispatches_correctly() -> None:
+    portfolio_repo = FakePortfolioRepository()
+    portfolio = CreatePortfolioUseCase(portfolio_repo).execute("alice", "Options")
+    AddOptionHoldingUseCase(portfolio_repo).execute(
+        portfolio.portfolio_id, "AAPL", 150.0, date(2026, 12, 18), "call", 5, 320.0
+    )
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[(
+            "remove_option_holding",
+            {
+                "portfolio_id": portfolio.portfolio_id,
+                "underlying_ticker": "AAPL",
+                "strike": 150.0,
+                "expiration": "2026-12-18",
+                "option_type": "call",
+            },
+        )],
+        portfolio_repo=portfolio_repo,
+    )
+    use_case.execute("alice", "remove my AAPL 150 calls", [])
+
+    assert fake_agent.dispatch_results[0] == {"status": "removed"}
+    stored = portfolio_repo.get_by_id(portfolio.portfolio_id)
+    assert stored.option_holdings == []
