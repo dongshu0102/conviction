@@ -275,6 +275,30 @@ export interface PortfolioRiskAnalysis {
   excluded_from_volatility_calc: string[];
 }
 
+// --- ETF ingestion -----------------------------------------------------------
+
+export interface EtfIngestResult {
+  ticker: string;
+  name: string;
+  expense_ratio: number | null;
+  aum: number | null;
+}
+
+// --- Earnings alerts -----------------------------------------------------------
+
+export interface EarningsEvent {
+  ticker: string;
+  report_date: string;
+  eps_estimated: number | null;
+  eps_actual: number | null;
+  revenue_estimated: number | null;
+  revenue_actual: number | null;
+}
+
+export interface UpcomingEarningsResponse {
+  events: EarningsEvent[];
+}
+
 export const api = {
   createApiKey: (userId: string, name: string) =>
     request<{ plaintext_key: string }>(
@@ -357,4 +381,17 @@ export const api = {
         total_investment: totalInvestment,
       }),
     }),
+
+  // ETF ingestion
+  ingestEtf: (ticker: string) =>
+    request<EtfIngestResult>(`/companies/${encodeURIComponent(ticker.toUpperCase())}/ingest-etf`, {
+      method: "POST",
+    }),
+
+  // Earnings alerts
+  getUpcomingEarnings: (listName?: string, lookaheadDays = 14) => {
+    const params = new URLSearchParams({ lookahead_days: String(lookaheadDays) });
+    if (listName) params.set("list_name", listName);
+    return request<UpcomingEarningsResponse>(`/watchlist/earnings?${params.toString()}`);
+  },
 };

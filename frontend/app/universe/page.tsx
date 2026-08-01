@@ -122,6 +122,60 @@ function AddTickerForm({ theme, onAdded }: { theme: string; onAdded: () => void 
   );
 }
 
+function IngestEtfForm() {
+  const [ticker, setTicker] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{ ticker: string; name: string; expense_ratio: number | null; aum: number | null } | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!ticker.trim()) return;
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await api.ingestEtf(ticker.trim());
+      setResult(res);
+      setTicker("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't ingest that ETF");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div>
+      <form onSubmit={handleSubmit} style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+        <input
+          type="text"
+          placeholder="ETF ticker, e.g. SPY"
+          value={ticker}
+          onChange={(e) => setTicker(e.target.value.toUpperCase())}
+          style={{ flex: "1 1 160px", fontSize: "0.9rem", padding: "0.55rem 0.75rem" }}
+        />
+        <button type="submit" className="btn-primary" disabled={loading} style={{ padding: "0.55rem 1.1rem", fontSize: "0.9rem" }}>
+          {loading ? "…" : "Ingest ETF"}
+        </button>
+      </form>
+      <p className="num" style={{ color: "var(--text-soft)", fontSize: "0.72rem", margin: "0.5rem 0 0" }}>
+        Separate from ingesting a company — an ETF has no income statement, so
+        Value/Quality/Growth factor scores will always be null for it; only
+        Momentum and Size (via AUM) apply.
+      </p>
+      {error && <p className="num loss" style={{ fontSize: "0.78rem", marginTop: "0.5rem" }}>{error}</p>}
+      {result && (
+        <p className="num" style={{ fontSize: "0.82rem", marginTop: "0.5rem" }}>
+          Ingested <strong>{result.ticker}</strong> — {result.name}
+          {result.expense_ratio !== null && <> · expense ratio {result.expense_ratio.toFixed(2)}%</>}
+          {result.aum !== null && <> · AUM {(result.aum / 1e9).toFixed(1)}B</>}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function UniversePage() {
   const router = useRouter();
 
@@ -256,6 +310,11 @@ export default function UniversePage() {
       <section className="card" style={{ marginBottom: "1.5rem" }}>
         <p className="eyebrow" style={{ marginBottom: "0.75rem" }}>Create a theme</p>
         <CreateThemeForm onCreated={(name) => loadThemes(name)} />
+      </section>
+
+      <section className="card" style={{ marginBottom: "1.5rem" }}>
+        <p className="eyebrow" style={{ marginBottom: "0.75rem" }}>Ingest an ETF</p>
+        <IngestEtfForm />
       </section>
 
       {themes.length === 0 && !error && (

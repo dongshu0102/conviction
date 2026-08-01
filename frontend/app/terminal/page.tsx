@@ -14,6 +14,7 @@ import { useRouter } from "next/navigation";
 import {
   api,
   ApiError,
+  EarningsEvent,
   getApiKey,
   NewsArticle,
   TriageItem,
@@ -50,6 +51,8 @@ export default function TerminalPage() {
   const router = useRouter();
   const [triage, setTriage] = useState<TriageResponse | null>(null);
   const [news, setNews] = useState<WatchlistNewsResponse | null>(null);
+  const [earnings, setEarnings] = useState<EarningsEvent[] | null>(null);
+  const [earningsUnavailable, setEarningsUnavailable] = useState(false);
   const [listFilter, setListFilter] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -58,8 +61,9 @@ export default function TerminalPage() {
     setLoading(true);
     setError(null);
     try {
-      // Triage first (the core view), news second — a dead news feed
-      // must not blank the triage table.
+      // Triage first (the core view), news and earnings after — a dead
+      // news feed or an earnings-calendar-unsupported provider must not
+      // blank the triage table.
       const t = await api.getTriage(listName || undefined);
       setTriage(t);
       try {
@@ -67,6 +71,14 @@ export default function TerminalPage() {
         setNews(n);
       } catch {
         setNews(null); // news degraded — table still stands
+      }
+      try {
+        const e = await api.getUpcomingEarnings(listName || undefined);
+        setEarnings(e.events);
+        setEarningsUnavailable(false);
+      } catch {
+        setEarnings(null);
+        setEarningsUnavailable(true); // e.g. provider doesn't support the earnings calendar
       }
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
@@ -241,6 +253,32 @@ export default function TerminalPage() {
       {triage && triage.tickers_excluded.length > 0 && (
         <p className="num" style={{ color: "var(--text-soft)", fontSize: "0.78rem" }}>
           No quote available right now: {triage.tickers_excluded.join(", ")} — excluded from the table, not scored as zero.
+        </p>
+      )}
+
+      {earnings && earnings.length > 0 && (
+        <section style={{ marginTop: "2.5rem" }}>
+          <p className="eyebrow" style={{ marginBottom: "0.75rem" }}>Upcoming earnings</p>
+          <div className="card">
+            {earnings.map((e) => (
+              <div key={`${e.ticker}-${e.report_date}`} className="ledger-row">
+                <div>
+                  <span style={{ fontWeight: 600 }}>{e.ticker}</span>
+                  <span className="num" style={{ color: "var(--text-soft)", marginLeft: "0.6rem", fontSize: "0.8rem" }}>
+                    {new Date(e.report_date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                  </span>
+                </div>
+                <span className="num" style={{ fontSize: "0.85rem", color: "var(--text-soft)" }}>
+                  {e.eps_estimated !== null ? `est. EPS $${e.eps_estimated.toFixed(2)}` : "—"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+      {earningsUnavailable && (
+        <p className="num" style={{ color: "var(--text-soft)", fontSize: "0.75rem", marginTop: "1rem" }}>
+          Earnings calendar unavailable right now.
         </p>
       )}
 
