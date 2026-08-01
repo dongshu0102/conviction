@@ -396,14 +396,14 @@ _TOOLS = [
     ),
     ToolDefinition(
         "screen_stocks",
-        "Rank a SPECIFIC, bounded list of tickers (you must name them — this "
-        "does not scan the whole market) by value (cheapness: P/E, P/S, "
+        "Rank a bounded list of tickers by value (cheapness: P/E, P/S, "
         "EV/EBITDA) and quality (ROE, margins, leverage). Returns value_score, "
         "quality_score, and composite_score for each — LOWER IS ALWAYS BETTER "
-        "on these scores (rank 1 = best in the group). Use this to compare "
-        "or rank a handful of candidates the user named or you're proposing "
-        "— e.g. after suggesting a few tickers for a sector. Keep the list "
-        "short (under ~15 tickers) — each one requires a live data lookup.",
+        "on these scores (rank 1 = best in the group). Provide EITHER tickers "
+        "(name them explicitly, capped at 15 — for a handful of candidates the "
+        "user named or you're proposing) OR theme_name (screens every ticker "
+        "in that curated universe theme, capped at 40, since theme membership "
+        "is already pre-curated rather than named per message).",
         {
             "type": "object",
             "properties": {
@@ -412,8 +412,11 @@ _TOOLS = [
                     "items": {"type": "string"},
                     "description": "The specific tickers to screen, e.g. ['JNJ', 'PFE', 'JPM'].",
                 },
+                "theme_name": {
+                    "type": "string",
+                    "description": "Screen every ticker in this curated theme instead of a named list.",
+                },
             },
-            "required": ["tickers"],
         },
     ),
     ToolDefinition(
@@ -988,9 +991,16 @@ class ChatWithAgentUseCase:
             }
 
         if tool_name == "screen_stocks":
-            tickers = tool_input.get("tickers", [])[:15]  # hard cap regardless of what's asked
+            theme_name = tool_input.get("theme_name")
+            if theme_name:
+                try:
+                    tickers = self._get_theme_tickers.execute(theme_name)[:40]
+                except Exception as exc:
+                    return {"error": str(exc)}
+            else:
+                tickers = tool_input.get("tickers", [])[:15]  # hard cap regardless of what's asked
             if not tickers:
-                return {"error": "No tickers provided to screen."}
+                return {"error": "No tickers to screen — theme is empty or no tickers were provided."}
             result = self._screen_stocks.execute(tickers)
             return {
                 "scoring_note": (

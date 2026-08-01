@@ -102,11 +102,11 @@ def _company_repo(*tickers: str) -> FakeCompanyRepository:
     return repo
 
 
-def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watchlist_repo=None, provider=None, options_provider=None, theme_repo=None):
+def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watchlist_repo=None, provider=None, options_provider=None, theme_repo=None, statement_repo=None):
     company_repo = company_repo or _company_repo()
     portfolio_repo = portfolio_repo or FakePortfolioRepository()
     watchlist_repo = watchlist_repo or FakeWatchlistRepository()
-    statement_repo = FakeFinancialStatementRepository()
+    statement_repo = statement_repo or FakeFinancialStatementRepository()
     provider = provider or FakeDataProvider(company=Company(ticker="X", name="X", sector=Sector.TECHNOLOGY, industry="X", exchange="X", country="US"))
     options_provider = options_provider or FakeOptionsDataProvider()
     research_repo = FakeResearchReportRepository()
@@ -843,3 +843,92 @@ def test_rank_universe_by_factors_unknown_theme_returns_error() -> None:
     )
     use_case.execute("alice", "rank Nonexistent by factors", [])
     assert "error" in fake_agent.dispatch_results[0]
+
+
+# ---- screen_stocks theme scoping tests ----
+
+
+def test_screen_stocks_resolves_theme_to_tickers() -> None:
+    from src.domain.entities.financial_statement import BalanceSheet, FiscalPeriodKey, IncomeStatement, Period
+    from src.domain.entities.market_quote import MarketQuote
+
+    company_repo = FakeCompanyRepository()
+    statement_repo = FakeFinancialStatementRepository()
+    quotes = {}
+    for ticker, pe_market_cap in [("AAA", 1000.0), ("BBB", 3000.0)]:
+        company_repo.save(Company(ticker=ticker, name=ticker, sector=Sector.TECHNOLOGY,
+                                    industry="X", exchange="NASDAQ", country="US"))
+        statement_repo.save_income_statement(
+            IncomeStatement(key=FiscalPeriodKey(ticker, 2024, Period.ANNUAL),
+                             fiscal_date_ending=date(2024, 12, 31), reported_currency="USD",
+                             revenue=1000.0, net_income=100.0, ebitda=200.0)
+        )
+        statement_repo.save_balance_sheet(
+            BalanceSheet(key=FiscalPeriodKey(ticker, 2024, Period.ANNUAL),
+                          fiscal_date_ending=date(2024, 12, 31), reported_currency="USD",
+                          total_equity=500.0, total_debt=100.0, cash_and_equivalents=50.0)
+        )
+        quotes[ticker] = MarketQuote(ticker=ticker, price=50.0, market_cap=pe_market_cap,
+                                       as_of=datetime(2026, 1, 1, tzinfo=timezone.utc))
+
+    provider = FakeDataProvider(company=company_repo.get_by_ticker("AAA"), quotes_by_ticker=quotes)
+    theme_repo = FakeUniverseThemeRepository()
+    from src.application.use_cases.manage_universe_theme import (
+        AddTickerToThemeUseCase, CreateUniverseThemeUseCase,
+    )
+    CreateUniverseThemeUseCase(theme_repo).execute("Test Theme")
+    add = AddTickerToThemeUseCase(theme_repo, company_repo)
+    add.execute("Test Theme", "AAA")
+    add.execute("Test Theme", "BBB")
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("screen_stocks", {"theme_name": "Test Theme"})],
+        company_repo=company_repo,
+        provider=provider,
+        theme_repo=theme_repo,
+        statement_repo=statement_repo,
+    )
+    use_case.execute("alice", "screen Test Theme", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert "error" not in result
+    tickers_screened = {r["ticker"] for r in result["results"]}
+    assert tickers_screened == {"AAA", "BBB"}
+
+
+def test_screen_stocks_unknown_theme_returns_error() -> None:
+    company_repo = _company_repo("AAPL")
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("screen_stocks", {"theme_name": "Nonexistent"})],
+        company_repo=company_repo,
+    )
+    use_case.execute("alice", "screen Nonexistent theme", [])
+    assert "error" in fake_agent.dispatch_results[0]
+
+
+def test_screen_stocks_empty_theme_returns_error_not_crash() -> None:
+    company_repo = _company_repo("AAPL")
+    theme_repo = FakeUniverseThemeRepository()
+    from src.application.use_cases.manage_universe_theme import CreateUniverseThemeUseCase
+    CreateUniverseThemeUseCase(theme_repo).execute("Empty Theme")
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("screen_stocks", {"theme_name": "Empty Theme"})],
+        company_repo=company_repo,
+        theme_repo=theme_repo,
+    )
+    use_case.execute("alice", "screen Empty Theme", [])
+    assert "error" in fake_agent.dispatch_results[0]
+
+
+def test_screen_stocks_manual_tickers_still_works_unchanged() -> None:
+    company_repo = _company_repo("AAPL")
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("screen_stocks", {"tickers": ["NOTINGESTED"]})],
+        company_repo=company_repo,
+    )
+    use_case.execute("alice", "screen NOTINGESTED", [])
+    result = fake_agent.dispatch_results[0]
+    # ticker not ingested -> excluded, not an error (existing screen_stocks behavior)
+    assert "error" not in result
+    assert "NOTINGESTED" in result["excluded"]
