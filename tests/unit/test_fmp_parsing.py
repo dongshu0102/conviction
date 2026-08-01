@@ -68,3 +68,45 @@ def test_parse_eod_light_skips_malformed_rows() -> None:
     ]
     bars = parse_eod_light(payload, "NVDA")
     assert len(bars) == 1
+
+
+# ---- Earnings calendar ----
+
+from src.infrastructure.data_providers.fmp_parsing import parse_earnings_calendar
+
+
+def test_parse_earnings_calendar_happy_path() -> None:
+    payload = [
+        {
+            "symbol": "aapl",
+            "date": "2026-08-15",
+            "epsEstimated": 1.5,
+            "epsActual": None,
+            "revenueEstimated": 90000000000,
+            "revenueActual": None,
+        },
+    ]
+    events = parse_earnings_calendar(payload)
+    assert len(events) == 1
+    e = events[0]
+    assert e.ticker == "AAPL"  # uppercased
+    assert e.report_date.isoformat() == "2026-08-15"
+    assert e.eps_estimated == 1.5
+    assert e.eps_actual is None
+    assert e.revenue_estimated == 90000000000
+
+
+def test_parse_earnings_calendar_skips_malformed_rows() -> None:
+    payload = [
+        {"symbol": "AAPL"},  # missing date -> skipped
+        {"date": "2026-08-15"},  # missing symbol -> skipped
+        {"symbol": "MSFT", "date": "not-a-date"},  # bad date format -> skipped
+        {"symbol": "NVDA", "date": "2026-08-20"},  # valid, minimal
+    ]
+    events = parse_earnings_calendar(payload)
+    assert len(events) == 1
+    assert events[0].ticker == "NVDA"
+
+
+def test_parse_earnings_calendar_rejects_non_list_payload() -> None:
+    assert parse_earnings_calendar({"Error Message": "nope"}) == []

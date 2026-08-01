@@ -48,6 +48,7 @@ from src.application.use_cases.construct_risk_parity_portfolio import (
     ConstructRiskParityPortfolioUseCase,
 )
 from src.application.use_cases.generate_theme_synthesis import GenerateThemeSynthesisUseCase
+from src.application.use_cases.get_upcoming_earnings import GetUpcomingEarningsUseCase
 from src.application.use_cases.get_factor_scores import GetFactorScoresUseCase
 from src.application.use_cases.manage_universe_theme import (
     AddTickerToThemeUseCase,
@@ -174,6 +175,7 @@ def get_chat_use_case(
         get_theme_tickers=get_theme_tickers,
         generate_theme_synthesis=generate_theme_synthesis,
         construct_risk_parity_portfolio=ConstructRiskParityPortfolioUseCase(data_provider),
+        get_upcoming_earnings=GetUpcomingEarningsUseCase(watchlist_repo, data_provider),
     )
 
 

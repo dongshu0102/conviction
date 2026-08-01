@@ -12,12 +12,18 @@ from src.api.routers.companies import (
 )
 from src.api.routers.companies import get_valuation_use_case as get_company_valuation_use_case
 from src.api.schemas import (
+    EarningsEventSchema,
     NewsArticleSchema,
     TriageItemSchema,
     TriageResponseSchema,
     TriageSignalsSchema,
+    UpcomingEarningsResponseSchema,
     WatchlistItemSchema,
     WatchlistNewsResponseSchema,
+)
+from src.application.use_cases.get_upcoming_earnings import (
+    EarningsCalendarUnavailableError,
+    GetUpcomingEarningsUseCase,
 )
 from src.application.use_cases.get_watchlist_news import GetWatchlistNewsUseCase
 from src.application.use_cases.manage_watchlist import (
@@ -205,4 +211,37 @@ def watchlist_news(
             for t, articles in by_ticker.items()
         },
         tickers_failed=failed,
+    )
+
+
+def get_earnings_use_case(
+    watchlist_repo: SqlAlchemyWatchlistRepository = Depends(get_watchlist_repository),
+    data_provider=Depends(get_data_provider),
+) -> GetUpcomingEarningsUseCase:
+    return GetUpcomingEarningsUseCase(watchlist_repo, data_provider)
+
+
+@router.get("/earnings", response_model=UpcomingEarningsResponseSchema)
+def upcoming_earnings(
+    list_name: str | None = Query(default=None),
+    lookahead_days: int = Query(default=14, ge=1, le=90),
+    user_id: str = Depends(get_authenticated_user_id),
+    use_case: GetUpcomingEarningsUseCase = Depends(get_earnings_use_case),
+) -> UpcomingEarningsResponseSchema:
+    try:
+        events = use_case.execute(user_id, list_name=list_name, lookahead_days=lookahead_days)
+    except EarningsCalendarUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return UpcomingEarningsResponseSchema(
+        events=[
+            EarningsEventSchema(
+                ticker=e.ticker,
+                report_date=e.report_date,
+                eps_estimated=e.eps_estimated,
+                eps_actual=e.eps_actual,
+                revenue_estimated=e.revenue_estimated,
+                revenue_actual=e.revenue_actual,
+            )
+            for e in events
+        ]
     )

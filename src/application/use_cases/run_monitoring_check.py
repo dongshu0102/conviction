@@ -10,7 +10,7 @@ baseline exists.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from src.application.interfaces.data_provider import (
     DataProviderError,
@@ -26,6 +26,7 @@ from src.domain.repositories.watchlist_repository import WatchlistRepository
 logger = logging.getLogger(__name__)
 
 DEFAULT_ALERT_THRESHOLD = 0.05  # 5% move since last check
+EARNINGS_ALERT_WINDOW_DAYS = 3  # alert when earnings is within this many days out
 
 
 class RunMonitoringCheckUseCase:
@@ -126,4 +127,69 @@ class RunMonitoringCheckUseCase:
                 PriceSnapshot(ticker=ticker, price=quote.price, captured_at=now)
             )
 
+        new_alerts.extend(self._check_upcoming_earnings(user_id, watchlist))
         return new_alerts
+
+    def _check_upcoming_earnings(self, user_id: str, watchlist: list) -> list[Alert]:
+        """Fires an EARNINGS_UPCOMING alert once per ticker within
+        EARNINGS_ALERT_WINDOW_DAYS of its report date. Deduped against
+        EXISTING alerts (not a stored "already alerted" flag) so this
+        stays correct even across restarts — a cron running every 15
+        minutes would otherwise re-alert on the same earnings date
+        dozens of times a day without this check. Silently does
+        nothing if the data provider lacks earnings-calendar support,
+        since this is an additive capability, not a required one."""
+        if not hasattr(self._data_provider, "get_earnings_calendar"):
+            return []
+
+        tickers = {item.ticker for item in watchlist}
+        if not tickers:
+            return []
+
+        today = datetime.now(timezone.utc).date()
+        try:
+            events = self._data_provider.get_earnings_calendar(
+                today, today + timedelta(days=EARNINGS_ALERT_WINDOW_DAYS)
+            )
+        except (NotImplementedError, DataProviderError) as exc:
+            logger.warning("Monitoring: earnings calendar unavailable: %s", exc)
+            return []
+
+        relevant = [
+            e for e in events
+            if e.ticker in tickers and today <= e.report_date <= today + timedelta(days=EARNINGS_ALERT_WINDOW_DAYS)
+        ]
+        if not relevant:
+            return []
+
+        existing_alerts = self._alert_repo.list_for_user(user_id)
+        recency_cutoff = datetime.now(timezone.utc) - timedelta(days=EARNINGS_ALERT_WINDOW_DAYS)
+        already_alerted_tickers = {
+            a.ticker for a in existing_alerts
+            if a.alert_type == AlertType.EARNINGS_UPCOMING and a.created_at >= recency_cutoff
+        }
+
+        fired: list[Alert] = []
+        for event in relevant:
+            if event.ticker in already_alerted_tickers:
+                continue
+            alert = Alert(
+                user_id=user_id,
+                ticker=event.ticker,
+                alert_type=AlertType.EARNINGS_UPCOMING,
+                message=(
+                    f"{event.ticker} reports earnings on "
+                    f"{event.report_date.isoformat()}"
+                    + (
+                        f" (est. EPS ${event.eps_estimated:.2f})"
+                        if event.eps_estimated is not None
+                        else ""
+                    )
+                ),
+                created_at=datetime.now(timezone.utc),
+                change_pct=None,
+            )
+            fired.append(self._alert_repo.save(alert))
+            already_alerted_tickers.add(event.ticker)  # don't double-fire within this same run
+
+        return fired

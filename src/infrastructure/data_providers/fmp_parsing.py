@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime
 
+from src.domain.entities.earnings import EarningsEvent
 from src.domain.entities.market_quote import PriceBar
 from src.domain.entities.news import NewsArticle
 
@@ -79,3 +80,31 @@ def parse_eod_light(payload, ticker: str) -> list[PriceBar]:
             logger.warning("Skipping malformed EOD row %d for %s: %s", i, ticker, exc)
     bars.sort(key=lambda b: b.bar_date, reverse=True)
     return bars
+
+
+def parse_earnings_calendar(payload) -> list[EarningsEvent]:
+    """Parses FMP's earnings-calendar payload into EarningsEvent
+    objects. A malformed row (missing symbol/date) is skipped, not
+    fatal to the whole batch — same discipline as parse_stock_news."""
+    if not isinstance(payload, list):
+        logger.warning("Unexpected earnings-calendar payload shape: %s", type(payload))
+        return []
+
+    events: list[EarningsEvent] = []
+    for i, row in enumerate(payload):
+        try:
+            symbol = row["symbol"]
+            report_date = datetime.strptime(row["date"], "%Y-%m-%d").date()
+            events.append(
+                EarningsEvent(
+                    ticker=symbol.upper(),
+                    report_date=report_date,
+                    eps_estimated=row.get("epsEstimated"),
+                    eps_actual=row.get("epsActual"),
+                    revenue_estimated=row.get("revenueEstimated"),
+                    revenue_actual=row.get("revenueActual"),
+                )
+            )
+        except (KeyError, ValueError, TypeError, AttributeError) as exc:
+            logger.warning("Skipping malformed earnings-calendar row %d: %s", i, exc)
+    return events

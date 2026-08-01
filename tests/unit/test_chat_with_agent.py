@@ -35,6 +35,7 @@ from src.application.use_cases.construct_risk_parity_portfolio import (
     ConstructRiskParityPortfolioUseCase,
 )
 from src.application.use_cases.generate_theme_synthesis import GenerateThemeSynthesisUseCase
+from src.application.use_cases.get_upcoming_earnings import GetUpcomingEarningsUseCase
 from src.application.use_cases.get_factor_scores import GetFactorScoresUseCase
 from src.application.use_cases.manage_universe_theme import (
     AddTickerToThemeUseCase,
@@ -175,6 +176,7 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
             _get_factor_scores, FakeThemeSynthesisGenerator(),
         ),
         construct_risk_parity_portfolio=ConstructRiskParityPortfolioUseCase(provider),
+        get_upcoming_earnings=GetUpcomingEarningsUseCase(watchlist_repo, provider),
     )
     return use_case, fake_agent, portfolio_repo
 
@@ -1085,3 +1087,51 @@ def test_cold_factor_cache_returns_clean_error_not_a_crash_for_single_ticker() -
     result = fake_agent.dispatch_results[0]
     assert "error" in result
     assert "not been computed" in result["error"]
+
+
+# ---- Upcoming earnings chat tool tests ----
+
+
+def test_get_upcoming_earnings_via_chat() -> None:
+    from datetime import date, timedelta
+    from src.domain.entities.earnings import EarningsEvent
+
+    class _EarningsProvider(FakeDataProvider):
+        def get_earnings_calendar(self, from_date, to_date):
+            return [EarningsEvent(ticker="AAPL", report_date=date.today() + timedelta(days=2),
+                                    eps_estimated=1.5, eps_actual=None,
+                                    revenue_estimated=None, revenue_actual=None)]
+
+    company_repo = _company_repo("AAPL")
+    watchlist_repo = FakeWatchlistRepository()
+    from src.application.use_cases.manage_watchlist import AddToWatchlistUseCase
+    AddToWatchlistUseCase(watchlist_repo, company_repo).execute("alice", "AAPL")
+    provider = _EarningsProvider(company=company_repo.get_by_ticker("AAPL"))
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("get_upcoming_earnings", {})],
+        company_repo=company_repo,
+        watchlist_repo=watchlist_repo,
+        provider=provider,
+    )
+    use_case.execute("alice", "any earnings coming up?", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert len(result["events"]) == 1
+    assert result["events"][0]["ticker"] == "AAPL"
+    assert result["events"][0]["eps_estimated"] == 1.5
+
+
+def test_get_upcoming_earnings_unsupported_provider_returns_error() -> None:
+    company_repo = _company_repo("AAPL")
+    watchlist_repo = FakeWatchlistRepository()
+    from src.application.use_cases.manage_watchlist import AddToWatchlistUseCase
+    AddToWatchlistUseCase(watchlist_repo, company_repo).execute("alice", "AAPL")
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("get_upcoming_earnings", {})],
+        company_repo=company_repo,
+        watchlist_repo=watchlist_repo,
+    )
+    use_case.execute("alice", "any earnings coming up?", [])
+    assert "error" in fake_agent.dispatch_results[0]

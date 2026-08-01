@@ -17,6 +17,7 @@ from enum import Enum
 class AlertType(str, Enum):
     PRICE_MOVE = "PRICE_MOVE"
     TARGET_REACHED = "TARGET_REACHED"
+    EARNINGS_UPCOMING = "EARNINGS_UPCOMING"
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,10 +39,12 @@ class Alert:
     alert_type: AlertType
     message: str
     created_at: datetime
-    # Percent change that triggered this alert, e.g. 0.07 for a 7% move —
-    # stored as a real number alongside the human-readable message so a
-    # future UI can sort/filter/format without re-parsing text.
-    change_pct: float
+    # Percent change that triggered this alert, e.g. 0.07 for a 7% move.
+    # None for alert types that aren't about a price move at all (e.g.
+    # EARNINGS_UPCOMING) — an earnings-date alert has no percentage to
+    # report, and forcing a fabricated 0.0 would misrepresent "not
+    # applicable" as "no move detected."
+    change_pct: float | None = None
     is_read: bool = False
     # None before persistence (the use case constructs an Alert before
     # saving it); the repository assigns the real id on save.

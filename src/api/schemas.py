@@ -372,6 +372,19 @@ class ThemeTickersSchema(BaseModel):
     tickers: list[str]
 
 
+class EarningsEventSchema(BaseModel):
+    ticker: str
+    report_date: date
+    eps_estimated: float | None
+    eps_actual: float | None
+    revenue_estimated: float | None
+    revenue_actual: float | None
+
+
+class UpcomingEarningsResponseSchema(BaseModel):
+    events: list[EarningsEventSchema]
+
+
 class TriageSignalsSchema(BaseModel):
     day_move_pct: float | None
     move_since_added_pct: float | None

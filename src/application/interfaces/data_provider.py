@@ -7,8 +7,10 @@ adapter class — without touching use cases, API routes, or the database.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from datetime import date
 
 from src.domain.entities.company import Company
+from src.domain.entities.earnings import EarningsEvent
 from src.domain.entities.financial_statement import (
     BalanceSheet,
     CashFlowStatement,
@@ -60,6 +62,11 @@ class FinancialDataProvider(ABC):
     def get_daily_closes(self, ticker: str, limit: int = 30) -> list[PriceBar]:
         """Most-recent-first end-of-day closes."""
         raise NotImplementedError("This data provider does not support get_daily_closes")
+
+    def get_earnings_calendar(self, from_date: date, to_date: date) -> list[EarningsEvent]:
+        """Every earnings announcement (any ticker) within the date
+        range — callers filter to whichever tickers they care about."""
+        raise NotImplementedError("This data provider does not support get_earnings_calendar")
 
     @abstractmethod
     def get_quote(self, ticker: str) -> MarketQuote:

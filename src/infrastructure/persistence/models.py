@@ -99,7 +99,7 @@ class AlertModel(Base):
     ticker: Mapped[str] = mapped_column(ForeignKey("companies.ticker"), nullable=False)
     alert_type: Mapped[str] = mapped_column(String(32), nullable=False)
     message: Mapped[str] = mapped_column(String, nullable=False)
-    change_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    change_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 

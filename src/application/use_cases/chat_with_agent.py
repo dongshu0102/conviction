@@ -63,6 +63,7 @@ from src.application.use_cases.construct_risk_parity_portfolio import (
     ConstructRiskParityPortfolioUseCase,
 )
 from src.application.use_cases.generate_theme_synthesis import GenerateThemeSynthesisUseCase
+from src.application.use_cases.get_upcoming_earnings import GetUpcomingEarningsUseCase
 from src.application.use_cases.get_factor_scores import GetFactorScoresUseCase
 from src.application.use_cases.manage_universe_theme import (
     AddTickerToThemeUseCase,
@@ -156,7 +157,14 @@ predicts returns and never implies one ticker will outperform another. \
 Lower volatility gets more weight; that is a risk choice, not a quality \
 judgment — a boring, low-volatility company is not necessarily a better \
 investment than a volatile one, just a smaller position under this \
-methodology."""
+methodology.
+
+get_upcoming_earnings returns real dates and analyst EPS estimates from the \
+data provider — never invent or guess an earnings date that isn't in the \
+returned data, and never speculate about what a company will report. If the \
+tool returns an error saying the earnings calendar isn't supported, say so \
+plainly rather than trying to answer from general knowledge about when a \
+company "usually" reports."""
 
 _TOOLS = [
     ToolDefinition(
@@ -348,6 +356,21 @@ _TOOLS = [
                 "total_investment": {"type": "number"},
             },
             "required": ["tickers", "total_investment"],
+        },
+    ),
+    ToolDefinition(
+        "get_upcoming_earnings",
+        "Upcoming earnings announcements for the user's watchlist (or one named "
+        "list), within the next 14 days by default. Returns real dates and "
+        "analyst EPS estimates — never invent an earnings date not returned "
+        "here. If the data provider doesn't support this, say so plainly "
+        "rather than guessing at dates.",
+        {
+            "type": "object",
+            "properties": {
+                "list_name": {"type": "string"},
+                "lookahead_days": {"type": "integer"},
+            },
         },
     ),
     ToolDefinition(
@@ -631,6 +654,7 @@ class ChatWithAgentUseCase:
         list_universe_themes: ListUniverseThemesUseCase,
         get_theme_tickers: GetThemeTickersUseCase,
         generate_theme_synthesis: GenerateThemeSynthesisUseCase,
+        get_upcoming_earnings: GetUpcomingEarningsUseCase,
         construct_risk_parity_portfolio: ConstructRiskParityPortfolioUseCase,
     ) -> None:
         self._chat_agent = chat_agent
@@ -666,6 +690,7 @@ class ChatWithAgentUseCase:
         self._list_universe_themes = list_universe_themes
         self._get_theme_tickers = get_theme_tickers
         self._generate_theme_synthesis = generate_theme_synthesis
+        self._get_upcoming_earnings = get_upcoming_earnings
         self._construct_risk_parity_portfolio = construct_risk_parity_portfolio
         self._user_id: str = ""  # set per-request in execute()
 
@@ -925,6 +950,29 @@ class ChatWithAgentUseCase:
                     for a in result.allocations
                 ],
                 "excluded": result.excluded,
+            }
+
+        if tool_name == "get_upcoming_earnings":
+            try:
+                events = self._get_upcoming_earnings.execute(
+                    self._user_id,
+                    list_name=tool_input.get("list_name"),
+                    lookahead_days=tool_input.get("lookahead_days", 14),
+                )
+            except Exception as exc:
+                return {"error": str(exc)}
+            return {
+                "events": [
+                    {
+                        "ticker": e.ticker,
+                        "report_date": e.report_date.isoformat(),
+                        "eps_estimated": e.eps_estimated,
+                        "eps_actual": e.eps_actual,
+                        "revenue_estimated": e.revenue_estimated,
+                        "revenue_actual": e.revenue_actual,
+                    }
+                    for e in events
+                ]
             }
 
         if tool_name == "get_stock_news":

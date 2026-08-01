@@ -24,9 +24,14 @@ from src.domain.entities.financial_statement import (
     IncomeStatement,
     Period,
 )
+from src.domain.entities.earnings import EarningsEvent
 from src.domain.entities.market_quote import MarketQuote, PriceBar
 from src.domain.entities.news import NewsArticle
-from src.infrastructure.data_providers.fmp_parsing import parse_eod_light, parse_stock_news
+from src.infrastructure.data_providers.fmp_parsing import (
+    parse_earnings_calendar,
+    parse_eod_light,
+    parse_stock_news,
+)
 from src.infrastructure.config import Settings
 
 logger = logging.getLogger(__name__)
@@ -226,3 +231,9 @@ class FinancialModelingPrepProvider(FinancialDataProvider):
     def get_daily_closes(self, ticker: str, limit: int = 30) -> list[PriceBar]:
         payload = self._get("/historical-price-eod/light", symbol=ticker)
         return parse_eod_light(payload, ticker)[:limit]
+
+    def get_earnings_calendar(self, from_date: date, to_date: date) -> list[EarningsEvent]:
+        payload = self._get(
+            "/earnings-calendar", **{"from": from_date.isoformat(), "to": to_date.isoformat()}
+        )
+        return parse_earnings_calendar(payload)

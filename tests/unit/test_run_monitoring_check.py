@@ -213,3 +213,102 @@ def test_same_ticker_on_two_lists_evaluates_both_targets_against_same_prior() ->
     assert len(alerts) == 1  # Aggressive's 95 crossed; Patient's 85 not
     assert alerts[0].alert_type == AlertType.TARGET_REACHED
     assert "Aggressive" in alerts[0].message
+
+
+# ---- Earnings alerts ----
+
+from datetime import date, timedelta
+from src.domain.entities.earnings import EarningsEvent
+from src.domain.entities.monitoring import Alert, AlertType
+
+
+class _EarningsMonitoringProvider(FakeDataProvider):
+    def __init__(self, *args, events=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._events = events or []
+
+    def get_earnings_calendar(self, from_date, to_date):
+        return self._events
+
+
+def _quote(ticker: str, price: float) -> MarketQuote:
+    return MarketQuote(ticker=ticker, price=price, market_cap=1.0,
+                         as_of=datetime(2026, 1, 1, tzinfo=timezone.utc))
+
+
+def test_earnings_within_window_fires_alert() -> None:
+    company_repo, watchlist_repo = _setup_with_aapl_on_watchlist()
+    snapshot_repo = FakePriceSnapshotRepository()
+    alert_repo = FakeAlertRepository()
+    soon = date.today() + timedelta(days=2)
+    provider = _EarningsMonitoringProvider(
+        company=company_repo.get_by_ticker("AAPL"),
+        quotes_by_ticker={"AAPL": _quote("AAPL", 100.0)},
+        events=[EarningsEvent(ticker="AAPL", report_date=soon, eps_estimated=1.5,
+                                eps_actual=None, revenue_estimated=None, revenue_actual=None)],
+    )
+    use_case = RunMonitoringCheckUseCase(watchlist_repo, snapshot_repo, alert_repo, provider)
+
+    alerts = use_case.execute("alice")
+
+    earnings_alerts = [a for a in alerts if a.alert_type == AlertType.EARNINGS_UPCOMING]
+    assert len(earnings_alerts) == 1
+    assert earnings_alerts[0].ticker == "AAPL"
+    assert earnings_alerts[0].change_pct is None  # not a price-move alert
+    assert "1.50" in earnings_alerts[0].message
+
+
+def test_earnings_alert_does_not_refire_within_window() -> None:
+    """Simulates the cron running every 15 minutes — the second run,
+    moments after the first, must NOT create a duplicate alert."""
+    company_repo, watchlist_repo = _setup_with_aapl_on_watchlist()
+    snapshot_repo = FakePriceSnapshotRepository()
+    alert_repo = FakeAlertRepository()
+    soon = date.today() + timedelta(days=1)
+    provider = _EarningsMonitoringProvider(
+        company=company_repo.get_by_ticker("AAPL"),
+        quotes_by_ticker={"AAPL": _quote("AAPL", 100.0)},
+        events=[EarningsEvent(ticker="AAPL", report_date=soon, eps_estimated=None,
+                                eps_actual=None, revenue_estimated=None, revenue_actual=None)],
+    )
+    use_case = RunMonitoringCheckUseCase(watchlist_repo, snapshot_repo, alert_repo, provider)
+
+    first_run = use_case.execute("alice")
+    second_run = use_case.execute("alice")
+
+    assert len([a for a in first_run if a.alert_type == AlertType.EARNINGS_UPCOMING]) == 1
+    assert len([a for a in second_run if a.alert_type == AlertType.EARNINGS_UPCOMING]) == 0
+
+
+def test_earnings_outside_window_does_not_fire() -> None:
+    company_repo, watchlist_repo = _setup_with_aapl_on_watchlist()
+    snapshot_repo = FakePriceSnapshotRepository()
+    alert_repo = FakeAlertRepository()
+    far_off = date.today() + timedelta(days=30)
+    provider = _EarningsMonitoringProvider(
+        company=company_repo.get_by_ticker("AAPL"),
+        quotes_by_ticker={"AAPL": _quote("AAPL", 100.0)},
+        events=[EarningsEvent(ticker="AAPL", report_date=far_off, eps_estimated=None,
+                                eps_actual=None, revenue_estimated=None, revenue_actual=None)],
+    )
+    use_case = RunMonitoringCheckUseCase(watchlist_repo, snapshot_repo, alert_repo, provider)
+
+    alerts = use_case.execute("alice")
+    assert [a for a in alerts if a.alert_type == AlertType.EARNINGS_UPCOMING] == []
+
+
+def test_provider_without_earnings_support_degrades_silently() -> None:
+    """Default FakeDataProvider has no get_earnings_calendar override —
+    monitoring must proceed normally (price-move checks unaffected),
+    not crash."""
+    company_repo, watchlist_repo = _setup_with_aapl_on_watchlist()
+    snapshot_repo = FakePriceSnapshotRepository()
+    alert_repo = FakeAlertRepository()
+    provider = FakeDataProvider(
+        company=company_repo.get_by_ticker("AAPL"),
+        quotes_by_ticker={"AAPL": _quote("AAPL", 100.0)},
+    )
+    use_case = RunMonitoringCheckUseCase(watchlist_repo, snapshot_repo, alert_repo, provider)
+
+    alerts = use_case.execute("alice")  # must not raise
+    assert alerts == []
