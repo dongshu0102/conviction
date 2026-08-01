@@ -291,3 +291,26 @@ class FactorScoreModel(Base):
     growth_z: Mapped[float | None] = mapped_column(Float, nullable=True)
     momentum_z: Mapped[float | None] = mapped_column(Float, nullable=True)
     size_z: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+class UniverseThemeModel(Base):
+    __tablename__ = "universe_themes"
+
+    name: Mapped[str] = mapped_column(String(128), primary_key=True)
+    description: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class UniverseThemeMembershipModel(Base):
+    __tablename__ = "universe_theme_memberships"
+    __table_args__ = (
+        UniqueConstraint("theme_name", "ticker", name="uq_theme_membership_theme_ticker"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    theme_name: Mapped[str] = mapped_column(
+        ForeignKey("universe_themes.name"), nullable=False, index=True
+    )
+    ticker: Mapped[str] = mapped_column(
+        ForeignKey("companies.ticker"), nullable=False, index=True
+    )

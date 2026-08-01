@@ -5,7 +5,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routers import alerts, api_keys, brief, chat, companies, portfolios, research, watchlist
+from src.api.routers import alerts, api_keys, brief, chat, companies, portfolios, research, universe, watchlist
 from src.infrastructure.config import get_settings
 
 settings = get_settings()
@@ -37,6 +37,7 @@ app.include_router(alerts.router)
 app.include_router(api_keys.router)
 app.include_router(brief.router)
 app.include_router(chat.router)
+app.include_router(universe.router)
 
 
 @app.on_event("startup")

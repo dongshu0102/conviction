@@ -32,6 +32,13 @@ from src.application.use_cases.compute_universe_factor_snapshot import (
     ComputeUniverseFactorSnapshotUseCase,
 )
 from src.application.use_cases.get_factor_scores import GetFactorScoresUseCase
+from src.application.use_cases.manage_universe_theme import (
+    AddTickerToThemeUseCase,
+    CreateUniverseThemeUseCase,
+    GetThemeTickersUseCase,
+    ListUniverseThemesUseCase,
+    RemoveTickerFromThemeUseCase,
+)
 from src.application.use_cases.get_watchlist_news import GetWatchlistNewsUseCase
 from src.application.use_cases.triage_watchlist import TriageWatchlistUseCase
 from src.application.use_cases.manage_watchlist import (
@@ -49,6 +56,7 @@ from src.domain.entities.company import Company, Sector
 from src.domain.entities.market_quote import MarketQuote
 from tests.unit.fakes import (
     FakeFactorScoreRepository,
+    FakeUniverseThemeRepository,
     FakePriceSnapshotRepository,
     FakeCompanyRepository,
     FakeDataProvider,
@@ -94,7 +102,7 @@ def _company_repo(*tickers: str) -> FakeCompanyRepository:
     return repo
 
 
-def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watchlist_repo=None, provider=None, options_provider=None):
+def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watchlist_repo=None, provider=None, options_provider=None, theme_repo=None):
     company_repo = company_repo or _company_repo()
     portfolio_repo = portfolio_repo or FakePortfolioRepository()
     watchlist_repo = watchlist_repo or FakeWatchlistRepository()
@@ -111,6 +119,7 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
 
     fake_agent = FakeChatAgent(scripted_calls)
     _factor_score_repo = FakeFactorScoreRepository()
+    theme_repo = theme_repo or FakeUniverseThemeRepository()
     use_case = ChatWithAgentUseCase(
         chat_agent=fake_agent,
         get_watchlist=GetWatchlistUseCase(watchlist_repo),
@@ -148,6 +157,11 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
                 provider, compute_company_valuation, compute_analysis, _factor_score_repo
             ),
         ),
+        create_universe_theme=CreateUniverseThemeUseCase(theme_repo),
+        add_ticker_to_theme=AddTickerToThemeUseCase(theme_repo, company_repo),
+        remove_ticker_from_theme=RemoveTickerFromThemeUseCase(theme_repo),
+        list_universe_themes=ListUniverseThemesUseCase(theme_repo),
+        get_theme_tickers=GetThemeTickersUseCase(theme_repo),
     )
     return use_case, fake_agent, portfolio_repo
 
@@ -745,3 +759,87 @@ def test_rank_universe_by_factors_respects_custom_weights_and_embeds_note() -> N
     assert "scoring_note" in result
     assert "universe" in result["scoring_note"].lower()
     assert result["results"] == []  # empty universe in this fixture — no crash, honest empty list
+
+
+# ---- Universe theme chat tool tests ----
+
+
+def test_create_theme_and_tag_ticker_via_chat() -> None:
+    company_repo = _company_repo("NVDA")
+    theme_repo = FakeUniverseThemeRepository()
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[
+            ("create_universe_theme", {"name": "AI Infrastructure", "description": "GPUs"}),
+            ("add_ticker_to_theme", {"theme_name": "AI Infrastructure", "ticker": "NVDA"}),
+        ],
+        company_repo=company_repo,
+        theme_repo=theme_repo,
+    )
+    use_case.execute("alice", "create an AI Infrastructure theme and tag NVDA", [])
+
+    assert fake_agent.dispatch_results[0]["status"] == "created"
+    assert fake_agent.dispatch_results[1]["status"] == "added"
+    assert theme_repo.get_tickers("AI Infrastructure") == ["NVDA"]
+
+
+def test_add_ticker_to_theme_error_surfaces_cleanly() -> None:
+    company_repo = _company_repo("NVDA")
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("add_ticker_to_theme", {"theme_name": "Nonexistent", "ticker": "NVDA"})],
+        company_repo=company_repo,
+    )
+    use_case.execute("alice", "tag NVDA into Nonexistent theme", [])
+    assert "error" in fake_agent.dispatch_results[0]
+
+
+def test_list_universe_themes_reports_counts_via_chat() -> None:
+    company_repo = _company_repo("NVDA", "BABA")
+    theme_repo = FakeUniverseThemeRepository()
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[
+            ("create_universe_theme", {"name": "AI Infrastructure"}),
+            ("create_universe_theme", {"name": "China"}),
+            ("add_ticker_to_theme", {"theme_name": "AI Infrastructure", "ticker": "NVDA"}),
+            ("add_ticker_to_theme", {"theme_name": "China", "ticker": "BABA"}),
+            ("list_universe_themes", {}),
+        ],
+        company_repo=company_repo,
+        theme_repo=theme_repo,
+    )
+    use_case.execute("alice", "list my themes", [])
+
+    themes = {t["name"]: t["member_count"] for t in fake_agent.dispatch_results[-1]["themes"]}
+    assert themes == {"AI Infrastructure": 1, "China": 1}
+
+
+def test_rank_universe_by_factors_theme_filter_narrows_results() -> None:
+    """The filter must apply to the ALREADY-cached full-universe ranking
+    (z-scores still standardized against the whole S&P 500), not
+    re-standardize within the theme — the chat tool description commits
+    to this distinction explicitly."""
+    company_repo = _company_repo("AAPL")
+    theme_repo = FakeUniverseThemeRepository()
+    from src.domain.entities.universe_theme import UniverseTheme
+    from datetime import datetime, timezone
+    theme_repo.create(UniverseTheme(name="Empty Theme", description=None, created_at=datetime.now(timezone.utc)))
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("rank_universe_by_factors", {"theme_name": "Empty Theme", "top_n": 10})],
+        company_repo=company_repo,
+        theme_repo=theme_repo,
+    )
+    use_case.execute("alice", "rank Empty Theme by factors", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["results"] == []  # no tickers in this theme -> empty, not an error
+
+
+def test_rank_universe_by_factors_unknown_theme_returns_error() -> None:
+    company_repo = _company_repo("AAPL")
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("rank_universe_by_factors", {"theme_name": "Nonexistent"})],
+        company_repo=company_repo,
+    )
+    use_case.execute("alice", "rank Nonexistent by factors", [])
+    assert "error" in fake_agent.dispatch_results[0]

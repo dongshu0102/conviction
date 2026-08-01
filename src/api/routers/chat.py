@@ -45,6 +45,13 @@ from src.application.use_cases.compute_universe_factor_snapshot import (
     ComputeUniverseFactorSnapshotUseCase,
 )
 from src.application.use_cases.get_factor_scores import GetFactorScoresUseCase
+from src.application.use_cases.manage_universe_theme import (
+    AddTickerToThemeUseCase,
+    CreateUniverseThemeUseCase,
+    GetThemeTickersUseCase,
+    ListUniverseThemesUseCase,
+    RemoveTickerFromThemeUseCase,
+)
 from src.application.use_cases.get_watchlist_news import GetWatchlistNewsUseCase
 from src.application.use_cases.triage_watchlist import TriageWatchlistUseCase
 from src.application.use_cases.compute_option_portfolio_valuation import (
@@ -64,6 +71,9 @@ from src.infrastructure.data_providers.marketdata_app_provider import MarketData
 from src.infrastructure.llm_providers.anthropic_chat_agent import AnthropicChatAgent
 from src.infrastructure.persistence.factor_score_repository_impl import (
     SqlAlchemyFactorScoreRepository,
+)
+from src.infrastructure.persistence.universe_theme_repository_impl import (
+    SqlAlchemyUniverseThemeRepository,
 )
 from src.infrastructure.persistence.monitoring_repository_impl import (
     SqlAlchemyPriceSnapshotRepository,
@@ -109,6 +119,7 @@ def get_chat_use_case(
             data_provider, compute_company_valuation, compute_analysis, factor_repo
         ),
     )
+    theme_repo = SqlAlchemyUniverseThemeRepository()
     return ChatWithAgentUseCase(
         chat_agent=chat_agent,
         get_watchlist=get_watchlist,
@@ -144,6 +155,11 @@ def get_chat_use_case(
         ),
         get_watchlist_news=GetWatchlistNewsUseCase(watchlist_repo, data_provider),
         get_factor_scores=get_factor_scores,
+        create_universe_theme=CreateUniverseThemeUseCase(theme_repo),
+        add_ticker_to_theme=AddTickerToThemeUseCase(theme_repo, company_repo),
+        remove_ticker_from_theme=RemoveTickerFromThemeUseCase(theme_repo),
+        list_universe_themes=ListUniverseThemesUseCase(theme_repo),
+        get_theme_tickers=GetThemeTickersUseCase(theme_repo),
     )
 
 

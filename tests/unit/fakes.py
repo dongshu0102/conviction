@@ -403,3 +403,43 @@ class FakeFactorScoreRepository:
 
     def get_all(self) -> list:
         return list(self._scores.values())
+
+
+class FakeUniverseThemeRepository:
+    def __init__(self) -> None:
+        self._themes: dict[str, object] = {}
+        self._memberships: set[tuple[str, str]] = set()  # (theme_name, ticker)
+
+    def create(self, theme) -> None:
+        if theme.name not in self._themes:
+            self._themes[theme.name] = theme
+
+    def get(self, name: str):
+        return self._themes.get(name.strip())
+
+    def list_all(self) -> list:
+        from src.domain.entities.universe_theme import UniverseThemeSummary
+        return [
+            UniverseThemeSummary(
+                theme=theme,
+                member_count=sum(1 for (t, _) in self._memberships if t == name),
+            )
+            for name, theme in self._themes.items()
+        ]
+
+    def add_ticker(self, theme_name: str, ticker: str) -> None:
+        self._memberships.add((theme_name, ticker.strip().upper()))
+
+    def remove_ticker(self, theme_name: str, ticker: str) -> bool:
+        key = (theme_name, ticker.strip().upper())
+        if key in self._memberships:
+            self._memberships.discard(key)
+            return True
+        return False
+
+    def get_tickers(self, theme_name: str) -> list[str]:
+        return sorted(t for (name, t) in self._memberships if name == theme_name)
+
+    def get_themes_for_ticker(self, ticker: str) -> list[str]:
+        ticker = ticker.strip().upper()
+        return sorted(name for (name, t) in self._memberships if t == ticker)

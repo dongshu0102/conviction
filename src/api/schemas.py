@@ -305,6 +305,26 @@ class FactorRankingResponseSchema(BaseModel):
     results: list[RankedFactorScoreSchema]
 
 
+class UniverseThemeSchema(BaseModel):
+    name: str
+    description: str | None
+    created_at: datetime
+
+
+class UniverseThemeSummarySchema(BaseModel):
+    theme: UniverseThemeSchema
+    member_count: int
+
+
+class UniverseThemeListSchema(BaseModel):
+    themes: list[UniverseThemeSummarySchema]
+
+
+class ThemeTickersSchema(BaseModel):
+    theme_name: str
+    tickers: list[str]
+
+
 class TriageSignalsSchema(BaseModel):
     day_move_pct: float | None
     move_since_added_pct: float | None

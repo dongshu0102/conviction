@@ -60,6 +60,13 @@ from src.application.use_cases.manage_watchlist import (
     UpdateWatchlistItemUseCase,
 )
 from src.application.use_cases.get_factor_scores import GetFactorScoresUseCase
+from src.application.use_cases.manage_universe_theme import (
+    AddTickerToThemeUseCase,
+    CreateUniverseThemeUseCase,
+    GetThemeTickersUseCase,
+    ListUniverseThemesUseCase,
+    RemoveTickerFromThemeUseCase,
+)
 from src.application.use_cases.get_watchlist_news import GetWatchlistNewsUseCase
 from src.domain.entities.factor_scores import FactorWeights
 from src.application.use_cases.triage_watchlist import TriageWatchlistUseCase
@@ -113,7 +120,15 @@ was unavailable for this ticker, never that it scored exactly average — say \
 so explicitly rather than omitting it. The snapshot refreshes at most once \
 every 24 hours (composite weights recompute instantly and freely; the \
 underlying universe scores do not), so mention the as_of timestamp if the \
-user asks how current the ranking is."""
+user asks how current the ranking is.
+
+Universe themes (create_universe_theme, add/remove_ticker_to/from_theme, \
+list_universe_themes, get_theme_tickers) are GLOBAL — shared across every \
+user, not personal to whoever is chatting. Treat creating or editing a theme \
+as a shared, durable change, not a private preference; if the request seems \
+like it's meant to be personal, a watchlist is very likely the better fit — \
+ask if unsure. A theme can only contain tickers that are already ingested; \
+ETFs and other non-company instruments are not supported yet."""
 
 _TOOLS = [
     ToolDefinition(
@@ -213,11 +228,17 @@ _TOOLS = [
         "Growth/Momentum/Size, weighted). Returns the top N tickers. Same "
         "weighting rules as get_factor_scores. Use this for 'what are the best "
         "value stocks right now' or 'top momentum names' style questions — it "
-        "is a live cross-sectional ranking, not a fixed screen.",
+        "is a live cross-sectional ranking, not a fixed screen. Optionally pass "
+        "theme_name to restrict results to a curated theme's tickers — note "
+        "this FILTERS the full-S&P-500 ranking down to that theme's members, "
+        "it does NOT re-standardize scores against just the theme, so a "
+        "z-score still reflects standing against the whole universe, not just "
+        "the theme; say so if asked.",
         {
             "type": "object",
             "properties": {
                 "top_n": {"type": "integer"},
+                "theme_name": {"type": "string"},
                 "weight_value": {"type": "number"},
                 "weight_quality": {"type": "number"},
                 "weight_growth": {"type": "number"},
@@ -225,6 +246,49 @@ _TOOLS = [
                 "weight_size": {"type": "number"},
             },
         },
+    ),
+    ToolDefinition(
+        "create_universe_theme",
+        "Create a new global curated theme (e.g. 'AI Infrastructure', 'China', "
+        "'Fintech') that companies can be tagged into. Themes are shared across "
+        "all users — a system-wide taxonomy, not a personal list. Idempotent: "
+        "creating an existing theme name is a no-op.",
+        {
+            "type": "object",
+            "properties": {"name": {"type": "string"}, "description": {"type": "string"}},
+            "required": ["name"],
+        },
+    ),
+    ToolDefinition(
+        "add_ticker_to_theme",
+        "Tag a ticker into a theme. A ticker can belong to multiple themes at "
+        "once (e.g. NVDA can be in both 'AI Infrastructure' and "
+        "'Semiconductors'). The ticker must already be ingested, and the theme "
+        "must already exist.",
+        {
+            "type": "object",
+            "properties": {"theme_name": {"type": "string"}, "ticker": {"type": "string"}},
+            "required": ["theme_name", "ticker"],
+        },
+    ),
+    ToolDefinition(
+        "remove_ticker_from_theme",
+        "Untag a ticker from one theme (does not affect its other themes).",
+        {
+            "type": "object",
+            "properties": {"theme_name": {"type": "string"}, "ticker": {"type": "string"}},
+            "required": ["theme_name", "ticker"],
+        },
+    ),
+    ToolDefinition(
+        "list_universe_themes",
+        "List every curated theme with its member count.",
+        {"type": "object", "properties": {}},
+    ),
+    ToolDefinition(
+        "get_theme_tickers",
+        "Get every ticker tagged into a given theme.",
+        {"type": "object", "properties": {"theme_name": {"type": "string"}}, "required": ["theme_name"]},
     ),
     ToolDefinition(
         "get_stock_news",
@@ -491,6 +555,11 @@ class ChatWithAgentUseCase:
         triage_watchlist: TriageWatchlistUseCase,
         get_watchlist_news: GetWatchlistNewsUseCase,
         get_factor_scores: GetFactorScoresUseCase,
+        create_universe_theme: CreateUniverseThemeUseCase,
+        add_ticker_to_theme: AddTickerToThemeUseCase,
+        remove_ticker_from_theme: RemoveTickerFromThemeUseCase,
+        list_universe_themes: ListUniverseThemesUseCase,
+        get_theme_tickers: GetThemeTickersUseCase,
     ) -> None:
         self._chat_agent = chat_agent
         self._get_watchlist = get_watchlist
@@ -519,6 +588,11 @@ class ChatWithAgentUseCase:
         self._triage_watchlist = triage_watchlist
         self._get_watchlist_news = get_watchlist_news
         self._get_factor_scores = get_factor_scores
+        self._create_universe_theme = create_universe_theme
+        self._add_ticker_to_theme = add_ticker_to_theme
+        self._remove_ticker_from_theme = remove_ticker_from_theme
+        self._list_universe_themes = list_universe_themes
+        self._get_theme_tickers = get_theme_tickers
         self._user_id: str = ""  # set per-request in execute()
 
     def execute(self, user_id: str, message: str, history: list[ChatMessage]) -> str:
@@ -678,8 +752,60 @@ class ChatWithAgentUseCase:
                 return {"scoring_note": note, "result": _serialize(ranked)}
 
             top_n = tool_input.get("top_n", 10)
-            results = self._get_factor_scores.execute(weights)[:top_n]
+            all_ranked = self._get_factor_scores.execute(weights)
+            theme_name = tool_input.get("theme_name")
+            if theme_name:
+                try:
+                    theme_tickers = set(self._get_theme_tickers.execute(theme_name))
+                except Exception as exc:
+                    return {"error": str(exc)}
+                all_ranked = [r for r in all_ranked if r.ticker in theme_tickers]
+            results = all_ranked[:top_n]
             return {"scoring_note": note, "results": [_serialize(r) for r in results]}
+
+        if tool_name == "create_universe_theme":
+            theme = self._create_universe_theme.execute(
+                tool_input["name"], tool_input.get("description")
+            )
+            return {"name": theme.name, "description": theme.description, "status": "created"}
+
+        if tool_name == "add_ticker_to_theme":
+            try:
+                self._add_ticker_to_theme.execute(tool_input["theme_name"], tool_input["ticker"])
+                return {
+                    "theme_name": tool_input["theme_name"],
+                    "ticker": tool_input["ticker"].strip().upper(),
+                    "status": "added",
+                }
+            except Exception as exc:
+                return {"error": str(exc)}
+
+        if tool_name == "remove_ticker_from_theme":
+            removed = self._remove_ticker_from_theme.execute(
+                tool_input["theme_name"], tool_input["ticker"]
+            )
+            if not removed:
+                return {
+                    "error": f"'{tool_input['ticker']}' was not tagged into "
+                    f"'{tool_input['theme_name']}'."
+                }
+            return {"status": "removed"}
+
+        if tool_name == "list_universe_themes":
+            summaries = self._list_universe_themes.execute()
+            return {
+                "themes": [
+                    {"name": s.theme.name, "description": s.theme.description, "member_count": s.member_count}
+                    for s in summaries
+                ]
+            }
+
+        if tool_name == "get_theme_tickers":
+            try:
+                tickers = self._get_theme_tickers.execute(tool_input["theme_name"])
+                return {"theme_name": tool_input["theme_name"], "tickers": tickers}
+            except Exception as exc:
+                return {"error": str(exc)}
 
         if tool_name == "get_stock_news":
             ticker = tool_input.get("ticker")
