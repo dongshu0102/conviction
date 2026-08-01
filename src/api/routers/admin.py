@@ -20,9 +20,30 @@ to see whether it actually finished.
 from __future__ import annotations
 
 import logging
+import threading
 
 from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy import select
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/admin", tags=["admin"])
+
+# Confirmed in production: nothing stopped repeated POSTs from stacking
+# multiple concurrent refreshes against the same 506 tickers — three in
+# a row within a few minutes, each firing its own full pass of API
+# calls. Wasteful (3x calls for one outcome) and actively counter-
+# productive (more concurrent load = more 429s, the exact problem the
+# retry logic exists to survive, not multiply). This lock refuses a
+# second trigger while one is already running instead of silently
+# stacking work.
+#
+# SCOPE: in-memory, so it only coordinates within a single running
+# container. If this service ever scales to multiple instances, this
+# stops being sufficient and a distributed lock (e.g. a DB-backed flag)
+# would be needed instead — acceptable for now given this is a
+# single-instance admin tool, not something to leave unexamined if that
+# ever changes.
+_refresh_lock = threading.Lock()
 
 from src.infrastructure.persistence.database import session_scope
 from src.infrastructure.persistence.models import CompanyModel, IncomeStatementModel
@@ -41,9 +62,6 @@ from src.infrastructure.persistence.factor_score_repository_impl import (
     SqlAlchemyFactorScoreRepository,
 )
 
-logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/admin", tags=["admin"])
-
 
 def _run_factor_snapshot_refresh(
     provider: FinancialModelingPrepProvider,
@@ -56,24 +74,30 @@ def _run_factor_snapshot_refresh(
     never to the caller, which is the correct tradeoff for a job this
     long-running; a caller waiting on the HTTP response for the
     real-time result would just time out instead."""
-    factor_repo = SqlAlchemyFactorScoreRepository()
-    use_case = ComputeUniverseFactorSnapshotUseCase(
-        provider, valuation_use_case, analysis_use_case, factor_repo
-    )
-    # Same default as scripts/refresh_factor_snapshot.py: use already-
-    # ingested tickers rather than the data provider's live S&P 500
-    # constituents endpoint, which sits behind its own plan entitlement
-    # separate from ordinary fundamentals access.
-    tickers = [c.ticker for c in company_repo.list_all()]
-    logger.info("Admin-triggered factor snapshot refresh starting: %d tickers", len(tickers))
     try:
-        result = use_case.execute(tickers=tickers)
-        logger.info(
-            "Admin-triggered factor snapshot refresh complete: %d/%d scored, %d failed",
-            result.succeeded, result.total_tickers, len(result.failed),
+        factor_repo = SqlAlchemyFactorScoreRepository()
+        use_case = ComputeUniverseFactorSnapshotUseCase(
+            provider, valuation_use_case, analysis_use_case, factor_repo
         )
-    except Exception:
-        logger.exception("Admin-triggered factor snapshot refresh failed")
+        # Same default as scripts/refresh_factor_snapshot.py: use
+        # already-ingested tickers rather than the data provider's live
+        # S&P 500 constituents endpoint, which sits behind its own plan
+        # entitlement separate from ordinary fundamentals access.
+        tickers = [c.ticker for c in company_repo.list_all()]
+        logger.info("Admin-triggered factor snapshot refresh starting: %d tickers", len(tickers))
+        try:
+            result = use_case.execute(tickers=tickers)
+            logger.info(
+                "Admin-triggered factor snapshot refresh complete: %d/%d scored, %d failed",
+                result.succeeded, result.total_tickers, len(result.failed),
+            )
+        except Exception:
+            logger.exception("Admin-triggered factor snapshot refresh failed")
+    finally:
+        # Always release, even on failure — a permanently-stuck lock
+        # from one crashed run would be worse than the stacking problem
+        # this exists to prevent.
+        _refresh_lock.release()
 
 
 @router.post("/refresh-factor-snapshot")
@@ -85,6 +109,21 @@ def refresh_factor_snapshot(
     analysis_use_case: ComputeFinancialAnalysisUseCase = Depends(get_analysis_use_case),
     company_repo: SqlAlchemyCompanyRepository = Depends(get_company_repository),
 ) -> dict[str, str]:
+    # Non-blocking acquire: if a refresh is already running, refuse
+    # rather than stack a second one — confirmed in production that
+    # nothing previously stopped three concurrent refreshes from firing
+    # within a few minutes of each other, tripling API load against
+    # the same 506 tickers for no benefit.
+    if not _refresh_lock.acquire(blocking=False):
+        return {
+            "status": "already_running",
+            "message": (
+                "A factor snapshot refresh is already in progress. Wait for "
+                "it to finish rather than starting another — check server "
+                "logs for 'refresh complete', or query "
+                "GET /companies/{ticker}/factor-score once it's done."
+            ),
+        }
     background_tasks.add_task(
         _run_factor_snapshot_refresh, provider, valuation_use_case, analysis_use_case, company_repo
     )
