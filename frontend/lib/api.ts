@@ -149,6 +149,132 @@ export interface CompanyValuation {
   price: number;
 }
 
+// --- Factor scoring ---------------------------------------------------------
+
+export interface FactorRawMetrics {
+  price_to_earnings: number | null;
+  return_on_equity: number | null;
+  revenue_growth_yoy: number | null;
+  momentum_1m_pct: number | null;
+  market_cap: number | null;
+}
+
+export interface RankedFactorScore {
+  ticker: string;
+  as_of: string;
+  composite_score: number | null;
+  factors_used: number;
+  value_z: number | null;
+  quality_z: number | null;
+  growth_z: number | null;
+  momentum_z: number | null;
+  size_z: number | null;
+  raw: FactorRawMetrics;
+}
+
+export interface FactorScoreResponse {
+  scoring_note: string;
+  result: RankedFactorScore;
+}
+
+export interface FactorRankingResponse {
+  scoring_note: string;
+  results: RankedFactorScore[];
+}
+
+export interface FactorWeights {
+  weight_value?: number;
+  weight_quality?: number;
+  weight_growth?: number;
+  weight_momentum?: number;
+  weight_size?: number;
+}
+
+function weightsToQuery(w?: FactorWeights): URLSearchParams {
+  const params = new URLSearchParams();
+  if (!w) return params;
+  if (w.weight_value !== undefined) params.set("weight_value", String(w.weight_value));
+  if (w.weight_quality !== undefined) params.set("weight_quality", String(w.weight_quality));
+  if (w.weight_growth !== undefined) params.set("weight_growth", String(w.weight_growth));
+  if (w.weight_momentum !== undefined) params.set("weight_momentum", String(w.weight_momentum));
+  if (w.weight_size !== undefined) params.set("weight_size", String(w.weight_size));
+  return params;
+}
+
+// --- Universe themes ---------------------------------------------------------
+
+export interface UniverseTheme {
+  name: string;
+  description: string | null;
+  created_at: string;
+}
+
+export interface UniverseThemeSummary {
+  theme: UniverseTheme;
+  member_count: number;
+}
+
+export interface ThemeSynthesisReport {
+  theme_name: string;
+  generated_at: string;
+  tickers_covered: string[];
+  tickers_excluded: string[];
+  overview: string;
+  common_threads: string;
+  notable_divergences: string;
+  key_risks: string;
+  model_used: string;
+}
+
+// --- Risk parity construction ------------------------------------------------
+
+export interface RiskParityAllocation {
+  ticker: string;
+  daily_volatility: number;
+  target_weight: number;
+  target_dollar_amount: number;
+  current_price: number;
+  suggested_shares: number;
+}
+
+export interface RiskParityConstructionResponse {
+  as_of: string;
+  total_investment: number;
+  allocations: RiskParityAllocation[];
+  excluded: string[];
+  methodology_note: string;
+}
+
+// --- Portfolio risk analysis (volatility/correlation/VaR) -------------------
+
+export interface SectorExposure {
+  sector: string;
+  weight: number;
+}
+
+export interface PairwiseCorrelation {
+  ticker_a: string;
+  ticker_b: string;
+  correlation: number;
+}
+
+export interface PortfolioRiskAnalysis {
+  portfolio_id: string;
+  as_of: string;
+  largest_position_weight: number | null;
+  herfindahl_index: number | null;
+  sector_exposures: SectorExposure[];
+  weighted_avg_debt_to_equity: number | null;
+  excluded_from_leverage_calc: string[];
+  portfolio_daily_volatility: number | null;
+  portfolio_annualized_volatility: number | null;
+  parametric_var_95_1day_dollar: number | null;
+  volatility_covered_weight: number | null;
+  volatility_lookback_days_used: number | null;
+  pairwise_correlations: PairwiseCorrelation[];
+  excluded_from_volatility_calc: string[];
+}
+
 export const api = {
   createApiKey: (userId: string, name: string) =>
     request<{ plaintext_key: string }>(
@@ -165,6 +291,8 @@ export const api = {
     request<Portfolio>(`/portfolios?name=${encodeURIComponent(name)}`, { method: "POST" }),
   getPortfolioValuation: (id: string) =>
     request<PortfolioValuation>(`/portfolios/${id}/valuation`),
+  getPortfolioRisk: (id: string) =>
+    request<PortfolioRiskAnalysis>(`/portfolios/${id}/risk`),
   addHolding: (portfolioId: string, ticker: string, shares: number, costBasisPerShare: number) =>
     request(
       `/portfolios/${portfolioId}/holdings/${encodeURIComponent(ticker.toUpperCase())}` +
@@ -183,4 +311,48 @@ export const api = {
   },
   getCompanyValuation: (ticker: string) =>
     request<CompanyValuation>(`/companies/${ticker}/valuation`),
+
+  // Factor scoring
+  getFactorScore: (ticker: string, weights?: FactorWeights) =>
+    request<FactorScoreResponse>(
+      `/companies/${ticker}/factor-score?${weightsToQuery(weights).toString()}`
+    ),
+  getFactorRankings: (topN = 25, weights?: FactorWeights) => {
+    const params = weightsToQuery(weights);
+    params.set("top_n", String(topN));
+    return request<FactorRankingResponse>(`/companies/factor-rankings?${params.toString()}`);
+  },
+
+  // Universe themes
+  listThemes: () => request<{ themes: UniverseThemeSummary[] }>("/universe/themes"),
+  createTheme: (name: string, description?: string) =>
+    request<UniverseTheme>(
+      `/universe/themes/${encodeURIComponent(name)}${description ? `?description=${encodeURIComponent(description)}` : ""}`,
+      { method: "POST" }
+    ),
+  getThemeTickers: (name: string) =>
+    request<{ theme_name: string; tickers: string[] }>(
+      `/universe/themes/${encodeURIComponent(name)}/tickers`
+    ),
+  addTickerToTheme: (name: string, ticker: string) =>
+    request(`/universe/themes/${encodeURIComponent(name)}/tickers/${ticker.toUpperCase()}`, {
+      method: "POST",
+    }),
+  removeTickerFromTheme: (name: string, ticker: string) =>
+    request(`/universe/themes/${encodeURIComponent(name)}/tickers/${ticker.toUpperCase()}`, {
+      method: "DELETE",
+    }),
+  generateThemeSynthesis: (name: string) =>
+    request<ThemeSynthesisReport>(`/universe/themes/${encodeURIComponent(name)}/synthesis`, {
+      method: "POST",
+    }),
+
+  // Risk parity construction
+  constructRiskParity: (tickers: string[], totalInvestment: number) =>
+    request<RiskParityConstructionResponse>(
+      `/portfolios/construct-risk-parity?${new URLSearchParams({
+        total_investment: String(totalInvestment),
+      }).toString()}&${tickers.map((t) => `tickers=${encodeURIComponent(t.toUpperCase())}`).join("&")}`,
+      { method: "POST" }
+    ),
 };

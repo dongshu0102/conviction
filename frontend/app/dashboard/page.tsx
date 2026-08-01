@@ -111,6 +111,9 @@ export default function DashboardPage() {
           <Link href="/terminal" className="num" style={{ color: "var(--accent)", fontSize: "0.85rem" }}>
             Terminal
           </Link>
+          <Link href="/universe" className="num" style={{ color: "var(--accent)", fontSize: "0.85rem" }}>
+            Universe
+          </Link>
           <button
             onClick={logout}
             className="num"
