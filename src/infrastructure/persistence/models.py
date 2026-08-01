@@ -115,6 +115,9 @@ class PortfolioModel(Base):
     holdings: Mapped[list["PortfolioHoldingModel"]] = relationship(
         back_populates="portfolio", cascade="all, delete-orphan"
     )
+    option_holdings: Mapped[list["OptionHoldingModel"]] = relationship(
+        back_populates="portfolio", cascade="all, delete-orphan"
+    )
 
 
 class PortfolioHoldingModel(Base):
@@ -133,6 +136,34 @@ class PortfolioHoldingModel(Base):
     acquired_at: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     portfolio: Mapped["PortfolioModel"] = relationship(back_populates="holdings")
+
+
+class OptionHoldingModel(Base):
+    __tablename__ = "option_holdings"
+    __table_args__ = (
+        UniqueConstraint(
+            "portfolio_id", "underlying_ticker", "strike", "expiration", "option_type",
+            name="uq_option_holding_contract",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    portfolio_id: Mapped[str] = mapped_column(
+        ForeignKey("portfolios.portfolio_id"), nullable=False, index=True
+    )
+    # Not a ForeignKey to companies.ticker like stock holdings — options
+    # can exist on indices/ETFs that aren't in our ingested company
+    # universe, and the underlying doesn't need to be "known" to us for
+    # us to track a position in an option on it.
+    underlying_ticker: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    strike: Mapped[float] = mapped_column(Float, nullable=False)
+    expiration: Mapped[date] = mapped_column(Date, nullable=False)
+    option_type: Mapped[str] = mapped_column(String(4), nullable=False)  # "call" or "put"
+    contracts_held: Mapped[int] = mapped_column(Integer, nullable=False)
+    cost_basis_per_contract: Mapped[float] = mapped_column(Float, nullable=False)
+    acquired_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    portfolio: Mapped["PortfolioModel"] = relationship(back_populates="option_holdings")
 
 
 class WatchlistItemModel(Base):

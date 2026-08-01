@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-sonnet-5"
     anthropic_max_tokens: int = 2000
 
+    # -- MarketData.app (options data) --
+    marketdata_api_key: str = ""
+
     # -- App --
     environment: str = "development"
     log_level: str = "INFO"

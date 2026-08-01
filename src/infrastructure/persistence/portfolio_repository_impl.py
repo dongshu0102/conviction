@@ -2,10 +2,15 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
+from src.domain.entities.option import OptionContract, OptionHolding
 from src.domain.entities.portfolio import Portfolio, PortfolioHolding
 from src.domain.repositories.portfolio_repository import PortfolioRepository
 from src.infrastructure.persistence.database import session_scope
-from src.infrastructure.persistence.models import PortfolioHoldingModel, PortfolioModel
+from src.infrastructure.persistence.models import (
+    OptionHoldingModel,
+    PortfolioHoldingModel,
+    PortfolioModel,
+)
 
 
 def _holding_to_domain(row: PortfolioHoldingModel) -> PortfolioHolding:
@@ -17,6 +22,20 @@ def _holding_to_domain(row: PortfolioHoldingModel) -> PortfolioHolding:
     )
 
 
+def _option_holding_to_domain(row: OptionHoldingModel) -> OptionHolding:
+    return OptionHolding(
+        contract=OptionContract(
+            underlying_ticker=row.underlying_ticker,
+            strike=row.strike,
+            expiration=row.expiration,
+            option_type=row.option_type,
+        ),
+        contracts_held=row.contracts_held,
+        cost_basis_per_contract=row.cost_basis_per_contract,
+        acquired_at=row.acquired_at,
+    )
+
+
 def _portfolio_to_domain(row: PortfolioModel, include_holdings: bool) -> Portfolio:
     return Portfolio(
         portfolio_id=row.portfolio_id,
@@ -24,6 +43,11 @@ def _portfolio_to_domain(row: PortfolioModel, include_holdings: bool) -> Portfol
         name=row.name,
         created_at=row.created_at,
         holdings=[_holding_to_domain(h) for h in row.holdings] if include_holdings else [],
+        option_holdings=(
+            [_option_holding_to_domain(h) for h in row.option_holdings]
+            if include_holdings
+            else []
+        ),
     )
 
 
@@ -89,6 +113,53 @@ class SqlAlchemyPortfolioRepository(PortfolioRepository):
                 select(PortfolioHoldingModel).where(
                     PortfolioHoldingModel.portfolio_id == portfolio_id,
                     PortfolioHoldingModel.ticker == ticker,
+                )
+            ).scalar_one_or_none()
+            if existing is None:
+                return False
+            session.delete(existing)
+            return True
+
+    def upsert_option_holding(self, portfolio_id: str, holding: OptionHolding) -> None:
+        with session_scope() as session:
+            c = holding.contract
+            existing = session.execute(
+                select(OptionHoldingModel).where(
+                    OptionHoldingModel.portfolio_id == portfolio_id,
+                    OptionHoldingModel.underlying_ticker == c.underlying_ticker,
+                    OptionHoldingModel.strike == c.strike,
+                    OptionHoldingModel.expiration == c.expiration,
+                    OptionHoldingModel.option_type == c.option_type,
+                )
+            ).scalar_one_or_none()
+
+            if existing is None:
+                session.add(
+                    OptionHoldingModel(
+                        portfolio_id=portfolio_id,
+                        underlying_ticker=c.underlying_ticker,
+                        strike=c.strike,
+                        expiration=c.expiration,
+                        option_type=c.option_type,
+                        contracts_held=holding.contracts_held,
+                        cost_basis_per_contract=holding.cost_basis_per_contract,
+                        acquired_at=holding.acquired_at,
+                    )
+                )
+            else:
+                existing.contracts_held = holding.contracts_held
+                existing.cost_basis_per_contract = holding.cost_basis_per_contract
+                existing.acquired_at = holding.acquired_at
+
+    def remove_option_holding(self, portfolio_id: str, contract: OptionContract) -> bool:
+        with session_scope() as session:
+            existing = session.execute(
+                select(OptionHoldingModel).where(
+                    OptionHoldingModel.portfolio_id == portfolio_id,
+                    OptionHoldingModel.underlying_ticker == contract.underlying_ticker,
+                    OptionHoldingModel.strike == contract.strike,
+                    OptionHoldingModel.expiration == contract.expiration,
+                    OptionHoldingModel.option_type == contract.option_type,
                 )
             ).scalar_one_or_none()
             if existing is None:

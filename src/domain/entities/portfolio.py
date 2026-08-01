@@ -20,6 +20,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
+from src.domain.entities.option import OptionHolding
+
 
 @dataclass(frozen=True, slots=True)
 class PortfolioHolding:
@@ -43,6 +45,12 @@ class Portfolio:
     name: str
     created_at: datetime
     holdings: list[PortfolioHolding] = field(default_factory=list)
+    # Additive extension, not a rewrite — every existing use case
+    # (valuation, risk, rebalancing) continues to only look at
+    # `holdings` unless explicitly extended to consider options too.
+    # A portfolio with zero option_holdings behaves exactly as it did
+    # before this field existed.
+    option_holdings: list[OptionHolding] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not self.name or not self.name.strip():

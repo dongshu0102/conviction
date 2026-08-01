@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
+from src.domain.entities.option import OptionContract, OptionHolding
 from src.domain.entities.portfolio import Portfolio, PortfolioHolding
 
 
@@ -31,3 +32,12 @@ class PortfolioRepository(ABC):
 
     @abstractmethod
     def remove_holding(self, portfolio_id: str, ticker: str) -> bool: ...
+
+    @abstractmethod
+    def upsert_option_holding(self, portfolio_id: str, holding: OptionHolding) -> None:
+        """Same state-not-transaction-log principle as upsert_holding,
+        keyed by the full contract (underlying + strike + expiration +
+        type) rather than just a ticker."""
+
+    @abstractmethod
+    def remove_option_holding(self, portfolio_id: str, contract: OptionContract) -> bool: ...

@@ -270,6 +270,52 @@ class FakePortfolioRepository:
         self._portfolios[portfolio_id] = replace(portfolio, holdings=remaining)
         return removed
 
+    def _same_contract(self, a, b) -> bool:
+        return (
+            a.underlying_ticker == b.underlying_ticker
+            and a.strike == b.strike
+            and a.expiration == b.expiration
+            and a.option_type == b.option_type
+        )
+
+    def upsert_option_holding(self, portfolio_id: str, holding) -> None:
+        from dataclasses import replace
+
+        portfolio = self._portfolios[portfolio_id]
+        remaining = [
+            h for h in portfolio.option_holdings
+            if not self._same_contract(h.contract, holding.contract)
+        ]
+        self._portfolios[portfolio_id] = replace(
+            portfolio, option_holdings=remaining + [holding]
+        )
+
+    def remove_option_holding(self, portfolio_id: str, contract) -> bool:
+        from dataclasses import replace
+
+        portfolio = self._portfolios[portfolio_id]
+        remaining = [
+            h for h in portfolio.option_holdings if not self._same_contract(h.contract, contract)
+        ]
+        removed = len(remaining) != len(portfolio.option_holdings)
+        self._portfolios[portfolio_id] = replace(portfolio, option_holdings=remaining)
+        return removed
+
+
+class FakeOptionsDataProvider:
+    def __init__(self, quotes: dict | None = None) -> None:
+        # keyed by (underlying_ticker, strike, expiration, option_type)
+        self._quotes = quotes or {}
+
+    def _key(self, contract):
+        return (contract.underlying_ticker, contract.strike, contract.expiration, contract.option_type)
+
+    def get_option_chain(self, underlying_ticker: str, expiration=None) -> list:
+        return [q for k, q in self._quotes.items() if k[0] == underlying_ticker]
+
+    def get_option_quote(self, contract):
+        return self._quotes.get(self._key(contract))
+
 
 class FakePriceSnapshotRepository:
     def __init__(self) -> None:
