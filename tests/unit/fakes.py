@@ -384,3 +384,22 @@ class FakeBriefGenerator:
         self.received_portfolio_summaries = portfolio_summaries
         self.received_alert_count = unread_alert_count
         return BriefGenerationResult(narrative=self._narrative, model_used="fake-model")
+
+
+class FakeFactorScoreRepository:
+    def __init__(self) -> None:
+        self._scores: dict[str, object] = {}
+        self._latest_as_of = None
+
+    def save_batch(self, scores: list) -> None:
+        self._scores = {s.ticker: s for s in scores}
+        self._latest_as_of = scores[0].as_of if scores else None
+
+    def get_latest_as_of(self):
+        return self._latest_as_of
+
+    def get(self, ticker: str):
+        return self._scores.get(ticker.strip().upper())
+
+    def get_all(self) -> list:
+        return list(self._scores.values())

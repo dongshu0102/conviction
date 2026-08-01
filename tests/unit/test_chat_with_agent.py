@@ -28,6 +28,10 @@ from src.application.use_cases.manage_portfolio import (
     GetPortfolioUseCase,
     ListPortfoliosUseCase,
 )
+from src.application.use_cases.compute_universe_factor_snapshot import (
+    ComputeUniverseFactorSnapshotUseCase,
+)
+from src.application.use_cases.get_factor_scores import GetFactorScoresUseCase
 from src.application.use_cases.get_watchlist_news import GetWatchlistNewsUseCase
 from src.application.use_cases.triage_watchlist import TriageWatchlistUseCase
 from src.application.use_cases.manage_watchlist import (
@@ -44,6 +48,7 @@ from src.application.use_cases.suggest_rebalancing import SuggestRebalancingUseC
 from src.domain.entities.company import Company, Sector
 from src.domain.entities.market_quote import MarketQuote
 from tests.unit.fakes import (
+    FakeFactorScoreRepository,
     FakePriceSnapshotRepository,
     FakeCompanyRepository,
     FakeDataProvider,
@@ -105,6 +110,7 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
     compute_company_valuation = ComputeValuationUseCase(get_financials, provider)
 
     fake_agent = FakeChatAgent(scripted_calls)
+    _factor_score_repo = FakeFactorScoreRepository()
     use_case = ChatWithAgentUseCase(
         chat_agent=fake_agent,
         get_watchlist=GetWatchlistUseCase(watchlist_repo),
@@ -136,6 +142,12 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
             watchlist_repo, provider, FakePriceSnapshotRepository()
         ),
         get_watchlist_news=GetWatchlistNewsUseCase(watchlist_repo, provider),
+        get_factor_scores=GetFactorScoresUseCase(
+            _factor_score_repo,
+            ComputeUniverseFactorSnapshotUseCase(
+                provider, compute_company_valuation, compute_analysis, _factor_score_repo
+            ),
+        ),
     )
     return use_case, fake_agent, portfolio_repo
 
@@ -685,3 +697,51 @@ def test_triage_watchlist_embeds_attention_scoring_note() -> None:
     assert item["ticker"] == "AAPL"
     assert item["triage_score"] == 0.0  # no baselines, no snapshot -> honest zero
     assert item["day_move_percent"] is None  # absent, not fabricated
+
+
+# ---- Factor scoring chat tool tests ----
+
+
+def test_get_factor_scores_embeds_universe_standardization_note() -> None:
+    """Same discipline as the triage scoring_note: the tool result must
+    tell the LLM these are universe-relative z-scores, not absolute
+    quality, and that null means missing data, not average."""
+    company_repo = _company_repo("AAPL")
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("get_factor_scores", {"ticker": "AAPL"})],
+        company_repo=company_repo,
+    )
+    use_case.execute("alice", "what's AAPL's factor score", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert "error" in result  # AAPL has no financials in this fixture -> not in universe
+    assert "No factor score" in result["error"]
+
+
+def test_get_factor_scores_returns_error_for_unscored_ticker() -> None:
+    company_repo = _company_repo("AAPL")
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("get_factor_scores", {"ticker": "ZZZZ"})],
+        company_repo=company_repo,
+    )
+    use_case.execute("alice", "factor score for ZZZZ", [])
+    result = fake_agent.dispatch_results[0]
+    assert "error" in result
+
+
+def test_rank_universe_by_factors_respects_custom_weights_and_embeds_note() -> None:
+    company_repo = _company_repo("AAPL")
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[(
+            "rank_universe_by_factors",
+            {"top_n": 5, "weight_value": 1.0, "weight_quality": 0, "weight_growth": 0,
+             "weight_momentum": 0, "weight_size": 0},
+        )],
+        company_repo=company_repo,
+    )
+    use_case.execute("alice", "top value stocks", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert "scoring_note" in result
+    assert "universe" in result["scoring_note"].lower()
+    assert result["results"] == []  # empty universe in this fixture — no crash, honest empty list

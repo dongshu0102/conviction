@@ -261,3 +261,33 @@ class CashFlowStatementModel(Base):
     raw: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     company: Mapped["CompanyModel"] = relationship(back_populates="cash_flow_statements")
+
+
+class FactorScoreModel(Base):
+    """Latest-only cache: one row per ticker, overwritten on each
+    universe refresh (same pattern as PriceSnapshotModel's
+    get_latest/save). as_of is duplicated across every row in a batch
+    so staleness can be read from any single row without a separate
+    metadata table — the batch's freshness is queried as
+    MAX(as_of) or, equivalently since all rows share one value,
+    any row's as_of.
+    """
+
+    __tablename__ = "factor_scores"
+
+    ticker: Mapped[str] = mapped_column(
+        ForeignKey("companies.ticker"), primary_key=True
+    )
+    as_of: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+
+    price_to_earnings: Mapped[float | None] = mapped_column(Float, nullable=True)
+    return_on_equity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    revenue_growth_yoy: Mapped[float | None] = mapped_column(Float, nullable=True)
+    momentum_1m_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    market_cap: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    value_z: Mapped[float | None] = mapped_column(Float, nullable=True)
+    quality_z: Mapped[float | None] = mapped_column(Float, nullable=True)
+    growth_z: Mapped[float | None] = mapped_column(Float, nullable=True)
+    momentum_z: Mapped[float | None] = mapped_column(Float, nullable=True)
+    size_z: Mapped[float | None] = mapped_column(Float, nullable=True)

@@ -7,6 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.api.schemas import (
     BalanceSheetSchema,
+    FactorRankingResponseSchema,
+    FactorRawMetricsSchema,
+    FactorScoreResponseSchema,
+    RankedFactorScoreSchema,
     CashFlowStatementSchema,
     CompanyFinancialAnalysisSchema,
     CompanyFinancialsSchema,
@@ -21,10 +25,14 @@ from src.application.interfaces.data_provider import DataProviderError
 from src.application.use_cases.compute_financial_analysis import (
     ComputeFinancialAnalysisUseCase,
 )
+from src.application.use_cases.compute_universe_factor_snapshot import (
+    ComputeUniverseFactorSnapshotUseCase,
+)
 from src.application.use_cases.compute_valuation import (
     ComputeValuationUseCase,
     NoFinancialDataError as NoValuationDataError,
 )
+from src.application.use_cases.get_factor_scores import GetFactorScoresUseCase
 from src.application.use_cases.get_company_financials import (
     CompanyNotFoundError,
     GetCompanyFinancialsUseCase,
@@ -32,9 +40,13 @@ from src.application.use_cases.get_company_financials import (
 from src.application.use_cases.ingest_company_data import IngestCompanyDataUseCase
 from src.domain.entities.financial_statement import Period
 from src.infrastructure.config import get_settings
+from src.domain.entities.factor_scores import FactorWeights
 from src.infrastructure.data_providers.fmp_provider import FinancialModelingPrepProvider
 from src.infrastructure.persistence.company_repository_impl import (
     SqlAlchemyCompanyRepository,
+)
+from src.infrastructure.persistence.factor_score_repository_impl import (
+    SqlAlchemyFactorScoreRepository,
 )
 from src.infrastructure.persistence.financial_statement_repository_impl import (
     SqlAlchemyFinancialStatementRepository,
@@ -87,6 +99,106 @@ def get_valuation_use_case(
     provider: FinancialModelingPrepProvider = Depends(get_data_provider),
 ) -> ComputeValuationUseCase:
     return ComputeValuationUseCase(get_financials, provider)
+
+
+def get_factor_score_use_case(
+    provider: FinancialModelingPrepProvider = Depends(get_data_provider),
+    valuation: ComputeValuationUseCase = Depends(get_valuation_use_case),
+    analysis: ComputeFinancialAnalysisUseCase = Depends(get_analysis_use_case),
+) -> GetFactorScoresUseCase:
+    factor_repo = SqlAlchemyFactorScoreRepository()
+    return GetFactorScoresUseCase(
+        factor_repo,
+        ComputeUniverseFactorSnapshotUseCase(provider, valuation, analysis, factor_repo),
+    )
+
+
+def _weights_from_query(
+    weight_value: float | None,
+    weight_quality: float | None,
+    weight_growth: float | None,
+    weight_momentum: float | None,
+    weight_size: float | None,
+) -> FactorWeights:
+    defaults = FactorWeights()
+    return FactorWeights(
+        value=weight_value if weight_value is not None else defaults.value,
+        quality=weight_quality if weight_quality is not None else defaults.quality,
+        growth=weight_growth if weight_growth is not None else defaults.growth,
+        momentum=weight_momentum if weight_momentum is not None else defaults.momentum,
+        size=weight_size if weight_size is not None else defaults.size,
+    )
+
+
+_FACTOR_SCORING_NOTE = (
+    "Every z-score is standardized against the S&P 500 universe at the same "
+    "point in time — positive always means 'more attractive than the "
+    "universe average' on that factor. A null z-score means the underlying "
+    "data was unavailable for this ticker, not that it scored exactly "
+    "average."
+)
+
+
+def _to_ranked_schema(ranked) -> RankedFactorScoreSchema:
+    return RankedFactorScoreSchema(
+        ticker=ranked.ticker,
+        as_of=ranked.score.as_of,
+        composite_score=ranked.composite_score,
+        factors_used=ranked.factors_used,
+        value_z=ranked.score.z_scores.value,
+        quality_z=ranked.score.z_scores.quality,
+        growth_z=ranked.score.z_scores.growth,
+        momentum_z=ranked.score.z_scores.momentum,
+        size_z=ranked.score.z_scores.size,
+        raw=FactorRawMetricsSchema(
+            price_to_earnings=ranked.score.raw.price_to_earnings,
+            return_on_equity=ranked.score.raw.return_on_equity,
+            revenue_growth_yoy=ranked.score.raw.revenue_growth_yoy,
+            momentum_1m_pct=ranked.score.raw.momentum_1m_pct,
+            market_cap=ranked.score.raw.market_cap,
+        ),
+    )
+
+
+@router.get("/{ticker}/factor-score", response_model=FactorScoreResponseSchema)
+def get_factor_score(
+    ticker: str,
+    weight_value: float | None = Query(default=None),
+    weight_quality: float | None = Query(default=None),
+    weight_growth: float | None = Query(default=None),
+    weight_momentum: float | None = Query(default=None),
+    weight_size: float | None = Query(default=None),
+    use_case: GetFactorScoresUseCase = Depends(get_factor_score_use_case),
+) -> FactorScoreResponseSchema:
+    weights = _weights_from_query(
+        weight_value, weight_quality, weight_growth, weight_momentum, weight_size
+    )
+    ranked = use_case.execute_for_ticker(ticker, weights)
+    if ranked is None:
+        raise HTTPException(
+            status_code=404, detail=f"No factor score available for '{ticker.upper()}'."
+        )
+    return FactorScoreResponseSchema(scoring_note=_FACTOR_SCORING_NOTE, result=_to_ranked_schema(ranked))
+
+
+@router.get("/factor-rankings", response_model=FactorRankingResponseSchema)
+def rank_by_factors(
+    top_n: int = Query(default=25, ge=1, le=503),
+    weight_value: float | None = Query(default=None),
+    weight_quality: float | None = Query(default=None),
+    weight_growth: float | None = Query(default=None),
+    weight_momentum: float | None = Query(default=None),
+    weight_size: float | None = Query(default=None),
+    use_case: GetFactorScoresUseCase = Depends(get_factor_score_use_case),
+) -> FactorRankingResponseSchema:
+    weights = _weights_from_query(
+        weight_value, weight_quality, weight_growth, weight_momentum, weight_size
+    )
+    results = use_case.execute(weights)[:top_n]
+    return FactorRankingResponseSchema(
+        scoring_note=_FACTOR_SCORING_NOTE,
+        results=[_to_ranked_schema(r) for r in results],
+    )
 
 
 # --- Routes --------------------------------------------------------------

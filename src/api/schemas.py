@@ -274,6 +274,37 @@ class WatchlistItemSchema(BaseModel):
     added_pe: float | None = None
 
 
+class FactorRawMetricsSchema(BaseModel):
+    price_to_earnings: float | None
+    return_on_equity: float | None
+    revenue_growth_yoy: float | None
+    momentum_1m_pct: float | None
+    market_cap: float | None
+
+
+class RankedFactorScoreSchema(BaseModel):
+    ticker: str
+    as_of: datetime
+    composite_score: float | None
+    factors_used: int
+    value_z: float | None
+    quality_z: float | None
+    growth_z: float | None
+    momentum_z: float | None
+    size_z: float | None
+    raw: FactorRawMetricsSchema
+
+
+class FactorScoreResponseSchema(BaseModel):
+    scoring_note: str
+    result: RankedFactorScoreSchema
+
+
+class FactorRankingResponseSchema(BaseModel):
+    scoring_note: str
+    results: list[RankedFactorScoreSchema]
+
+
 class TriageSignalsSchema(BaseModel):
     day_move_pct: float | None
     move_since_added_pct: float | None

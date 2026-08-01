@@ -59,7 +59,9 @@ from src.application.use_cases.manage_watchlist import (
     RemoveFromWatchlistUseCase,
     UpdateWatchlistItemUseCase,
 )
+from src.application.use_cases.get_factor_scores import GetFactorScoresUseCase
 from src.application.use_cases.get_watchlist_news import GetWatchlistNewsUseCase
+from src.domain.entities.factor_scores import FactorWeights
 from src.application.use_cases.triage_watchlist import TriageWatchlistUseCase
 from src.application.use_cases.recommend_stocks import RecommendStocksUseCase
 from src.application.use_cases.screen_stocks import ScreenStocksUseCase
@@ -100,7 +102,18 @@ signal or quality rank; a stock can rank first because it is collapsing. \
 Present triage results as "what changed / what to look at," never as \
 recommendations. If an item has a thesis in notes and its P/E has drifted \
 far from the add-time baseline, point out that the original thesis may \
-deserve a re-check — as an observation, not advice."""
+deserve a re-check — as an observation, not advice.
+
+get_factor_scores and rank_universe_by_factors are DIFFERENT from \
+screen_stocks: screen_stocks scores against fixed absolute bands, these score \
+each ticker against the REST OF THE S&P 500 at the same moment — a positive \
+z-score always means "more attractive than the universe average" on that \
+factor, never an absolute judgment. A null z-score means that factor's data \
+was unavailable for this ticker, never that it scored exactly average — say \
+so explicitly rather than omitting it. The snapshot refreshes at most once \
+every 24 hours (composite weights recompute instantly and freely; the \
+underlying universe scores do not), so mention the as_of timestamp if the \
+user asks how current the ranking is."""
 
 _TOOLS = [
     ToolDefinition(
@@ -168,6 +181,50 @@ _TOOLS = [
         "momentum, P/E drift vs the add-time baseline, and whether the entry "
         "target was crossed. Optionally scope to one list_name.",
         {"type": "object", "properties": {"list_name": {"type": "string"}}},
+    ),
+    ToolDefinition(
+        "get_factor_scores",
+        "Cross-sectional factor score for one ticker: Value, Quality, Growth, "
+        "Momentum, and Size, each standardized (z-scored) against the rest of "
+        "the S&P 500 at the same point in time — a positive z-score always means "
+        "'more attractive than the universe average' on that factor, regardless "
+        "of which raw metric drives it. This is DIFFERENT from screen_stocks, "
+        "which scores against fixed absolute bands, not the live universe. "
+        "Optionally pass custom weights (each 0-1) to reweight the composite; "
+        "omitted weights default to equal (0.2 each). A missing z-score means "
+        "that factor's underlying data was unavailable for this ticker — never "
+        "treat it as zero/average.",
+        {
+            "type": "object",
+            "properties": {
+                "ticker": {"type": "string"},
+                "weight_value": {"type": "number"},
+                "weight_quality": {"type": "number"},
+                "weight_growth": {"type": "number"},
+                "weight_momentum": {"type": "number"},
+                "weight_size": {"type": "number"},
+            },
+            "required": ["ticker"],
+        },
+    ),
+    ToolDefinition(
+        "rank_universe_by_factors",
+        "Rank the S&P 500 universe by composite factor score (Value/Quality/"
+        "Growth/Momentum/Size, weighted). Returns the top N tickers. Same "
+        "weighting rules as get_factor_scores. Use this for 'what are the best "
+        "value stocks right now' or 'top momentum names' style questions — it "
+        "is a live cross-sectional ranking, not a fixed screen.",
+        {
+            "type": "object",
+            "properties": {
+                "top_n": {"type": "integer"},
+                "weight_value": {"type": "number"},
+                "weight_quality": {"type": "number"},
+                "weight_growth": {"type": "number"},
+                "weight_momentum": {"type": "number"},
+                "weight_size": {"type": "number"},
+            },
+        },
     ),
     ToolDefinition(
         "get_stock_news",
@@ -433,6 +490,7 @@ class ChatWithAgentUseCase:
         list_watchlists: ListWatchlistNamesUseCase,
         triage_watchlist: TriageWatchlistUseCase,
         get_watchlist_news: GetWatchlistNewsUseCase,
+        get_factor_scores: GetFactorScoresUseCase,
     ) -> None:
         self._chat_agent = chat_agent
         self._get_watchlist = get_watchlist
@@ -460,6 +518,7 @@ class ChatWithAgentUseCase:
         self._list_watchlists = list_watchlists
         self._triage_watchlist = triage_watchlist
         self._get_watchlist_news = get_watchlist_news
+        self._get_factor_scores = get_factor_scores
         self._user_id: str = ""  # set per-request in execute()
 
     def execute(self, user_id: str, message: str, history: list[ChatMessage]) -> str:
@@ -569,6 +628,58 @@ class ChatWithAgentUseCase:
         if tool_name == "list_watchlists":
             counts = self._list_watchlists.execute(self._user_id)
             return {"watchlists": [{"name": n, "item_count": c} for n, c in counts.items()]}
+
+        if tool_name in ("get_factor_scores", "rank_universe_by_factors"):
+            weights = FactorWeights(
+                value=tool_input.get("weight_value", 0.2),
+                quality=tool_input.get("weight_quality", 0.2),
+                growth=tool_input.get("weight_growth", 0.2),
+                momentum=tool_input.get("weight_momentum", 0.2),
+                size=tool_input.get("weight_size", 0.2),
+            )
+
+            def _serialize(ranked):
+                return {
+                    "ticker": ranked.ticker,
+                    "composite_score": (
+                        round(ranked.composite_score, 3)
+                        if ranked.composite_score is not None else None
+                    ),
+                    "factors_used": ranked.factors_used,
+                    "value_z": ranked.score.z_scores.value,
+                    "quality_z": ranked.score.z_scores.quality,
+                    "growth_z": ranked.score.z_scores.growth,
+                    "momentum_z": ranked.score.z_scores.momentum,
+                    "size_z": ranked.score.z_scores.size,
+                    "raw": {
+                        "price_to_earnings": ranked.score.raw.price_to_earnings,
+                        "return_on_equity": ranked.score.raw.return_on_equity,
+                        "revenue_growth_yoy": ranked.score.raw.revenue_growth_yoy,
+                        "momentum_1m_pct": ranked.score.raw.momentum_1m_pct,
+                        "market_cap": ranked.score.raw.market_cap,
+                    },
+                    "as_of": ranked.score.as_of.isoformat(),
+                }
+
+            note = (
+                "Every z-score is standardized against the S&P 500 universe at "
+                "the same point in time — positive always means 'more attractive "
+                "than the universe average' on that factor. A null z-score means "
+                "the underlying data was unavailable for this ticker, not that it "
+                "scored exactly average."
+            )
+
+            if tool_name == "get_factor_scores":
+                ranked = self._get_factor_scores.execute_for_ticker(
+                    tool_input["ticker"], weights
+                )
+                if ranked is None:
+                    return {"error": f"No factor score available for '{tool_input['ticker']}'."}
+                return {"scoring_note": note, "result": _serialize(ranked)}
+
+            top_n = tool_input.get("top_n", 10)
+            results = self._get_factor_scores.execute(weights)[:top_n]
+            return {"scoring_note": note, "results": [_serialize(r) for r in results]}
 
         if tool_name == "get_stock_news":
             ticker = tool_input.get("ticker")
