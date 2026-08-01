@@ -27,6 +27,21 @@ def _safe_div(numerator: float | None, denominator: float | None) -> float | Non
     return numerator / denominator
 
 
+def _is_usd(statement) -> bool:
+    """Market cap and price always come from the live quote, which is
+    USD. A financial statement reported in any other currency (e.g.
+    TSM's TWD-denominated filings — confirmed in production: this
+    produced a P/E of ~1.2 for TSM, an arithmetically meaningless
+    number, not a real bargain) makes any ratio combining it with the
+    quote nonsensical — dividing a USD number by a TWD number isn't
+    imprecise, it's simply wrong. Ratios entirely WITHIN one statement
+    (ROE, margins, growth, debt-to-equity — see
+    ComputeFinancialAnalysisUseCase) are unaffected by this, since both
+    sides of those ratios share the same currency regardless of what
+    it is."""
+    return statement is not None and (statement.reported_currency or "").strip().upper() == "USD"
+
+
 class NoFinancialDataError(Exception):
     def __init__(self, ticker: str) -> None:
         self.ticker = ticker
@@ -66,7 +81,11 @@ class ComputeValuationUseCase:
         cashflow = financials.cash_flow_statements[0] if financials.cash_flow_statements else None
 
         enterprise_value: float | None = None
-        if balance is not None and balance.total_debt is not None and balance.cash_and_equivalents is not None:
+        if (
+            _is_usd(balance)
+            and balance.total_debt is not None
+            and balance.cash_and_equivalents is not None
+        ):
             enterprise_value = quote.market_cap + balance.total_debt - balance.cash_and_equivalents
 
         return ValuationSnapshot(
@@ -76,13 +95,13 @@ class ComputeValuationUseCase:
             market_cap=quote.market_cap,
             enterprise_value=enterprise_value,
             fundamentals_fiscal_year=income.key.fiscal_year,
-            price_to_earnings=_safe_div(quote.market_cap, income.net_income),
-            price_to_sales=_safe_div(quote.market_cap, income.revenue),
+            price_to_earnings=_safe_div(quote.market_cap, income.net_income) if _is_usd(income) else None,
+            price_to_sales=_safe_div(quote.market_cap, income.revenue) if _is_usd(income) else None,
             price_to_book=(
-                _safe_div(quote.market_cap, balance.total_equity) if balance else None
+                _safe_div(quote.market_cap, balance.total_equity) if _is_usd(balance) else None
             ),
             price_to_free_cash_flow=(
-                _safe_div(quote.market_cap, cashflow.free_cash_flow) if cashflow else None
+                _safe_div(quote.market_cap, cashflow.free_cash_flow) if _is_usd(cashflow) else None
             ),
-            ev_to_ebitda=_safe_div(enterprise_value, income.ebitda),
+            ev_to_ebitda=_safe_div(enterprise_value, income.ebitda) if _is_usd(income) else None,
         )
