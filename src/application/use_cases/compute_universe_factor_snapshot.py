@@ -72,8 +72,15 @@ class ComputeUniverseFactorSnapshotUseCase:
         self._factor_repo = factor_repo
         self._request_delay_seconds = request_delay_seconds
 
-    def execute(self) -> BatchFactorRefreshResult:
-        tickers = self._data_provider.get_sp500_constituent_tickers()
+    def execute(self, tickers: list[str] | None = None) -> BatchFactorRefreshResult:
+        """If `tickers` is omitted, fetches current S&P 500 membership
+        from the data provider's live constituents endpoint. Passing an
+        explicit list bypasses that endpoint entirely — useful when it
+        isn't available on the current plan tier, since the tickers
+        already ingested into CompanyRepository are just as valid a
+        universe to score (same override pattern as
+        IngestSP500UniverseUseCase.execute)."""
+        tickers = tickers if tickers is not None else self._data_provider.get_sp500_constituent_tickers()
         as_of = datetime.now(timezone.utc)
 
         raw_by_ticker: dict[str, FactorRawMetrics] = {}

@@ -191,3 +191,30 @@ def test_refresh_replaces_the_whole_snapshot() -> None:
 
     remaining = factor_repo.get_all()
     assert [s.ticker for s in remaining] == ["AAA"]  # BBB, CCC gone — full replace, not merge
+
+
+def test_explicit_tickers_never_call_the_live_constituents_endpoint() -> None:
+    """Proves the override actually bypasses get_sp500_constituent_tickers
+    entirely — not just that it accepts a parameter. Regression test for
+    the production incident where /sp500-constituent 402'd on a plan
+    that doesn't include it, even though the tickers were already
+    ingested and didn't need a live index-membership lookup at all."""
+    use_case, factor_repo, company_repo = _build(sp500_tickers=["SHOULD_NEVER_BE_USED"])
+
+    class _RaisesIfCalled:
+        def get_sp500_constituent_tickers(self):
+            raise AssertionError(
+                "get_sp500_constituent_tickers should never be called when "
+                "an explicit ticker list is provided"
+            )
+
+    # Swap in a provider whose live-constituents call would fail loudly
+    # if it were ever reached, while everything else stays wired to the
+    # real fixture data via the use case's other already-built dependencies.
+    use_case._data_provider = _RaisesIfCalled()
+
+    result = use_case.execute(tickers=["AAA", "BBB"])
+
+    assert result.total_tickers == 2
+    assert result.succeeded == 2
+    assert {s.ticker for s in factor_repo.get_all()} == {"AAA", "BBB"}
