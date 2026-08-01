@@ -37,6 +37,8 @@ from src.domain.repositories.watchlist_repository import WatchlistRepository
 logger = logging.getLogger(__name__)
 
 W_DAY_MOVE = 1.0
+W_MOMENTUM = 0.5
+TRADING_DAYS_1M = 21  # ~one calendar month of trading days
 W_SINCE_ADDED = 0.5
 W_PE_DRIFT = 0.5
 TARGET_CROSSED_BONUS = 10.0
@@ -70,9 +72,11 @@ class TriageWatchlistUseCase:
 
             current_price = quote.price
             current_pe = self._current_pe(item.ticker)
+            momentum = self._momentum_1m(item.ticker, current_price)
             signals = TriageSignals(
                 day_move_pct=self._day_move(item.ticker, current_price),
                 move_since_added_pct=self._pct_change(item.added_price, current_price),
+                momentum_1m_pct=momentum,
                 pe_drift_pct=self._pct_change(item.added_pe, current_pe) if current_pe is not None else None,
                 target_crossed=(
                     item.target_price is not None and current_price <= item.target_price
@@ -111,6 +115,26 @@ class TriageWatchlistUseCase:
             return None
         return (current - baseline) / baseline
 
+    def _momentum_1m(self, ticker: str, current_price: float) -> float | None:
+        """1-month momentum vs the close ~21 trading days ago, computed
+        from live FMP EOD history (Starter-plan accessible — verified).
+        hasattr-guarded so duck-typed providers without history support
+        degrade to an honestly-absent signal, not a crash. There is
+        deliberately no local price-history table."""
+        if not hasattr(self._data_provider, "get_daily_closes"):
+            return None
+        try:
+            bars = self._data_provider.get_daily_closes(ticker, limit=TRADING_DAYS_1M + 1)
+        except (NotImplementedError, DataProviderError) as exc:
+            logger.warning("Triage: momentum history unavailable for %s: %s", ticker, exc)
+            return None
+        if len(bars) <= TRADING_DAYS_1M:
+            return None  # not enough history -> absent, never fabricated
+        baseline = bars[TRADING_DAYS_1M].close
+        if baseline <= 0:
+            return None
+        return (current_price - baseline) / baseline
+
     def _current_pe(self, ticker: str) -> float | None:
         if self._valuation_use_case is None:
             return None
@@ -129,6 +153,8 @@ class TriageWatchlistUseCase:
             score += abs(signals.move_since_added_pct) * 100 * W_SINCE_ADDED
         if signals.pe_drift_pct is not None:
             score += abs(signals.pe_drift_pct) * 100 * W_PE_DRIFT
+        if signals.momentum_1m_pct is not None:
+            score += abs(signals.momentum_1m_pct) * 100 * W_MOMENTUM
         if signals.target_crossed:
             score += TARGET_CROSSED_BONUS
         return score

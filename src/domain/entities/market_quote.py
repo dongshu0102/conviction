@@ -8,7 +8,7 @@ as computed ratios: cheap to fetch, staleness risk not worth caching.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,3 +17,13 @@ class MarketQuote:
     price: float
     market_cap: float
     as_of: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class PriceBar:
+    """One end-of-day close. Used for momentum computation — fetched
+    live from FMP's historical EOD endpoint (Starter-plan accessible),
+    NOT stored locally; there is deliberately no price-history table."""
+
+    bar_date: date
+    close: float

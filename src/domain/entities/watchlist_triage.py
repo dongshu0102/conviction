@@ -27,6 +27,7 @@ class TriageSignals:
 
     day_move_pct: float | None  # vs last monitoring snapshot
     move_since_added_pct: float | None  # vs added_price baseline
+    momentum_1m_pct: float | None  # vs close ~21 trading days ago (live FMP history)
     pe_drift_pct: float | None  # current P/E vs added_pe baseline
     target_crossed: bool  # current price at or below target_price
     current_price: float | None

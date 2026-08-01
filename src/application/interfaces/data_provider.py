@@ -15,7 +15,8 @@ from src.domain.entities.financial_statement import (
     IncomeStatement,
     Period,
 )
-from src.domain.entities.market_quote import MarketQuote
+from src.domain.entities.market_quote import MarketQuote, PriceBar
+from src.domain.entities.news import NewsArticle
 
 
 class FinancialDataProvider(ABC):
@@ -46,6 +47,19 @@ class FinancialDataProvider(ABC):
         via get_company_profile, and duplicating it here would create two
         sources of truth for the same fact.
         """
+
+    # -- Phase C capabilities: deliberately NON-abstract, unlike the
+    # rest of this interface. Making them abstract would break every
+    # existing fake/test provider for capabilities those tests don't
+    # exercise. Consumers must treat NotImplementedError as "capability
+    # absent" and degrade honestly (signal=None / feature unavailable),
+    # never crash.
+    def get_stock_news(self, ticker: str, limit: int = 10) -> list[NewsArticle]:
+        raise NotImplementedError("This data provider does not support get_stock_news")
+
+    def get_daily_closes(self, ticker: str, limit: int = 30) -> list[PriceBar]:
+        """Most-recent-first end-of-day closes."""
+        raise NotImplementedError("This data provider does not support get_daily_closes")
 
     @abstractmethod
     def get_quote(self, ticker: str) -> MarketQuote:

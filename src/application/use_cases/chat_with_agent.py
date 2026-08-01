@@ -59,6 +59,7 @@ from src.application.use_cases.manage_watchlist import (
     RemoveFromWatchlistUseCase,
     UpdateWatchlistItemUseCase,
 )
+from src.application.use_cases.get_watchlist_news import GetWatchlistNewsUseCase
 from src.application.use_cases.triage_watchlist import TriageWatchlistUseCase
 from src.application.use_cases.recommend_stocks import RecommendStocksUseCase
 from src.application.use_cases.screen_stocks import ScreenStocksUseCase
@@ -163,10 +164,25 @@ _TOOLS = [
     ToolDefinition(
         "triage_watchlist",
         "Rank watchlist items by attention-worthiness using live data: day move "
-        "since last monitoring check, move since the item was added, P/E drift vs "
-        "the add-time baseline, and whether the entry target was crossed. "
-        "Optionally scope to one list_name.",
+        "since last monitoring check, move since the item was added, 1-month "
+        "momentum, P/E drift vs the add-time baseline, and whether the entry "
+        "target was crossed. Optionally scope to one list_name.",
         {"type": "object", "properties": {"list_name": {"type": "string"}}},
+    ),
+    ToolDefinition(
+        "get_stock_news",
+        "Latest news headlines. With a ticker: news for that ticker. Without: "
+        "news for every ticker on the user's watchlist (optionally one "
+        "list_name). Returns real published headlines with sources and dates — "
+        "never invent or embellish headlines beyond what is returned.",
+        {
+            "type": "object",
+            "properties": {
+                "ticker": {"type": "string"},
+                "list_name": {"type": "string"},
+                "limit_per_ticker": {"type": "integer"},
+            },
+        },
     ),
     ToolDefinition(
         "list_portfolios", "List the user's portfolios (name and id, no holdings detail).",
@@ -416,6 +432,7 @@ class ChatWithAgentUseCase:
         update_watchlist_item: UpdateWatchlistItemUseCase,
         list_watchlists: ListWatchlistNamesUseCase,
         triage_watchlist: TriageWatchlistUseCase,
+        get_watchlist_news: GetWatchlistNewsUseCase,
     ) -> None:
         self._chat_agent = chat_agent
         self._get_watchlist = get_watchlist
@@ -442,6 +459,7 @@ class ChatWithAgentUseCase:
         self._update_watchlist_item = update_watchlist_item
         self._list_watchlists = list_watchlists
         self._triage_watchlist = triage_watchlist
+        self._get_watchlist_news = get_watchlist_news
         self._user_id: str = ""  # set per-request in execute()
 
     def execute(self, user_id: str, message: str, history: list[ChatMessage]) -> str:
@@ -552,6 +570,31 @@ class ChatWithAgentUseCase:
             counts = self._list_watchlists.execute(self._user_id)
             return {"watchlists": [{"name": n, "item_count": c} for n, c in counts.items()]}
 
+        if tool_name == "get_stock_news":
+            ticker = tool_input.get("ticker")
+            by_ticker, failed = self._get_watchlist_news.execute(
+                self._user_id,
+                list_name=tool_input.get("list_name"),
+                tickers=[ticker] if ticker else None,
+                limit_per_ticker=tool_input.get("limit_per_ticker", 5),
+            )
+            return {
+                "news": {
+                    t: [
+                        {
+                            "title": a.title,
+                            "published_at": a.published_at.isoformat() if a.published_at else None,
+                            "source": a.source,
+                            "url": a.url,
+                            "snippet": (a.snippet[:300] if a.snippet else None),
+                        }
+                        for a in articles
+                    ]
+                    for t, articles in by_ticker.items()
+                },
+                "tickers_failed": failed,
+            }
+
         if tool_name == "triage_watchlist":
             result = self._triage_watchlist.execute(
                 self._user_id, tool_input.get("list_name")
@@ -576,6 +619,7 @@ class ChatWithAgentUseCase:
                         "current_price": t.signals.current_price,
                         "day_move_percent": _pct(t.signals.day_move_pct),
                         "move_since_added_percent": _pct(t.signals.move_since_added_pct),
+                        "momentum_1m_percent": _pct(t.signals.momentum_1m_pct),
                         "pe_drift_percent": _pct(t.signals.pe_drift_pct),
                         "current_pe": t.signals.current_pe,
                         "target_crossed": t.signals.target_crossed,

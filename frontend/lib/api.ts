@@ -57,6 +57,50 @@ export interface WatchlistItem {
   ticker: string;
   added_at: string;
   notes: string | null;
+  list_name: string;
+  target_price: number | null;
+  alert_threshold_pct: number | null;
+  added_price: number | null;
+  added_pe: number | null;
+}
+
+export interface TriageSignals {
+  day_move_pct: number | null;
+  move_since_added_pct: number | null;
+  momentum_1m_pct: number | null;
+  pe_drift_pct: number | null;
+  target_crossed: boolean;
+  current_price: number | null;
+  current_pe: number | null;
+}
+
+export interface TriageItem {
+  ticker: string;
+  list_name: string;
+  triage_score: number;
+  signals: TriageSignals;
+  notes: string | null;
+}
+
+export interface TriageResponse {
+  as_of: string;
+  scoring_note: string;
+  items: TriageItem[];
+  tickers_excluded: string[];
+}
+
+export interface NewsArticle {
+  ticker: string;
+  title: string;
+  published_at: string | null;
+  source: string | null;
+  url: string | null;
+  snippet: string | null;
+}
+
+export interface WatchlistNewsResponse {
+  news: Record<string, NewsArticle[]>;
+  tickers_failed: string[];
 }
 
 export interface Portfolio {
@@ -128,6 +172,15 @@ export const api = {
       { method: "POST" }
     ),
   getDailyBrief: () => request<DailyBrief>("/brief"),
+  getTriage: (listName?: string) =>
+    request<TriageResponse>(
+      `/watchlist/triage${listName ? `?list_name=${encodeURIComponent(listName)}` : ""}`
+    ),
+  getWatchlistNews: (listName?: string, limitPerTicker = 3) => {
+    const params = new URLSearchParams({ limit_per_ticker: String(limitPerTicker) });
+    if (listName) params.set("list_name", listName);
+    return request<WatchlistNewsResponse>(`/watchlist/news?${params.toString()}`);
+  },
   getCompanyValuation: (ticker: string) =>
     request<CompanyValuation>(`/companies/${ticker}/valuation`),
 };

@@ -138,3 +138,66 @@ def test_list_name_filter_scopes_the_triage() -> None:
     result = use_case.execute("alice", list_name="Tech Watch")
 
     assert [t.ticker for t in result.items] == ["AAPL"]
+
+
+# ---- Phase C: momentum tests ----
+
+from src.application.use_cases.triage_watchlist import TRADING_DAYS_1M
+from src.domain.entities.market_quote import PriceBar
+from datetime import date, timedelta
+
+
+class _QuoteAndHistoryProvider(_QuoteOnlyProvider):
+    def __init__(self, prices, history_by_ticker=None, **kw):
+        super().__init__(prices, **kw)
+        self._history = history_by_ticker or {}
+
+    def get_daily_closes(self, ticker: str, limit: int = 30):
+        if ticker not in self._history:
+            raise NotImplementedError("no history")
+        return self._history[ticker][:limit]
+
+
+def _bars(closes: list[float]) -> list[PriceBar]:
+    start = date(2026, 7, 30)
+    return [PriceBar(bar_date=start - timedelta(days=i), close=c) for i, c in enumerate(closes)]
+
+
+def test_momentum_hand_verified() -> None:
+    # 22 bars; bar[21] (the close ~1 trading month ago) = 80.
+    # current 100 -> momentum = (100-80)/80 = +25% -> 25.0 * 0.5 = 12.5
+    history = _bars([100.0] * 21 + [80.0])
+    assert len(history) == TRADING_DAYS_1M + 1
+
+    watchlist = FakeWatchlistRepository()
+    watchlist.add(_item("AAPL"))
+    use_case = TriageWatchlistUseCase(
+        watchlist,
+        _QuoteAndHistoryProvider({"AAPL": 100.0}, {"AAPL": history}),
+        FakePriceSnapshotRepository(),
+    )
+    result = use_case.execute("alice")
+
+    item = result.items[0]
+    assert abs(item.signals.momentum_1m_pct - 0.25) < 1e-9
+    assert abs(item.triage_score - 12.5) < 1e-9
+
+
+def test_momentum_absent_when_insufficient_history_or_unsupported() -> None:
+    watchlist = FakeWatchlistRepository()
+    watchlist.add(_item("AAPL"))
+    watchlist.add(_item("MSFT"))
+
+    # AAPL: only 5 bars (< 22 needed) -> None; MSFT: provider raises NotImplementedError -> None
+    use_case = TriageWatchlistUseCase(
+        watchlist,
+        _QuoteAndHistoryProvider(
+            {"AAPL": 100.0, "MSFT": 300.0}, {"AAPL": _bars([100.0] * 5)}
+        ),
+        FakePriceSnapshotRepository(),
+    )
+    result = use_case.execute("alice")
+
+    for item in result.items:
+        assert item.signals.momentum_1m_pct is None
+        assert item.triage_score == 0.0

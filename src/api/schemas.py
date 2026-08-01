@@ -274,6 +274,45 @@ class WatchlistItemSchema(BaseModel):
     added_pe: float | None = None
 
 
+class TriageSignalsSchema(BaseModel):
+    day_move_pct: float | None
+    move_since_added_pct: float | None
+    momentum_1m_pct: float | None
+    pe_drift_pct: float | None
+    target_crossed: bool
+    current_price: float | None
+    current_pe: float | None
+
+
+class TriageItemSchema(BaseModel):
+    ticker: str
+    list_name: str
+    triage_score: float
+    signals: TriageSignalsSchema
+    notes: str | None
+
+
+class TriageResponseSchema(BaseModel):
+    as_of: datetime
+    scoring_note: str
+    items: list[TriageItemSchema]
+    tickers_excluded: list[str]
+
+
+class NewsArticleSchema(BaseModel):
+    ticker: str
+    title: str
+    published_at: datetime | None
+    source: str | None
+    url: str | None
+    snippet: str | None
+
+
+class WatchlistNewsResponseSchema(BaseModel):
+    news: dict[str, list[NewsArticleSchema]]
+    tickers_failed: list[str]
+
+
 class ResearchReportSchema(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
 

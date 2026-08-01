@@ -28,6 +28,7 @@ from src.application.use_cases.manage_portfolio import (
     GetPortfolioUseCase,
     ListPortfoliosUseCase,
 )
+from src.application.use_cases.get_watchlist_news import GetWatchlistNewsUseCase
 from src.application.use_cases.triage_watchlist import TriageWatchlistUseCase
 from src.application.use_cases.manage_watchlist import (
     ListWatchlistNamesUseCase,
@@ -134,6 +135,7 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
         triage_watchlist=TriageWatchlistUseCase(
             watchlist_repo, provider, FakePriceSnapshotRepository()
         ),
+        get_watchlist_news=GetWatchlistNewsUseCase(watchlist_repo, provider),
     )
     return use_case, fake_agent, portfolio_repo
 

@@ -41,6 +41,7 @@ from src.application.use_cases.manage_watchlist import (
     ListWatchlistNamesUseCase,
     UpdateWatchlistItemUseCase,
 )
+from src.application.use_cases.get_watchlist_news import GetWatchlistNewsUseCase
 from src.application.use_cases.triage_watchlist import TriageWatchlistUseCase
 from src.application.use_cases.compute_option_portfolio_valuation import (
     ComputeOptionPortfolioValuationUseCase,
@@ -127,6 +128,7 @@ def get_chat_use_case(
             SqlAlchemyPriceSnapshotRepository(),
             valuation_use_case=compute_company_valuation,
         ),
+        get_watchlist_news=GetWatchlistNewsUseCase(watchlist_repo, data_provider),
     )
 
 

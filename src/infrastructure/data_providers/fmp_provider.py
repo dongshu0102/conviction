@@ -24,7 +24,9 @@ from src.domain.entities.financial_statement import (
     IncomeStatement,
     Period,
 )
-from src.domain.entities.market_quote import MarketQuote
+from src.domain.entities.market_quote import MarketQuote, PriceBar
+from src.domain.entities.news import NewsArticle
+from src.infrastructure.data_providers.fmp_parsing import parse_eod_light, parse_stock_news
 from src.infrastructure.config import Settings
 
 logger = logging.getLogger(__name__)
@@ -216,3 +218,11 @@ class FinancialModelingPrepProvider(FinancialDataProvider):
             market_cap=q["marketCap"],
             as_of=datetime.now(timezone.utc),
         )
+
+    def get_stock_news(self, ticker: str, limit: int = 10) -> list[NewsArticle]:
+        payload = self._get("/news/stock", symbols=ticker, limit=limit)
+        return parse_stock_news(payload, ticker)
+
+    def get_daily_closes(self, ticker: str, limit: int = 30) -> list[PriceBar]:
+        payload = self._get("/historical-price-eod/light", symbol=ticker)
+        return parse_eod_light(payload, ticker)[:limit]

@@ -107,13 +107,18 @@ export default function DashboardPage() {
           <p className="eyebrow">FinInsight</p>
           <h1 style={{ fontSize: "1.6rem" }}>Today&rsquo;s ledger</h1>
         </div>
-        <button
-          onClick={logout}
-          className="num"
-          style={{ background: "none", border: "none", color: "var(--text-soft)", fontSize: "0.85rem" }}
-        >
-          Sign out
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: "1.25rem" }}>
+          <Link href="/terminal" className="num" style={{ color: "var(--accent)", fontSize: "0.85rem" }}>
+            Terminal
+          </Link>
+          <button
+            onClick={logout}
+            className="num"
+            style={{ background: "none", border: "none", color: "var(--text-soft)", fontSize: "0.85rem" }}
+          >
+            Sign out
+          </button>
+        </div>
       </header>
 
       {error && (

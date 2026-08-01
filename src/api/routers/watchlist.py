@@ -11,12 +11,24 @@ from src.api.routers.companies import (
     get_data_provider,
 )
 from src.api.routers.companies import get_valuation_use_case as get_company_valuation_use_case
-from src.api.schemas import WatchlistItemSchema
+from src.api.schemas import (
+    NewsArticleSchema,
+    TriageItemSchema,
+    TriageResponseSchema,
+    TriageSignalsSchema,
+    WatchlistItemSchema,
+    WatchlistNewsResponseSchema,
+)
+from src.application.use_cases.get_watchlist_news import GetWatchlistNewsUseCase
 from src.application.use_cases.manage_watchlist import (
     AddToWatchlistUseCase,
     GetWatchlistUseCase,
     RemoveFromWatchlistUseCase,
     TickerNotIngestedError,
+)
+from src.application.use_cases.triage_watchlist import TriageWatchlistUseCase
+from src.infrastructure.persistence.monitoring_repository_impl import (
+    SqlAlchemyPriceSnapshotRepository,
 )
 from src.infrastructure.persistence.company_repository_impl import SqlAlchemyCompanyRepository
 from src.infrastructure.persistence.watchlist_repository_impl import (
@@ -114,3 +126,83 @@ def get_watchlist(
     use_case: GetWatchlistUseCase = Depends(get_list_use_case),
 ) -> list[WatchlistItemSchema]:
     return [_to_schema(item) for item in use_case.execute(user_id, list_name)]
+
+
+def get_triage_use_case(
+    watchlist_repo: SqlAlchemyWatchlistRepository = Depends(get_watchlist_repository),
+    data_provider=Depends(get_data_provider),
+    valuation_use_case=Depends(get_company_valuation_use_case),
+) -> TriageWatchlistUseCase:
+    return TriageWatchlistUseCase(
+        watchlist_repo,
+        data_provider,
+        SqlAlchemyPriceSnapshotRepository(),
+        valuation_use_case=valuation_use_case,
+    )
+
+
+def get_news_use_case(
+    watchlist_repo: SqlAlchemyWatchlistRepository = Depends(get_watchlist_repository),
+    data_provider=Depends(get_data_provider),
+) -> GetWatchlistNewsUseCase:
+    return GetWatchlistNewsUseCase(watchlist_repo, data_provider)
+
+
+@router.get("/triage", response_model=TriageResponseSchema)
+def triage_watchlist(
+    list_name: str | None = Query(default=None),
+    user_id: str = Depends(get_authenticated_user_id),
+    use_case: TriageWatchlistUseCase = Depends(get_triage_use_case),
+) -> TriageResponseSchema:
+    result = use_case.execute(user_id, list_name)
+    return TriageResponseSchema(
+        as_of=result.as_of,
+        scoring_note=(
+            "triage_score is an ATTENTION ranking — higher means more "
+            "attention-worthy, not better quality or a buy signal."
+        ),
+        items=[
+            TriageItemSchema(
+                ticker=t.ticker,
+                list_name=t.list_name,
+                triage_score=round(t.triage_score, 2),
+                signals=TriageSignalsSchema(
+                    day_move_pct=t.signals.day_move_pct,
+                    move_since_added_pct=t.signals.move_since_added_pct,
+                    momentum_1m_pct=t.signals.momentum_1m_pct,
+                    pe_drift_pct=t.signals.pe_drift_pct,
+                    target_crossed=t.signals.target_crossed,
+                    current_price=t.signals.current_price,
+                    current_pe=t.signals.current_pe,
+                ),
+                notes=t.notes,
+            )
+            for t in result.items
+        ],
+        tickers_excluded=result.tickers_excluded,
+    )
+
+
+@router.get("/news", response_model=WatchlistNewsResponseSchema)
+def watchlist_news(
+    list_name: str | None = Query(default=None),
+    limit_per_ticker: int = Query(default=5, ge=1, le=20),
+    user_id: str = Depends(get_authenticated_user_id),
+    use_case: GetWatchlistNewsUseCase = Depends(get_news_use_case),
+) -> WatchlistNewsResponseSchema:
+    by_ticker, failed = use_case.execute(
+        user_id, list_name=list_name, limit_per_ticker=limit_per_ticker
+    )
+    return WatchlistNewsResponseSchema(
+        news={
+            t: [
+                NewsArticleSchema(
+                    ticker=a.ticker, title=a.title, published_at=a.published_at,
+                    source=a.source, url=a.url, snippet=a.snippet,
+                )
+                for a in articles
+            ]
+            for t, articles in by_ticker.items()
+        },
+        tickers_failed=failed,
+    )
