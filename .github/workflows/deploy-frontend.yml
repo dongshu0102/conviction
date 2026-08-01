@@ -88,15 +88,33 @@ jobs:
       # Confirmed in production: months of deploys produced zero
       # UPDATE_SERVICE/DEPLOYMENT operations in `apprunner
       # list-operations`, only the original CREATE_SERVICE — meaning
-      # every prior "successful" deploy was a no-op. wait first so we
+      # every prior "successful" deploy was a no-op. Wait first so we
       # don't race a deployment update-service itself might have
       # triggered, then force an unconditional redeploy, then wait for
       # it to finish so the job doesn't report green before the new
       # image is actually live.
+      #
+      # NOTE: `aws apprunner wait ...` does not exist — App Runner has
+      # no waiters defined in the AWS CLI at all (confirmed: only
+      # certain services like EC2 ship waiters.json; App Runner isn't
+      # one of them). This was assumed rather than verified when this
+      # workflow was first written and broke CI as a result — polling
+      # describe-service directly is the correct approach here, not a
+      # workaround.
       - name: Wait for service to settle
         run: |
-          aws apprunner wait service-updated \
-            --service-arn "${{ secrets.FRONTEND_APP_RUNNER_SERVICE_ARN }}"
+          for i in $(seq 1 60); do
+            STATUS=$(aws apprunner describe-service \
+              --service-arn "${{ secrets.FRONTEND_APP_RUNNER_SERVICE_ARN }}" \
+              --query 'Service.Status' --output text)
+            echo "Service status: $STATUS"
+            if [ "$STATUS" = "RUNNING" ]; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Timed out waiting for service to reach RUNNING before starting deployment"
+          exit 1
 
       - name: Force deployment of the newly pushed image
         run: |
@@ -105,5 +123,15 @@ jobs:
 
       - name: Wait for deployment to complete
         run: |
-          aws apprunner wait service-updated \
-            --service-arn "${{ secrets.FRONTEND_APP_RUNNER_SERVICE_ARN }}"
+          for i in $(seq 1 60); do
+            STATUS=$(aws apprunner describe-service \
+              --service-arn "${{ secrets.FRONTEND_APP_RUNNER_SERVICE_ARN }}" \
+              --query 'Service.Status' --output text)
+            echo "Service status: $STATUS"
+            if [ "$STATUS" = "RUNNING" ]; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Timed out waiting for deployment to complete"
+          exit 1
