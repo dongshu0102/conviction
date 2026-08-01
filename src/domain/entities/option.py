@@ -51,6 +51,12 @@ class OptionQuote:
     vega: float | None
     underlying_price: float | None
     as_of: datetime
+    # Added after the fact — MarketData.app's midpoint between bid/ask,
+    # the standard field for valuation (avoids bid-ask spread bias that
+    # `last` carries for illiquid contracts with a stale last trade).
+    # Default keeps this additive; existing construction sites that
+    # don't pass it still work.
+    mid: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +65,63 @@ class OptionHolding:
     contracts_held: int  # positive = long, negative = short; 1 contract = 100 shares, standard
     cost_basis_per_contract: float
     acquired_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class OptionPositionValue:
+    """Current market value and P&L for one option position.
+
+    cost_basis_per_contract and current_price are BOTH per-share
+    premiums, consistent with how bid/ask/last/mid are quoted in
+    OptionQuote and how the market universally quotes option prices
+    (e.g. "the option costs $3.20" means $3.20/share). Total dollar
+    value always needs the *100 contract multiplier applied — this is
+    NOT already baked into either per-share field.
+    """
+
+    contract: OptionContract
+    contracts_held: int
+    cost_basis_per_contract: float
+    current_price: float
+    market_value: float
+    cost_basis_total: float
+    unrealized_gain: float
+    unrealized_gain_pct: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class OptionPortfolioValuation:
+    portfolio_id: str
+    as_of: datetime
+    positions: list[OptionPositionValue] = field(default_factory=list)
+    total_market_value: float = 0.0
+    total_cost_basis: float = 0.0
+    total_unrealized_gain: float = 0.0
+    total_unrealized_gain_pct: float | None = None
+    positions_excluded: list[str] = field(default_factory=list)  # contracts with no live quote
+
+
+@dataclass(frozen=True, slots=True)
+class HedgeSuggestion:
+    """A mechanical delta hedge for one underlying — buy/sell shares of
+    the underlying itself to neutralize combined stock + option delta
+    exposure on that ticker. Deliberately hedges with the underlying's
+    own shares, not a new option position — that would require choosing
+    a strike/expiration for the hedge itself, a second layer of
+    ambiguity this keeps out of scope."""
+
+    underlying_ticker: str
+    net_delta: float  # combined stock + option delta exposure BEFORE hedging
+    shares_to_trade: float  # positive = buy, negative = sell/short
+    resulting_delta: float  # net_delta + shares_to_trade, should be ~0
+
+
+@dataclass(frozen=True, slots=True)
+class HedgingPlan:
+    portfolio_id: str
+    as_of: datetime
+    suggestions: list[HedgeSuggestion] = field(default_factory=list)
+    positions_excluded: list[str] = field(default_factory=list)  # option contracts with no live quote
 
 
 @dataclass(frozen=True, slots=True)

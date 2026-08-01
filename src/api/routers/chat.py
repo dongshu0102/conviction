@@ -36,6 +36,9 @@ from src.api.routers.watchlist import get_remove_use_case as get_remove_from_wat
 from src.api.schemas import ChatRequestSchema, ChatResponseSchema, VercelChatRequestSchema
 from src.application.interfaces.chat_agent import ChatAgentError, ChatMessage
 from src.application.use_cases.chat_with_agent import ChatWithAgentUseCase
+from src.application.use_cases.compute_option_portfolio_valuation import (
+    ComputeOptionPortfolioValuationUseCase,
+)
 from src.application.use_cases.compute_portfolio_greeks import ComputePortfolioGreeksUseCase
 from src.application.use_cases.manage_option_holdings import (
     AddOptionHoldingUseCase,
@@ -43,6 +46,7 @@ from src.application.use_cases.manage_option_holdings import (
 )
 from src.application.use_cases.recommend_stocks import RecommendStocksUseCase
 from src.application.use_cases.screen_stocks import ScreenStocksUseCase
+from src.application.use_cases.suggest_hedging import SuggestHedgingUseCase
 from src.application.use_cases.suggest_rebalancing import SuggestRebalancingUseCase
 from src.infrastructure.config import get_settings
 from src.infrastructure.data_providers.marketdata_app_provider import MarketDataAppProvider
@@ -100,6 +104,10 @@ def get_chat_use_case(
         add_option_holding=AddOptionHoldingUseCase(portfolio_repo),
         remove_option_holding=RemoveOptionHoldingUseCase(portfolio_repo),
         compute_portfolio_greeks=ComputePortfolioGreeksUseCase(portfolio_repo, options_provider),
+        compute_option_portfolio_valuation=ComputeOptionPortfolioValuationUseCase(
+            portfolio_repo, options_provider
+        ),
+        suggest_hedging=SuggestHedgingUseCase(portfolio_repo, options_provider),
     )
 
 

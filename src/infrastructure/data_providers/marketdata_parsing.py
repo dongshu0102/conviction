@@ -53,6 +53,7 @@ def parse_option_chain_response(data: dict) -> list[OptionQuote]:
                     theta=data.get("theta", [None] * count)[i],
                     vega=data.get("vega", [None] * count)[i],
                     underlying_price=data.get("underlyingPrice", [None] * count)[i],
+                    mid=data.get("mid", [None] * count)[i],
                     as_of=(
                         datetime.fromtimestamp(data["updated"][i], tz=timezone.utc)
                         if data.get("updated")

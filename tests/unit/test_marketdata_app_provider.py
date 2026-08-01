@@ -54,6 +54,7 @@ def test_parses_real_documented_response_shape_correctly() -> None:
     assert call.gamma == 0.002
     assert call.implied_volatility == 0.331
     assert call.open_interest == 33003
+    assert call.mid == 26.3  # confirms the field added after the fact parses correctly
 
     put = quotes[1]
     assert put.contract.option_type == "put"

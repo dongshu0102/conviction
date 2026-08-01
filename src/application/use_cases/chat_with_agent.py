@@ -28,6 +28,9 @@ from src.application.interfaces.options_data_provider import (
 from src.application.use_cases.compute_financial_analysis import (
     ComputeFinancialAnalysisUseCase,
 )
+from src.application.use_cases.compute_option_portfolio_valuation import (
+    ComputeOptionPortfolioValuationUseCase,
+)
 from src.application.use_cases.compute_portfolio_greeks import ComputePortfolioGreeksUseCase
 from src.application.use_cases.compute_portfolio_risk import ComputePortfolioRiskUseCase
 from src.application.use_cases.compute_portfolio_valuation import (
@@ -56,6 +59,7 @@ from src.application.use_cases.manage_watchlist import (
 )
 from src.application.use_cases.recommend_stocks import RecommendStocksUseCase
 from src.application.use_cases.screen_stocks import ScreenStocksUseCase
+from src.application.use_cases.suggest_hedging import SuggestHedgingUseCase
 from src.application.use_cases.suggest_rebalancing import SuggestRebalancingUseCase
 from src.domain.repositories.research_report_repository import ResearchReportRepository
 
@@ -77,7 +81,12 @@ sector diversification.
 
 delete_portfolio is permanent and cannot be undone. Never call it unless the \
 user has clearly confirmed which specific portfolio to delete — if there's \
-any ambiguity about which one they mean, ask first rather than guessing."""
+any ambiguity about which one they mean, ask first rather than guessing.
+
+suggest_hedging describes what a delta-neutral trade would mechanically \
+require, not a recommendation. Present the numbers as a fact about their \
+current exposure, and let them decide whether hedging fits their goals — \
+avoid phrasing like "you should hedge" or "I recommend.\""""
 
 _TOOLS = [
     ToolDefinition("get_watchlist", "Get the user's watchlist.", {"type": "object", "properties": {}}),
@@ -278,6 +287,36 @@ _TOOLS = [
             "required": ["portfolio_id"],
         },
     ),
+    ToolDefinition(
+        "compute_option_portfolio_valuation",
+        "Get the current market value and unrealized P&L for a "
+        "portfolio's option holdings, using LIVE quotes. Deterministic — "
+        "do not estimate values yourself. Positions with no live quote "
+        "available are excluded and listed separately, same as "
+        "compute_portfolio_greeks. This is for OPTION positions only — "
+        "use get_portfolio_valuation for stock positions.",
+        {
+            "type": "object",
+            "properties": {"portfolio_id": {"type": "string"}},
+            "required": ["portfolio_id"],
+        },
+    ),
+    ToolDefinition(
+        "suggest_hedging",
+        "Suggest a MECHANICAL delta hedge, per underlying: the exact "
+        "share count to buy/sell in the underlying itself to bring net "
+        "delta exposure (combined stock holdings + option holdings on "
+        "that ticker) to zero. Deterministic exact arithmetic, not an "
+        "estimate. This describes what a delta-neutral position would "
+        "require — present it as that mechanical fact, not as "
+        "investment advice or a recommendation to actually make the "
+        "trade; the user decides whether hedging fits their goals.",
+        {
+            "type": "object",
+            "properties": {"portfolio_id": {"type": "string"}},
+            "required": ["portfolio_id"],
+        },
+    ),
 ]
 
 
@@ -304,6 +343,8 @@ class ChatWithAgentUseCase:
         add_option_holding: AddOptionHoldingUseCase,
         remove_option_holding: RemoveOptionHoldingUseCase,
         compute_portfolio_greeks: ComputePortfolioGreeksUseCase,
+        compute_option_portfolio_valuation: ComputeOptionPortfolioValuationUseCase,
+        suggest_hedging: SuggestHedgingUseCase,
     ) -> None:
         self._chat_agent = chat_agent
         self._get_watchlist = get_watchlist
@@ -325,6 +366,8 @@ class ChatWithAgentUseCase:
         self._add_option_holding = add_option_holding
         self._remove_option_holding = remove_option_holding
         self._compute_portfolio_greeks = compute_portfolio_greeks
+        self._compute_option_portfolio_valuation = compute_option_portfolio_valuation
+        self._suggest_hedging = suggest_hedging
         self._user_id: str = ""  # set per-request in execute()
 
     def execute(self, user_id: str, message: str, history: list[ChatMessage]) -> str:
@@ -619,6 +662,60 @@ class ChatWithAgentUseCase:
                 "total_vega": result.total_vega,
                 "positions_included": result.positions_included,
                 "positions_excluded": result.positions_excluded,
+            }
+
+        if tool_name == "compute_option_portfolio_valuation":
+            err = self._own_portfolio_or_error(tool_input["portfolio_id"])
+            if err:
+                return err
+            try:
+                result = self._compute_option_portfolio_valuation.execute(tool_input["portfolio_id"])
+            except OptionsDataProviderError as exc:
+                return {"error": f"Couldn't fetch live options data: {exc}"}
+            return {
+                "total_market_value": result.total_market_value,
+                "total_cost_basis": result.total_cost_basis,
+                "total_unrealized_gain": result.total_unrealized_gain,
+                "total_unrealized_gain_pct": result.total_unrealized_gain_pct,
+                "positions": [
+                    {
+                        "contract": p.contract.occ_symbol_fragment,
+                        "contracts_held": p.contracts_held,
+                        "current_price": p.current_price,
+                        "market_value": p.market_value,
+                        "unrealized_gain": p.unrealized_gain,
+                        "unrealized_gain_pct": p.unrealized_gain_pct,
+                    }
+                    for p in result.positions
+                ],
+                "positions_excluded": result.positions_excluded,
+            }
+
+        if tool_name == "suggest_hedging":
+            err = self._own_portfolio_or_error(tool_input["portfolio_id"])
+            if err:
+                return err
+            try:
+                plan = self._suggest_hedging.execute(tool_input["portfolio_id"])
+            except OptionsDataProviderError as exc:
+                return {"error": f"Couldn't fetch live options data: {exc}"}
+            if not plan.suggestions:
+                return {
+                    "suggestions": [],
+                    "positions_excluded": plan.positions_excluded,
+                    "note": "No underlying has meaningful net delta exposure — nothing to hedge.",
+                }
+            return {
+                "suggestions": [
+                    {
+                        "underlying_ticker": s.underlying_ticker,
+                        "net_delta": s.net_delta,
+                        "shares_to_trade": s.shares_to_trade,
+                        "resulting_delta": s.resulting_delta,
+                    }
+                    for s in plan.suggestions
+                ],
+                "positions_excluded": plan.positions_excluded,
             }
 
         return {"error": f"Unknown tool: {tool_name}"}

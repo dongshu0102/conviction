@@ -7,6 +7,9 @@ from src.application.use_cases.chat_with_agent import ChatWithAgentUseCase
 from src.application.use_cases.compute_financial_analysis import (
     ComputeFinancialAnalysisUseCase,
 )
+from src.application.use_cases.compute_option_portfolio_valuation import (
+    ComputeOptionPortfolioValuationUseCase,
+)
 from src.application.use_cases.compute_portfolio_greeks import ComputePortfolioGreeksUseCase
 from src.application.use_cases.compute_portfolio_risk import ComputePortfolioRiskUseCase
 from src.application.use_cases.compute_portfolio_valuation import (
@@ -32,6 +35,7 @@ from src.application.use_cases.manage_watchlist import (
 )
 from src.application.use_cases.recommend_stocks import RecommendStocksUseCase
 from src.application.use_cases.screen_stocks import ScreenStocksUseCase
+from src.application.use_cases.suggest_hedging import SuggestHedgingUseCase
 from src.application.use_cases.suggest_rebalancing import SuggestRebalancingUseCase
 from src.domain.entities.company import Company, Sector
 from src.domain.entities.market_quote import MarketQuote
@@ -117,6 +121,10 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
         add_option_holding=AddOptionHoldingUseCase(portfolio_repo),
         remove_option_holding=RemoveOptionHoldingUseCase(portfolio_repo),
         compute_portfolio_greeks=ComputePortfolioGreeksUseCase(portfolio_repo, options_provider),
+        compute_option_portfolio_valuation=ComputeOptionPortfolioValuationUseCase(
+            portfolio_repo, options_provider
+        ),
+        suggest_hedging=SuggestHedgingUseCase(portfolio_repo, options_provider),
     )
     return use_case, fake_agent, portfolio_repo
 
@@ -471,3 +479,92 @@ def test_remove_option_holding_dispatches_correctly() -> None:
     assert fake_agent.dispatch_results[0] == {"status": "removed"}
     stored = portfolio_repo.get_by_id(portfolio.portfolio_id)
     assert stored.option_holdings == []
+
+
+def test_compute_option_portfolio_valuation_blocks_other_users_portfolio() -> None:
+    portfolio_repo = FakePortfolioRepository()
+    alice_portfolio = CreatePortfolioUseCase(portfolio_repo).execute("alice", "Alice's")
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("compute_option_portfolio_valuation", {"portfolio_id": alice_portfolio.portfolio_id})],
+        portfolio_repo=portfolio_repo,
+    )
+    use_case.execute("bob", "what's my option P&L on alice's portfolio?", [])
+
+    assert "error" in fake_agent.dispatch_results[0]
+
+
+def test_compute_option_portfolio_valuation_dispatches_correctly_for_owner() -> None:
+    from src.domain.entities.option import OptionContract, OptionQuote
+
+    portfolio_repo = FakePortfolioRepository()
+    portfolio = CreatePortfolioUseCase(portfolio_repo).execute("alice", "Options")
+    AddOptionHoldingUseCase(portfolio_repo).execute(
+        portfolio.portfolio_id, "AAPL", 150.0, date(2026, 12, 18), "call", 5, 3.20
+    )
+    contract = OptionContract("AAPL", 150.0, date(2026, 12, 18), "call")
+    quote = OptionQuote(
+        contract=contract, bid=4.4, ask=4.6, last=4.45, implied_volatility=0.3,
+        open_interest=100, volume=10, delta=0.5, gamma=0.02, theta=-0.03, vega=0.15,
+        underlying_price=150.0, as_of=datetime(2026, 1, 1, tzinfo=timezone.utc), mid=4.5,
+    )
+    options_provider = FakeOptionsDataProvider(
+        {("AAPL", 150.0, date(2026, 12, 18), "call"): quote}
+    )
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("compute_option_portfolio_valuation", {"portfolio_id": portfolio.portfolio_id})],
+        portfolio_repo=portfolio_repo,
+        options_provider=options_provider,
+    )
+    use_case.execute("alice", "what's my option P&L?", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert len(result["positions"]) == 1
+    # 5 contracts * 4.5 mid * 100 = 2250
+    assert abs(result["total_market_value"] - 2250.0) < 1e-9
+
+
+def test_suggest_hedging_blocks_access_to_another_users_portfolio() -> None:
+    portfolio_repo = FakePortfolioRepository()
+    alice_portfolio = CreatePortfolioUseCase(portfolio_repo).execute("alice", "Alice's")
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("suggest_hedging", {"portfolio_id": alice_portfolio.portfolio_id})],
+        portfolio_repo=portfolio_repo,
+    )
+    use_case.execute("bob", "hedge alice's portfolio", [])
+
+    assert "error" in fake_agent.dispatch_results[0]
+
+
+def test_suggest_hedging_dispatches_correctly_for_owner() -> None:
+    from src.domain.entities.option import OptionContract, OptionQuote
+
+    portfolio_repo = FakePortfolioRepository()
+    portfolio = CreatePortfolioUseCase(portfolio_repo).execute("alice", "Options")
+    AddOptionHoldingUseCase(portfolio_repo).execute(
+        portfolio.portfolio_id, "AAPL", 150.0, date(2026, 12, 18), "call", 5, 3.20
+    )
+    contract = OptionContract("AAPL", 150.0, date(2026, 12, 18), "call")
+    quote = OptionQuote(
+        contract=contract, bid=4.4, ask=4.6, last=4.45, implied_volatility=0.3,
+        open_interest=100, volume=10, delta=0.5, gamma=0.02, theta=-0.03, vega=0.15,
+        underlying_price=150.0, as_of=datetime(2026, 1, 1, tzinfo=timezone.utc), mid=4.5,
+    )
+    options_provider = FakeOptionsDataProvider(
+        {("AAPL", 150.0, date(2026, 12, 18), "call"): quote}
+    )
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("suggest_hedging", {"portfolio_id": portfolio.portfolio_id})],
+        portfolio_repo=portfolio_repo,
+        options_provider=options_provider,
+    )
+    use_case.execute("alice", "how would I hedge my portfolio?", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert len(result["suggestions"]) == 1
+    # 5 contracts * 0.5 delta * 100 = 250 net delta -> sell 250 shares
+    assert abs(result["suggestions"][0]["net_delta"] - 250.0) < 1e-9
+    assert abs(result["suggestions"][0]["shares_to_trade"] - (-250.0)) < 1e-9
