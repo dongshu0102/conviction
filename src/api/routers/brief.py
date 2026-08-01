@@ -62,7 +62,7 @@ def get_daily_brief_use_case(
     brief_generator: AnthropicBriefGenerator = Depends(get_brief_generator),
 ) -> GenerateDailyBriefUseCase:
     compute_valuation = ComputePortfolioValuationUseCase(portfolio_repo, provider)
-    compute_risk = ComputePortfolioRiskUseCase(compute_valuation, analysis_use_case, company_repo)
+    compute_risk = ComputePortfolioRiskUseCase(compute_valuation, analysis_use_case, company_repo, provider)
     return GenerateDailyBriefUseCase(
         watchlist_repo, snapshot_repo, alert_repo, portfolio_repo, provider,
         compute_valuation, compute_risk, brief_generator,

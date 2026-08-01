@@ -8,12 +8,22 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from src.api.routers.companies import get_company_repository
+from src.api.routers.companies import get_company_repository, get_data_provider
+from src.api.routers.companies import (
+    get_analysis_use_case,
+    get_valuation_use_case,
+)
 from src.api.schemas import (
+    ThemeSynthesisReportSchema,
     ThemeTickersSchema,
     UniverseThemeListSchema,
     UniverseThemeSchema,
     UniverseThemeSummarySchema,
+)
+from src.application.use_cases.generate_theme_synthesis import GenerateThemeSynthesisUseCase
+from src.application.use_cases.get_factor_scores import GetFactorScoresUseCase
+from src.application.use_cases.compute_universe_factor_snapshot import (
+    ComputeUniverseFactorSnapshotUseCase,
 )
 from src.application.use_cases.manage_universe_theme import (
     AddTickerToThemeUseCase,
@@ -24,10 +34,22 @@ from src.application.use_cases.manage_universe_theme import (
     ThemeNotFoundError,
     TickerNotIngestedForThemeError,
 )
+from src.application.use_cases.generate_theme_synthesis import (
+    NoSynthesizableDataError,
+    ThemeEmptyError,
+)
+from src.application.use_cases.screen_stocks import ScreenStocksUseCase
+from src.infrastructure.llm_providers.anthropic_theme_synthesis_generator import (
+    AnthropicThemeSynthesisGenerator,
+)
 from src.infrastructure.persistence.company_repository_impl import SqlAlchemyCompanyRepository
+from src.infrastructure.persistence.factor_score_repository_impl import (
+    SqlAlchemyFactorScoreRepository,
+)
 from src.infrastructure.persistence.universe_theme_repository_impl import (
     SqlAlchemyUniverseThemeRepository,
 )
+from src.infrastructure.config import get_settings
 
 router = APIRouter(prefix="/universe", tags=["universe"])
 
@@ -136,3 +158,47 @@ def remove_ticker(
             status_code=404, detail=f"'{ticker.upper()}' is not tagged into '{name}'."
         )
     return {"removed": True}
+
+
+def get_theme_synthesis_use_case(
+    theme_repo: SqlAlchemyUniverseThemeRepository = Depends(get_theme_repository),
+    company_repo: SqlAlchemyCompanyRepository = Depends(get_company_repository),
+    data_provider=Depends(get_data_provider),
+    valuation_use_case=Depends(get_valuation_use_case),
+    analysis_use_case=Depends(get_analysis_use_case),
+) -> GenerateThemeSynthesisUseCase:
+    get_theme_tickers = GetThemeTickersUseCase(theme_repo)
+    screen_stocks = ScreenStocksUseCase(valuation_use_case, analysis_use_case)
+    factor_repo = SqlAlchemyFactorScoreRepository()
+    get_factor_scores = GetFactorScoresUseCase(
+        factor_repo,
+        ComputeUniverseFactorSnapshotUseCase(
+            data_provider, valuation_use_case, analysis_use_case, factor_repo
+        ),
+    )
+    return GenerateThemeSynthesisUseCase(
+        theme_repo, get_theme_tickers, screen_stocks, get_factor_scores,
+        AnthropicThemeSynthesisGenerator(get_settings()),
+    )
+
+
+@router.post("/themes/{name}/synthesis", response_model=ThemeSynthesisReportSchema)
+def generate_synthesis(
+    name: str,
+    use_case: GenerateThemeSynthesisUseCase = Depends(get_theme_synthesis_use_case),
+) -> ThemeSynthesisReportSchema:
+    try:
+        report = use_case.execute(name)
+    except (ThemeNotFoundError, ThemeEmptyError, NoSynthesizableDataError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return ThemeSynthesisReportSchema(
+        theme_name=report.theme_name,
+        generated_at=report.generated_at,
+        tickers_covered=report.tickers_covered,
+        tickers_excluded=report.tickers_excluded,
+        overview=report.overview,
+        common_threads=report.common_threads,
+        notable_divergences=report.notable_divergences,
+        key_risks=report.key_risks,
+        model_used=report.model_used,
+    )

@@ -59,6 +59,10 @@ from src.application.use_cases.manage_watchlist import (
     RemoveFromWatchlistUseCase,
     UpdateWatchlistItemUseCase,
 )
+from src.application.use_cases.construct_risk_parity_portfolio import (
+    ConstructRiskParityPortfolioUseCase,
+)
+from src.application.use_cases.generate_theme_synthesis import GenerateThemeSynthesisUseCase
 from src.application.use_cases.get_factor_scores import GetFactorScoresUseCase
 from src.application.use_cases.manage_universe_theme import (
     AddTickerToThemeUseCase,
@@ -128,7 +132,26 @@ user, not personal to whoever is chatting. Treat creating or editing a theme \
 as a shared, durable change, not a private preference; if the request seems \
 like it's meant to be personal, a watchlist is very likely the better fit — \
 ask if unsure. A theme can only contain tickers that are already ingested; \
-ETFs and other non-company instruments are not supported yet."""
+ETFs and other non-company instruments are not supported yet.
+
+get_portfolio_risk's volatility fields are a standard parametric (variance-\
+covariance) estimate assuming normally-distributed returns — a well-known \
+approximation, not a guarantee; say so if the user asks about its \
+reliability. parametric_var_95_1day_dollar is scoped to \
+volatility_covered_weight of the portfolio, not necessarily all of it — if \
+volatility_covered_weight is meaningfully below 1.0, say the analysis covers \
+only that fraction of the portfolio's value rather than presenting the VaR \
+figure as if it applied to the whole thing. Present this as risk information \
+to help understand exposure, not as a trading signal.
+
+construct_risk_parity_portfolio is a SIZING tool, not a stock-picking tool — \
+it takes tickers already chosen (by the user, or from a theme) and proposes \
+how much capital each should get based on volatility alone. It never \
+predicts returns and never implies one ticker will outperform another. \
+Lower volatility gets more weight; that is a risk choice, not a quality \
+judgment — a boring, low-volatility company is not necessarily a better \
+investment than a volatile one, just a smaller position under this \
+methodology."""
 
 _TOOLS = [
     ToolDefinition(
@@ -291,6 +314,38 @@ _TOOLS = [
         {"type": "object", "properties": {"theme_name": {"type": "string"}}, "required": ["theme_name"]},
     ),
     ToolDefinition(
+        "generate_theme_synthesis",
+        "Generate an AI-written narrative synthesis across an ENTIRE curated "
+        "theme — what ties the group together, common threads, notable "
+        "outliers, and risks visible across the theme as a whole. Different "
+        "from get_company_research (single ticker, deep dive): this is a "
+        "cross-sectional view of a group. Grounded in real screening and "
+        "factor-scoring data for every ticker in the theme; not persisted, "
+        "regenerated fresh each call. Can take a few seconds for a large theme.",
+        {"type": "object", "properties": {"theme_name": {"type": "string"}}, "required": ["theme_name"]},
+    ),
+    ToolDefinition(
+        "construct_risk_parity_portfolio",
+        "Propose a FROM-SCRATCH dollar allocation across a list of tickers "
+        "using risk parity: lower-volatility tickers get more capital, "
+        "higher-volatility tickers get less, so no single holding dominates "
+        "the portfolio's risk. This does NOT use any expected-return "
+        "forecast — it is a risk-based allocation, not a return-maximizing "
+        "one, and it is NOT a recommendation of which tickers to buy, only "
+        "how to size positions across ones already chosen (e.g. a theme's "
+        "members, or names the user is considering). Present the weights "
+        "and the methodology_note; never imply this predicts which will "
+        "perform best.",
+        {
+            "type": "object",
+            "properties": {
+                "tickers": {"type": "array", "items": {"type": "string"}},
+                "total_investment": {"type": "number"},
+            },
+            "required": ["tickers", "total_investment"],
+        },
+    ),
+    ToolDefinition(
         "get_stock_news",
         "Latest news headlines. With a ticker: news for that ticker. Without: "
         "news for every ticker on the user's watchlist (optionally one "
@@ -327,7 +382,14 @@ _TOOLS = [
     ),
     ToolDefinition(
         "get_portfolio_risk",
-        "Get risk metrics (concentration, sector exposure, leverage) for one of the user's portfolios.",
+        "Get risk metrics for one of the user's portfolios: concentration "
+        "(largest position, Herfindahl index), sector exposure, weighted-"
+        "average leverage, AND (when price history is available) portfolio "
+        "volatility, pairwise correlations between holdings, and parametric "
+        "95% 1-day VaR. Volatility fields may be null if price history "
+        "couldn't be fetched for enough holdings — check "
+        "volatility_covered_weight and excluded_from_volatility_calc before "
+        "presenting a volatility figure as covering the whole portfolio.",
         {
             "type": "object",
             "properties": {"portfolio_id": {"type": "string"}},
@@ -563,6 +625,8 @@ class ChatWithAgentUseCase:
         remove_ticker_from_theme: RemoveTickerFromThemeUseCase,
         list_universe_themes: ListUniverseThemesUseCase,
         get_theme_tickers: GetThemeTickersUseCase,
+        generate_theme_synthesis: GenerateThemeSynthesisUseCase,
+        construct_risk_parity_portfolio: ConstructRiskParityPortfolioUseCase,
     ) -> None:
         self._chat_agent = chat_agent
         self._get_watchlist = get_watchlist
@@ -596,6 +660,8 @@ class ChatWithAgentUseCase:
         self._remove_ticker_from_theme = remove_ticker_from_theme
         self._list_universe_themes = list_universe_themes
         self._get_theme_tickers = get_theme_tickers
+        self._generate_theme_synthesis = generate_theme_synthesis
+        self._construct_risk_parity_portfolio = construct_risk_parity_portfolio
         self._user_id: str = ""  # set per-request in execute()
 
     def execute(self, user_id: str, message: str, history: list[ChatMessage]) -> str:
@@ -810,6 +876,46 @@ class ChatWithAgentUseCase:
             except Exception as exc:
                 return {"error": str(exc)}
 
+        if tool_name == "generate_theme_synthesis":
+            try:
+                report = self._generate_theme_synthesis.execute(tool_input["theme_name"])
+            except Exception as exc:
+                return {"error": str(exc)}
+            return {
+                "theme_name": report.theme_name,
+                "tickers_covered": report.tickers_covered,
+                "tickers_excluded": report.tickers_excluded,
+                "overview": report.overview,
+                "common_threads": report.common_threads,
+                "notable_divergences": report.notable_divergences,
+                "key_risks": report.key_risks,
+                "model_used": report.model_used,
+            }
+
+        if tool_name == "construct_risk_parity_portfolio":
+            try:
+                result = self._construct_risk_parity_portfolio.execute(
+                    tool_input["tickers"], tool_input["total_investment"]
+                )
+            except Exception as exc:
+                return {"error": str(exc)}
+            return {
+                "methodology_note": result.methodology_note,
+                "total_investment": result.total_investment,
+                "allocations": [
+                    {
+                        "ticker": a.ticker,
+                        "target_weight": round(a.target_weight, 4),
+                        "target_dollar_amount": round(a.target_dollar_amount, 2),
+                        "daily_volatility": a.daily_volatility,
+                        "current_price": a.current_price,
+                        "suggested_shares": round(a.suggested_shares, 2),
+                    }
+                    for a in result.allocations
+                ],
+                "excluded": result.excluded,
+            }
+
         if tool_name == "get_stock_news":
             ticker = tool_input.get("ticker")
             by_ticker, failed = self._get_watchlist_news.execute(
@@ -909,6 +1015,16 @@ class ChatWithAgentUseCase:
                     {"sector": s.sector, "weight": s.weight} for s in r.sector_exposures
                 ],
                 "weighted_avg_debt_to_equity": r.weighted_avg_debt_to_equity,
+                "portfolio_daily_volatility": r.portfolio_daily_volatility,
+                "portfolio_annualized_volatility": r.portfolio_annualized_volatility,
+                "parametric_var_95_1day_dollar": r.parametric_var_95_1day_dollar,
+                "volatility_covered_weight": r.volatility_covered_weight,
+                "volatility_lookback_days_used": r.volatility_lookback_days_used,
+                "pairwise_correlations": [
+                    {"ticker_a": c.ticker_a, "ticker_b": c.ticker_b, "correlation": c.correlation}
+                    for c in r.pairwise_correlations
+                ],
+                "excluded_from_volatility_calc": r.excluded_from_volatility_calc,
             }
 
         if tool_name == "add_holding":

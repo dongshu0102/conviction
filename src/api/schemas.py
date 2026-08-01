@@ -194,6 +194,12 @@ class SectorExposureSchema(BaseModel):
     weight: float
 
 
+class PairwiseCorrelationSchema(BaseModel):
+    ticker_a: str
+    ticker_b: str
+    correlation: float
+
+
 class PortfolioRiskAnalysisSchema(BaseModel):
     portfolio_id: str
     as_of: datetime
@@ -202,6 +208,30 @@ class PortfolioRiskAnalysisSchema(BaseModel):
     sector_exposures: list[SectorExposureSchema]
     weighted_avg_debt_to_equity: float | None
     excluded_from_leverage_calc: list[str]
+    portfolio_daily_volatility: float | None = None
+    portfolio_annualized_volatility: float | None = None
+    parametric_var_95_1day_dollar: float | None = None
+    volatility_covered_weight: float | None = None
+    volatility_lookback_days_used: int | None = None
+    pairwise_correlations: list[PairwiseCorrelationSchema] = []
+    excluded_from_volatility_calc: list[str] = []
+
+
+class RiskParityAllocationSchema(BaseModel):
+    ticker: str
+    daily_volatility: float
+    target_weight: float
+    target_dollar_amount: float
+    current_price: float
+    suggested_shares: float
+
+
+class RiskParityConstructionResponseSchema(BaseModel):
+    as_of: datetime
+    total_investment: float
+    allocations: list[RiskParityAllocationSchema]
+    excluded: list[str]
+    methodology_note: str
 
 
 class ApiKeyCreatedSchema(BaseModel):
@@ -303,6 +333,18 @@ class FactorScoreResponseSchema(BaseModel):
 class FactorRankingResponseSchema(BaseModel):
     scoring_note: str
     results: list[RankedFactorScoreSchema]
+
+
+class ThemeSynthesisReportSchema(BaseModel):
+    theme_name: str
+    generated_at: datetime
+    tickers_covered: list[str]
+    tickers_excluded: list[str]
+    overview: str
+    common_threads: str
+    notable_divergences: str
+    key_risks: str
+    model_used: str
 
 
 class UniverseThemeSchema(BaseModel):

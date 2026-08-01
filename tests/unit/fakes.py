@@ -443,3 +443,28 @@ class FakeUniverseThemeRepository:
     def get_themes_for_ticker(self, ticker: str) -> list[str]:
         ticker = ticker.strip().upper()
         return sorted(name for (name, t) in self._memberships if t == ticker)
+
+
+class FakeThemeSynthesisGenerator:
+    """Records exactly what tickers it was called with — same
+    grounding-verification pattern as FakeResearchGenerator."""
+
+    def __init__(self, result=None) -> None:
+        from src.application.interfaces.theme_synthesis_generator import (
+            ThemeSynthesisGenerationResult,
+        )
+
+        self._result = result or ThemeSynthesisGenerationResult(
+            overview="Test overview", common_threads="Test threads",
+            notable_divergences="Test divergences", key_risks="Test risks",
+            model_used="test-model", raw_response={},
+        )
+        self.received_theme_name = None
+        self.received_theme_description = None
+        self.received_tickers = None
+
+    def generate(self, theme_name, theme_description, tickers):
+        self.received_theme_name = theme_name
+        self.received_theme_description = theme_description
+        self.received_tickers = tickers
+        return self._result

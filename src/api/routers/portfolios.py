@@ -21,6 +21,9 @@ from src.api.routers.companies import (
     get_data_provider,
 )
 from src.api.schemas import (
+    PairwiseCorrelationSchema,
+    RiskParityAllocationSchema,
+    RiskParityConstructionResponseSchema,
     PortfolioHoldingSchema,
     PortfolioRiskAnalysisSchema,
     PortfolioSchema,
@@ -29,6 +32,12 @@ from src.api.schemas import (
     SectorExposureSchema,
 )
 from src.application.interfaces.data_provider import DataProviderError
+from src.application.use_cases.construct_risk_parity_portfolio import (
+    ConstructRiskParityPortfolioUseCase,
+    InvalidInvestmentAmountError,
+    NoAllocatableTickersError,
+    NoTickersProvidedError,
+)
 from src.application.use_cases.compute_financial_analysis import (
     ComputeFinancialAnalysisUseCase,
 )
@@ -111,7 +120,7 @@ def get_risk_use_case(
     company_repo: SqlAlchemyCompanyRepository = Depends(get_company_repository),
 ) -> ComputePortfolioRiskUseCase:
     valuation_use_case = ComputePortfolioValuationUseCase(repo, provider)
-    return ComputePortfolioRiskUseCase(valuation_use_case, analysis_use_case, company_repo)
+    return ComputePortfolioRiskUseCase(valuation_use_case, analysis_use_case, company_repo, provider)
 
 
 def _verify_ownership(
@@ -282,4 +291,51 @@ def get_portfolio_risk(
         ],
         weighted_avg_debt_to_equity=result.weighted_avg_debt_to_equity,
         excluded_from_leverage_calc=result.excluded_from_leverage_calc,
+        portfolio_daily_volatility=result.portfolio_daily_volatility,
+        portfolio_annualized_volatility=result.portfolio_annualized_volatility,
+        parametric_var_95_1day_dollar=result.parametric_var_95_1day_dollar,
+        volatility_covered_weight=result.volatility_covered_weight,
+        volatility_lookback_days_used=result.volatility_lookback_days_used,
+        pairwise_correlations=[
+            PairwiseCorrelationSchema(ticker_a=c.ticker_a, ticker_b=c.ticker_b, correlation=c.correlation)
+            for c in result.pairwise_correlations
+        ],
+        excluded_from_volatility_calc=result.excluded_from_volatility_calc,
+    )
+
+
+def get_risk_parity_use_case(
+    provider: FinancialModelingPrepProvider = Depends(get_data_provider),
+) -> ConstructRiskParityPortfolioUseCase:
+    return ConstructRiskParityPortfolioUseCase(provider)
+
+
+@router.post("/construct-risk-parity", response_model=RiskParityConstructionResponseSchema)
+def construct_risk_parity(
+    tickers: list[str],
+    total_investment: float,
+    user_id: str = Depends(get_authenticated_user_id),
+    use_case: ConstructRiskParityPortfolioUseCase = Depends(get_risk_parity_use_case),
+) -> RiskParityConstructionResponseSchema:
+    try:
+        result = use_case.execute(tickers, total_investment)
+    except (NoTickersProvidedError, InvalidInvestmentAmountError, NoAllocatableTickersError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return RiskParityConstructionResponseSchema(
+        as_of=result.as_of,
+        total_investment=result.total_investment,
+        allocations=[
+            RiskParityAllocationSchema(
+                ticker=a.ticker,
+                daily_volatility=a.daily_volatility,
+                target_weight=a.target_weight,
+                target_dollar_amount=a.target_dollar_amount,
+                current_price=a.current_price,
+                suggested_shares=a.suggested_shares,
+            )
+            for a in result.allocations
+        ],
+        excluded=result.excluded,
+        methodology_note=result.methodology_note,
     )

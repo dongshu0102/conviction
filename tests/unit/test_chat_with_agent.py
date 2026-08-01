@@ -31,6 +31,10 @@ from src.application.use_cases.manage_portfolio import (
 from src.application.use_cases.compute_universe_factor_snapshot import (
     ComputeUniverseFactorSnapshotUseCase,
 )
+from src.application.use_cases.construct_risk_parity_portfolio import (
+    ConstructRiskParityPortfolioUseCase,
+)
+from src.application.use_cases.generate_theme_synthesis import GenerateThemeSynthesisUseCase
 from src.application.use_cases.get_factor_scores import GetFactorScoresUseCase
 from src.application.use_cases.manage_universe_theme import (
     AddTickerToThemeUseCase,
@@ -56,6 +60,7 @@ from src.domain.entities.company import Company, Sector
 from src.domain.entities.market_quote import MarketQuote
 from tests.unit.fakes import (
     FakeFactorScoreRepository,
+    FakeThemeSynthesisGenerator,
     FakeUniverseThemeRepository,
     FakePriceSnapshotRepository,
     FakeCompanyRepository,
@@ -114,12 +119,18 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
     get_financials = GetCompanyFinancialsUseCase(company_repo, statement_repo)
     compute_valuation = ComputePortfolioValuationUseCase(portfolio_repo, provider)
     compute_analysis = ComputeFinancialAnalysisUseCase(get_financials)
-    compute_risk = ComputePortfolioRiskUseCase(compute_valuation, compute_analysis, company_repo)
+    compute_risk = ComputePortfolioRiskUseCase(compute_valuation, compute_analysis, company_repo, provider)
     compute_company_valuation = ComputeValuationUseCase(get_financials, provider)
 
     fake_agent = FakeChatAgent(scripted_calls)
     _factor_score_repo = FakeFactorScoreRepository()
     theme_repo = theme_repo or FakeUniverseThemeRepository()
+    _get_factor_scores = GetFactorScoresUseCase(
+        _factor_score_repo,
+        ComputeUniverseFactorSnapshotUseCase(
+            provider, compute_company_valuation, compute_analysis, _factor_score_repo
+        ),
+    )
     use_case = ChatWithAgentUseCase(
         chat_agent=fake_agent,
         get_watchlist=GetWatchlistUseCase(watchlist_repo),
@@ -151,17 +162,18 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
             watchlist_repo, provider, FakePriceSnapshotRepository()
         ),
         get_watchlist_news=GetWatchlistNewsUseCase(watchlist_repo, provider),
-        get_factor_scores=GetFactorScoresUseCase(
-            _factor_score_repo,
-            ComputeUniverseFactorSnapshotUseCase(
-                provider, compute_company_valuation, compute_analysis, _factor_score_repo
-            ),
-        ),
+        get_factor_scores=_get_factor_scores,
         create_universe_theme=CreateUniverseThemeUseCase(theme_repo),
         add_ticker_to_theme=AddTickerToThemeUseCase(theme_repo, company_repo),
         remove_ticker_from_theme=RemoveTickerFromThemeUseCase(theme_repo),
         list_universe_themes=ListUniverseThemesUseCase(theme_repo),
         get_theme_tickers=GetThemeTickersUseCase(theme_repo),
+        generate_theme_synthesis=GenerateThemeSynthesisUseCase(
+            theme_repo, GetThemeTickersUseCase(theme_repo),
+            ScreenStocksUseCase(compute_company_valuation, compute_analysis),
+            _get_factor_scores, FakeThemeSynthesisGenerator(),
+        ),
+        construct_risk_parity_portfolio=ConstructRiskParityPortfolioUseCase(provider),
     )
     return use_case, fake_agent, portfolio_repo
 
@@ -932,3 +944,92 @@ def test_screen_stocks_manual_tickers_still_works_unchanged() -> None:
     # ticker not ingested -> excluded, not an error (existing screen_stocks behavior)
     assert "error" not in result
     assert "NOTINGESTED" in result["excluded"]
+
+
+# ---- Theme synthesis chat tool tests ----
+
+
+def test_generate_theme_synthesis_via_chat_returns_generated_fields() -> None:
+    company_repo = _company_repo("AAPL")
+    theme_repo = FakeUniverseThemeRepository()
+    from src.application.use_cases.manage_universe_theme import (
+        AddTickerToThemeUseCase, CreateUniverseThemeUseCase,
+    )
+    CreateUniverseThemeUseCase(theme_repo).execute("Empty-ish Theme")
+    AddTickerToThemeUseCase(theme_repo, company_repo).execute("Empty-ish Theme", "AAPL")
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("generate_theme_synthesis", {"theme_name": "Empty-ish Theme"})],
+        company_repo=company_repo,
+        theme_repo=theme_repo,
+    )
+    use_case.execute("alice", "synthesize Empty-ish Theme", [])
+
+    result = fake_agent.dispatch_results[0]
+    # AAPL has no financials or factor data in this minimal fixture ->
+    # NoSynthesizableDataError -> surfaces as a clean error, not a crash
+    assert "error" in result
+
+
+def test_generate_theme_synthesis_unknown_theme_returns_error() -> None:
+    company_repo = _company_repo("AAPL")
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("generate_theme_synthesis", {"theme_name": "Nonexistent"})],
+        company_repo=company_repo,
+    )
+    use_case.execute("alice", "synthesize Nonexistent", [])
+    assert "error" in fake_agent.dispatch_results[0]
+
+
+# ---- Risk parity construction chat tool tests ----
+
+
+def test_construct_risk_parity_portfolio_via_chat() -> None:
+    from datetime import date
+    from src.domain.entities.market_quote import PriceBar
+
+    _CLOSES = [
+        99.90004498800211, 100.90913635151728, 99.91003599160126, 100.9192282743447,
+        99.9200279944007, 100.92932120646535, 99.93002099650035, 100.93941514798014,
+        99.94001499800014, 100.94951009899003, 99.95000999900003, 100.959606059596,
+        99.9600059996, 100.969703029899, 99.97000299989999, 100.97980100999999,
+        99.98000099999999, 100.98989999999999, 99.99, 101.0, 100.0,
+    ]
+
+    class _PricedProvider(FakeDataProvider):
+        def get_daily_closes(self, ticker, limit=30):
+            return [PriceBar(bar_date=date(2026, 1, 1), close=c) for c in _CLOSES][:limit]
+
+    company_repo = _company_repo("AAPL")
+    provider = _PricedProvider(
+        company=company_repo.get_by_ticker("AAPL"),
+        quotes_by_ticker={"AAPL": MarketQuote(ticker="AAPL", price=100.0, market_cap=1e9,
+                                                as_of=datetime(2026, 1, 1, tzinfo=timezone.utc))},
+    )
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[(
+            "construct_risk_parity_portfolio",
+            {"tickers": ["AAPL"], "total_investment": 10000.0},
+        )],
+        company_repo=company_repo,
+        provider=provider,
+    )
+    use_case.execute("alice", "how should I split $10k across AAPL", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["excluded"] == []
+    assert len(result["allocations"]) == 1
+    assert abs(result["allocations"][0]["target_weight"] - 1.0) < 1e-6
+    assert abs(result["allocations"][0]["target_dollar_amount"] - 10000.0) < 1e-2
+    assert "methodology_note" in result
+    assert "not" in result["methodology_note"].lower()
+
+
+def test_construct_risk_parity_portfolio_error_surfaces_cleanly() -> None:
+    company_repo = _company_repo("AAPL")
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("construct_risk_parity_portfolio", {"tickers": [], "total_investment": 1000.0})],
+        company_repo=company_repo,
+    )
+    use_case.execute("alice", "allocate nothing", [])
+    assert "error" in fake_agent.dispatch_results[0]

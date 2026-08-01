@@ -44,6 +44,10 @@ from src.application.use_cases.manage_watchlist import (
 from src.application.use_cases.compute_universe_factor_snapshot import (
     ComputeUniverseFactorSnapshotUseCase,
 )
+from src.application.use_cases.construct_risk_parity_portfolio import (
+    ConstructRiskParityPortfolioUseCase,
+)
+from src.application.use_cases.generate_theme_synthesis import GenerateThemeSynthesisUseCase
 from src.application.use_cases.get_factor_scores import GetFactorScoresUseCase
 from src.application.use_cases.manage_universe_theme import (
     AddTickerToThemeUseCase,
@@ -71,6 +75,9 @@ from src.infrastructure.data_providers.marketdata_app_provider import MarketData
 from src.infrastructure.llm_providers.anthropic_chat_agent import AnthropicChatAgent
 from src.infrastructure.persistence.factor_score_repository_impl import (
     SqlAlchemyFactorScoreRepository,
+)
+from src.infrastructure.llm_providers.anthropic_theme_synthesis_generator import (
+    AnthropicThemeSynthesisGenerator,
 )
 from src.infrastructure.persistence.universe_theme_repository_impl import (
     SqlAlchemyUniverseThemeRepository,
@@ -120,6 +127,11 @@ def get_chat_use_case(
         ),
     )
     theme_repo = SqlAlchemyUniverseThemeRepository()
+    get_theme_tickers = GetThemeTickersUseCase(theme_repo)
+    generate_theme_synthesis = GenerateThemeSynthesisUseCase(
+        theme_repo, get_theme_tickers, screen_stocks, get_factor_scores,
+        AnthropicThemeSynthesisGenerator(get_settings()),
+    )
     return ChatWithAgentUseCase(
         chat_agent=chat_agent,
         get_watchlist=get_watchlist,
@@ -159,7 +171,9 @@ def get_chat_use_case(
         add_ticker_to_theme=AddTickerToThemeUseCase(theme_repo, company_repo),
         remove_ticker_from_theme=RemoveTickerFromThemeUseCase(theme_repo),
         list_universe_themes=ListUniverseThemesUseCase(theme_repo),
-        get_theme_tickers=GetThemeTickersUseCase(theme_repo),
+        get_theme_tickers=get_theme_tickers,
+        generate_theme_synthesis=generate_theme_synthesis,
+        construct_risk_parity_portfolio=ConstructRiskParityPortfolioUseCase(data_provider),
     )
 
 
