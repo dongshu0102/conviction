@@ -276,6 +276,11 @@ export default function TerminalPage() {
           </div>
         </section>
       )}
+      {earnings !== null && earnings.length === 0 && (
+        <p className="num" style={{ color: "var(--text-soft)", fontSize: "0.75rem", marginTop: "1rem" }}>
+          No earnings coming up on your watchlist in the next 14 days.
+        </p>
+      )}
       {earningsUnavailable && (
         <p className="num" style={{ color: "var(--text-soft)", fontSize: "0.75rem", marginTop: "1rem" }}>
           Earnings calendar unavailable right now.
