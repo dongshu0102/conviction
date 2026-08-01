@@ -22,6 +22,10 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, Depends
+from sqlalchemy import select
+
+from src.infrastructure.persistence.database import session_scope
+from src.infrastructure.persistence.models import CompanyModel, IncomeStatementModel
 
 from src.api.auth import get_authenticated_user_id
 from src.api.routers.companies import get_analysis_use_case, get_company_repository, get_data_provider
@@ -93,3 +97,62 @@ def refresh_factor_snapshot(
             "once it's done — the as_of timestamp will confirm completion."
         ),
     }
+
+
+@router.get("/non-usd-reporters")
+def list_non_usd_reporters(
+    user_id: str = Depends(get_authenticated_user_id),
+) -> dict[str, list[dict[str, str]]]:
+    """Diagnostic endpoint: every ingested ticker whose MOST RECENT
+    annual income statement reports in a currency other than USD.
+
+    Confirmed in production that this silently corrupts every valuation
+    ratio (P/E, P/S, P/B, EV/EBITDA) for that ticker — see
+    ComputeValuationUseCase's currency guard, added after TSM's
+    TWD-denominated EPS produced a P/E of ~1.2 when divided against its
+    USD ADR price. This endpoint exists to find every OTHER ticker with
+    the same latent exposure, not just the one that happened to get
+    noticed.
+
+    A direct query against the model, not the repository interface —
+    this is a one-off audit tool, not a domain operation, so it doesn't
+    warrant new repository surface area for a single caller.
+    """
+    with session_scope() as session:
+        # Most recent annual statement per ticker — a company could
+        # theoretically have switched reporting currency across years
+        # (extremely rare), so "most recent" is the one that actually
+        # matters for current valuation calculations.
+        latest_per_ticker: dict[str, IncomeStatementModel] = {}
+        rows = session.execute(
+            select(IncomeStatementModel).where(IncomeStatementModel.period == "ANNUAL")
+        ).scalars().all()
+        for row in rows:
+            existing = latest_per_ticker.get(row.ticker)
+            if existing is None or row.fiscal_year > existing.fiscal_year:
+                latest_per_ticker[row.ticker] = row
+
+        non_usd = [
+            row for row in latest_per_ticker.values()
+            if (row.reported_currency or "").strip().upper() != "USD"
+        ]
+
+        tickers = [row.ticker for row in non_usd]
+        names_by_ticker = {}
+        if tickers:
+            companies = session.execute(
+                select(CompanyModel).where(CompanyModel.ticker.in_(tickers))
+            ).scalars().all()
+            names_by_ticker = {c.ticker: c.name for c in companies}
+
+        return {
+            "non_usd_reporters": [
+                {
+                    "ticker": row.ticker,
+                    "name": names_by_ticker.get(row.ticker, ""),
+                    "reported_currency": row.reported_currency,
+                    "fiscal_year": str(row.fiscal_year),
+                }
+                for row in sorted(non_usd, key=lambda r: r.ticker)
+            ]
+        }
