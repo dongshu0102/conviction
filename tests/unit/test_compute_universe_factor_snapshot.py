@@ -218,3 +218,45 @@ def test_explicit_tickers_never_call_the_live_constituents_endpoint() -> None:
     assert result.total_tickers == 2
     assert result.succeeded == 2
     assert {s.ticker for s in factor_repo.get_all()} == {"AAA", "BBB"}
+
+
+def test_transient_failure_retries_then_succeeds() -> None:
+    """A rate-limit-style transient failure (429) should be retried,
+    not given up on immediately — proven by making the fake provider
+    fail exactly once per ticker then succeed on retry."""
+    use_case, factor_repo, company_repo = _build(sp500_tickers=["AAA"])
+
+    call_count = {"n": 0}
+    real_get_quote = use_case._data_provider.get_quote
+
+    def _flaky_get_quote(ticker):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            from src.application.interfaces.data_provider import DataProviderError
+            raise DataProviderError("429 Too Many Requests")
+        return real_get_quote(ticker)
+
+    use_case._data_provider.get_quote = _flaky_get_quote
+    use_case._base_backoff_seconds = 0.01  # keep the test fast
+
+    result = use_case.execute(tickers=["AAA"])
+
+    assert result.succeeded == 1  # recovered after the retry
+    assert call_count["n"] == 2  # failed once, succeeded on attempt 2
+
+
+def test_permanently_missing_data_does_not_retry() -> None:
+    """CompanyNotFoundError/NoFinancialDataError are checked by TYPE,
+    not by string-matching an HTTP status code — a ticker that simply
+    isn't ingested is exactly as permanent as a 404, and retrying it
+    wastes real time on every single production refresh, forever."""
+    use_case, factor_repo, company_repo = _build(sp500_tickers=["AAA", "DEAD"])
+    use_case._base_backoff_seconds = 5.0  # would make the test slow if a retry were (wrongly) attempted
+
+    import time
+    start = time.time()
+    result = use_case.execute(tickers=["AAA", "DEAD"])
+    elapsed = time.time() - start
+
+    assert elapsed < 1.0  # proves no backoff sleep was ever triggered for DEAD
+    assert [f.ticker for f in result.failed] == ["DEAD"]

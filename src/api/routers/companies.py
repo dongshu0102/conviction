@@ -32,7 +32,10 @@ from src.application.use_cases.compute_valuation import (
     ComputeValuationUseCase,
     NoFinancialDataError as NoValuationDataError,
 )
-from src.application.use_cases.get_factor_scores import GetFactorScoresUseCase
+from src.application.use_cases.get_factor_scores import (
+    FactorSnapshotNotReadyError,
+    GetFactorScoresUseCase,
+)
 from src.application.use_cases.get_company_financials import (
     CompanyNotFoundError,
     GetCompanyFinancialsUseCase,
@@ -173,7 +176,10 @@ def get_factor_score(
     weights = _weights_from_query(
         weight_value, weight_quality, weight_growth, weight_momentum, weight_size
     )
-    ranked = use_case.execute_for_ticker(ticker, weights)
+    try:
+        ranked = use_case.execute_for_ticker(ticker, weights)
+    except FactorSnapshotNotReadyError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     if ranked is None:
         raise HTTPException(
             status_code=404, detail=f"No factor score available for '{ticker.upper()}'."
@@ -194,7 +200,10 @@ def rank_by_factors(
     weights = _weights_from_query(
         weight_value, weight_quality, weight_growth, weight_momentum, weight_size
     )
-    results = use_case.execute(weights)[:top_n]
+    try:
+        results = use_case.execute(weights)[:top_n]
+    except FactorSnapshotNotReadyError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     return FactorRankingResponseSchema(
         scoring_note=_FACTOR_SCORING_NOTE,
         results=[_to_ranked_schema(r) for r in results],

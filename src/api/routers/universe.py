@@ -21,7 +21,10 @@ from src.api.schemas import (
     UniverseThemeSummarySchema,
 )
 from src.application.use_cases.generate_theme_synthesis import GenerateThemeSynthesisUseCase
-from src.application.use_cases.get_factor_scores import GetFactorScoresUseCase
+from src.application.use_cases.get_factor_scores import (
+    FactorSnapshotNotReadyError,
+    GetFactorScoresUseCase,
+)
 from src.application.use_cases.compute_universe_factor_snapshot import (
     ComputeUniverseFactorSnapshotUseCase,
 )
@@ -189,6 +192,8 @@ def generate_synthesis(
 ) -> ThemeSynthesisReportSchema:
     try:
         report = use_case.execute(name)
+    except FactorSnapshotNotReadyError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except (ThemeNotFoundError, ThemeEmptyError, NoSynthesizableDataError) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return ThemeSynthesisReportSchema(
