@@ -10,6 +10,7 @@ import logging
 from datetime import date, datetime
 
 from src.domain.entities.earnings import EarningsEvent
+from src.domain.entities.etf import EtfProfile
 from src.domain.entities.market_quote import PriceBar
 from src.domain.entities.news import NewsArticle
 
@@ -108,3 +109,31 @@ def parse_earnings_calendar(payload) -> list[EarningsEvent]:
         except (KeyError, ValueError, TypeError, AttributeError) as exc:
             logger.warning("Skipping malformed earnings-calendar row %d: %s", i, exc)
     return events
+
+
+def parse_etf_info(payload, ticker: str) -> EtfProfile | None:
+    """FMP's /etf/info returns a LIST wrapping a single object (same
+    list-wrapping convention as other stable endpoints), even for a
+    single-symbol request. Missing/malformed data degrades to None
+    fields rather than raising — same discipline as every other parser
+    here."""
+    if not isinstance(payload, list) or not payload:
+        logger.warning("Unexpected etf/info payload shape for %s: %s", ticker, type(payload))
+        return None
+
+    row = payload[0]
+    try:
+        name = row["name"]
+    except (KeyError, TypeError) as exc:
+        logger.warning("Malformed etf/info row for %s: %s", ticker, exc)
+        return None
+
+    return EtfProfile(
+        ticker=ticker.upper(),
+        name=name,
+        description=row.get("description"),
+        asset_class=row.get("assetClass"),
+        domicile=row.get("domicile"),
+        expense_ratio=row.get("expenseRatio"),
+        aum=row.get("assetsUnderManagement"),
+    )

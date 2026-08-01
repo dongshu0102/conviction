@@ -239,6 +239,13 @@ class RiskParityConstructionResponseSchema(BaseModel):
     methodology_note: str
 
 
+class EtfIngestResultSchema(BaseModel):
+    ticker: str
+    name: str
+    expense_ratio: float | None
+    aum: float | None
+
+
 class ApiKeyCreatedSchema(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
 

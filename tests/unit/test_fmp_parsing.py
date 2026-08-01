@@ -110,3 +110,44 @@ def test_parse_earnings_calendar_skips_malformed_rows() -> None:
 
 def test_parse_earnings_calendar_rejects_non_list_payload() -> None:
     assert parse_earnings_calendar({"Error Message": "nope"}) == []
+
+
+# ---- ETF info ----
+
+from src.infrastructure.data_providers.fmp_parsing import parse_etf_info
+
+
+def test_parse_etf_info_happy_path_real_spy_shape() -> None:
+    # Real response shape confirmed live against FMP — list-wrapped
+    # single object, expenseRatio already a percentage figure (0.09
+    # means 0.09%, not a fraction).
+    payload = [{
+        "symbol": "SPY",
+        "name": "State Street SPDR S&P 500 ETF",
+        "description": "SPY is...",
+        "assetClass": "Equity",
+        "domicile": "US",
+        "expenseRatio": 0.09,
+        "assetsUnderManagement": 789063970000,
+    }]
+    profile = parse_etf_info(payload, "spy")
+    assert profile is not None
+    assert profile.ticker == "SPY"  # uppercased
+    assert profile.name == "State Street SPDR S&P 500 ETF"
+    assert profile.asset_class == "Equity"
+    assert profile.domicile == "US"
+    assert profile.expense_ratio == 0.09
+    assert profile.aum == 789063970000
+
+
+def test_parse_etf_info_missing_name_returns_none() -> None:
+    payload = [{"symbol": "XYZ"}]
+    assert parse_etf_info(payload, "XYZ") is None
+
+
+def test_parse_etf_info_empty_list_returns_none() -> None:
+    assert parse_etf_info([], "XYZ") is None
+
+
+def test_parse_etf_info_non_list_payload_returns_none() -> None:
+    assert parse_etf_info({"Error Message": "nope"}, "XYZ") is None

@@ -260,3 +260,45 @@ def test_permanently_missing_data_does_not_retry() -> None:
 
     assert elapsed < 1.0  # proves no backoff sleep was ever triggered for DEAD
     assert [f.ticker for f in result.failed] == ["DEAD"]
+
+
+def test_etf_like_ticker_with_no_statements_gets_partial_momentum_and_size_not_excluded() -> None:
+    """The exact ETF case: a Company profile exists (so it's a known,
+    ingested ticker), but zero financial statements exist (by
+    construction — funds don't file income statements). Must NOT be
+    excluded from the batch the way a truly-unknown ticker would be;
+    must instead contribute Momentum + Size, honestly None for
+    Value/Quality/Growth."""
+    company_repo = FakeCompanyRepository()
+    company_repo.save(
+        Company(ticker="ETF1", name="Some ETF", sector=Sector.ETF,
+                 industry="Equity", exchange="", country="US")
+    )
+    statement_repo = FakeFinancialStatementRepository()  # deliberately empty — no statements saved at all
+
+    quote = MarketQuote(ticker="ETF1", price=100.0, market_cap=5_000_000_000.0,
+                          as_of=datetime(2026, 1, 1, tzinfo=timezone.utc))
+    provider = FakeDataProvider(
+        company=company_repo.get_by_ticker("ETF1"),
+        quotes_by_ticker={"ETF1": quote},
+        sp500_tickers=["ETF1"],
+    )
+    get_financials = GetCompanyFinancialsUseCase(company_repo, statement_repo)
+    use_case = ComputeUniverseFactorSnapshotUseCase(
+        provider,
+        ComputeValuationUseCase(get_financials, provider),
+        ComputeFinancialAnalysisUseCase(get_financials),
+        FakeFactorScoreRepository(),
+        request_delay_seconds=0.0,
+    )
+
+    result = use_case.execute()
+
+    assert result.succeeded == 1  # NOT excluded, despite zero statements
+    assert result.failed == []
+    factor_repo = use_case._factor_repo  # noqa: SLF001 — test-only introspection
+    score = factor_repo.get_all()[0]
+    assert score.raw.market_cap == 5_000_000_000.0  # collected via live quote, not valuation
+    assert score.raw.price_to_earnings is None  # honestly absent, not fabricated
+    assert score.raw.return_on_equity is None
+    assert score.raw.revenue_growth_yoy is None

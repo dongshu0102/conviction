@@ -64,6 +64,7 @@ from src.application.use_cases.construct_risk_parity_portfolio import (
 )
 from src.application.use_cases.generate_theme_synthesis import GenerateThemeSynthesisUseCase
 from src.application.use_cases.get_upcoming_earnings import GetUpcomingEarningsUseCase
+from src.application.use_cases.ingest_etf_data import IngestEtfDataUseCase
 from src.application.use_cases.get_factor_scores import GetFactorScoresUseCase
 from src.application.use_cases.manage_universe_theme import (
     AddTickerToThemeUseCase,
@@ -137,8 +138,13 @@ list_universe_themes, get_theme_tickers) are GLOBAL — shared across every \
 user, not personal to whoever is chatting. Treat creating or editing a theme \
 as a shared, durable change, not a private preference; if the request seems \
 like it's meant to be personal, a watchlist is very likely the better fit — \
-ask if unsure. A theme can only contain tickers that are already ingested; \
-ETFs and other non-company instruments are not supported yet.
+ask if unsure. ETFs are ingested via ingest_etf, a separate tool from company \
+ingestion (they have no financial statements — a fund holds other companies' \
+shares, it doesn't run an operation). Once ingested, an ETF can be tagged \
+into a theme just like any company. Its Value, Quality, and Growth factor \
+scores will always be null — not a data gap, just honestly not applicable — \
+while Momentum and Size (using AUM in place of market cap) work normally.
+
 
 get_portfolio_risk's volatility fields are a standard parametric (variance-\
 covariance) estimate assuming normally-distributed returns — a well-known \
@@ -425,6 +431,16 @@ _TOOLS = [
         },
     ),
     ToolDefinition(
+        "ingest_etf",
+        "Ingest an ETF's profile (name, expense ratio, AUM) so it can be added "
+        "to watchlists, themes, and screened/factor-scored. ETFs have no "
+        "income statement — Value, Quality, and Growth factors will always be "
+        "null for an ETF (nothing dishonest about that, there's no earnings "
+        "to compute them from); Momentum and Size (using AUM) work normally. "
+        "Use this instead of the regular ingest tool for a fund ticker.",
+        {"type": "object", "properties": {"ticker": {"type": "string"}}, "required": ["ticker"]},
+    ),
+    ToolDefinition(
         "add_holding",
         "Add or replace a position in one of the user's portfolios.",
         {
@@ -656,6 +672,7 @@ class ChatWithAgentUseCase:
         generate_theme_synthesis: GenerateThemeSynthesisUseCase,
         get_upcoming_earnings: GetUpcomingEarningsUseCase,
         construct_risk_parity_portfolio: ConstructRiskParityPortfolioUseCase,
+        ingest_etf: IngestEtfDataUseCase,
     ) -> None:
         self._chat_agent = chat_agent
         self._get_watchlist = get_watchlist
@@ -691,6 +708,7 @@ class ChatWithAgentUseCase:
         self._get_theme_tickers = get_theme_tickers
         self._generate_theme_synthesis = generate_theme_synthesis
         self._get_upcoming_earnings = get_upcoming_earnings
+        self._ingest_etf = ingest_etf
         self._construct_risk_parity_portfolio = construct_risk_parity_portfolio
         self._user_id: str = ""  # set per-request in execute()
 
@@ -950,6 +968,19 @@ class ChatWithAgentUseCase:
                     for a in result.allocations
                 ],
                 "excluded": result.excluded,
+            }
+
+        if tool_name == "ingest_etf":
+            try:
+                company = self._ingest_etf.execute(tool_input["ticker"])
+            except Exception as exc:
+                return {"error": str(exc)}
+            return {
+                "ticker": company.ticker,
+                "name": company.name,
+                "expense_ratio": company.expense_ratio,
+                "aum": company.aum,
+                "status": "ingested",
             }
 
         if tool_name == "get_upcoming_earnings":

@@ -149,9 +149,36 @@ class ComputeUniverseFactorSnapshotUseCase:
         return None, TickerFactorFailure(ticker=ticker, error=last_error)
 
     def _collect_raw(self, ticker: str) -> FactorRawMetrics:
-        valuation = self._compute_valuation.execute(ticker)
-        analysis = self._compute_analysis.execute(ticker)
-        latest_year = analysis.yearly_ratios[-1] if analysis.yearly_ratios else None
+        """Value/Quality/Growth require financial statements that
+        simply don't exist for an ETF (no income statement — a fund
+        holds other companies' shares, it doesn't run an operation).
+        Rather than aborting the whole ticker on that gap, this
+        degrades to price/market-cap fetched directly from the live
+        quote, so Momentum and Size — both purely price-based — are
+        still collected. An equity ticker with an ordinary ingestion
+        gap gets the identical honest treatment, not a special case."""
+        price_to_earnings = None
+        return_on_equity = None
+        revenue_growth_yoy = None
+
+        try:
+            valuation = self._compute_valuation.execute(ticker)
+            price = valuation.price
+            market_cap = valuation.market_cap
+            price_to_earnings = valuation.price_to_earnings
+        except NoFinancialDataError:
+            quote = self._data_provider.get_quote(ticker)
+            price = quote.price
+            market_cap = quote.market_cap
+
+        try:
+            analysis = self._compute_analysis.execute(ticker)
+            latest_year = analysis.yearly_ratios[-1] if analysis.yearly_ratios else None
+            if latest_year:
+                return_on_equity = latest_year.return_on_equity
+                revenue_growth_yoy = latest_year.revenue_growth_yoy
+        except CompanyNotFoundError:
+            raise  # genuinely missing company profile — not the ETF case, propagate
 
         momentum = None
         if hasattr(self._data_provider, "get_daily_closes"):
@@ -159,16 +186,16 @@ class ComputeUniverseFactorSnapshotUseCase:
                 bars = self._data_provider.get_daily_closes(ticker, limit=TRADING_DAYS_1M + 1)
                 if len(bars) > TRADING_DAYS_1M and bars[TRADING_DAYS_1M].close > 0:
                     baseline = bars[TRADING_DAYS_1M].close
-                    momentum = (valuation.price - baseline) / baseline
+                    momentum = (price - baseline) / baseline
             except (NotImplementedError, DataProviderError) as exc:
                 logger.warning("Factor snapshot: momentum unavailable for %s: %s", ticker, exc)
 
         return FactorRawMetrics(
-            price_to_earnings=valuation.price_to_earnings,
-            return_on_equity=latest_year.return_on_equity if latest_year else None,
-            revenue_growth_yoy=latest_year.revenue_growth_yoy if latest_year else None,
+            price_to_earnings=price_to_earnings,
+            return_on_equity=return_on_equity,
+            revenue_growth_yoy=revenue_growth_yoy,
             momentum_1m_pct=momentum,
-            market_cap=valuation.market_cap,
+            market_cap=market_cap,
         )
 
     @staticmethod

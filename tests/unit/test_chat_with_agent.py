@@ -36,6 +36,7 @@ from src.application.use_cases.construct_risk_parity_portfolio import (
 )
 from src.application.use_cases.generate_theme_synthesis import GenerateThemeSynthesisUseCase
 from src.application.use_cases.get_upcoming_earnings import GetUpcomingEarningsUseCase
+from src.application.use_cases.ingest_etf_data import IngestEtfDataUseCase
 from src.application.use_cases.get_factor_scores import GetFactorScoresUseCase
 from src.application.use_cases.manage_universe_theme import (
     AddTickerToThemeUseCase,
@@ -177,6 +178,7 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
         ),
         construct_risk_parity_portfolio=ConstructRiskParityPortfolioUseCase(provider),
         get_upcoming_earnings=GetUpcomingEarningsUseCase(watchlist_repo, provider),
+        ingest_etf=IngestEtfDataUseCase(company_repo, provider),
     )
     return use_case, fake_agent, portfolio_repo
 
@@ -1134,4 +1136,61 @@ def test_get_upcoming_earnings_unsupported_provider_returns_error() -> None:
         watchlist_repo=watchlist_repo,
     )
     use_case.execute("alice", "any earnings coming up?", [])
+    assert "error" in fake_agent.dispatch_results[0]
+
+
+# ---- ETF ingestion chat tool tests ----
+
+
+def test_ingest_etf_via_chat() -> None:
+    from src.domain.entities.etf import EtfProfile
+
+    class _EtfProvider(FakeDataProvider):
+        def get_etf_profile(self, ticker):
+            return EtfProfile(ticker=ticker, name="Test ETF", description=None,
+                                asset_class="Equity", domicile="US",
+                                expense_ratio=0.09, aum=789_000_000_000.0)
+
+    company_repo = FakeCompanyRepository()
+    provider = _EtfProvider(company=None)
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("ingest_etf", {"ticker": "SPY"})],
+        company_repo=company_repo,
+        provider=provider,
+    )
+    use_case.execute("alice", "ingest the SPY ETF", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["status"] == "ingested"
+    assert result["ticker"] == "SPY"
+    assert result["expense_ratio"] == 0.09
+    assert result["aum"] == 789_000_000_000.0
+    assert company_repo.get_by_ticker("SPY") is not None
+
+
+def test_ingest_etf_not_found_returns_error() -> None:
+    class _EtfProvider(FakeDataProvider):
+        def get_etf_profile(self, ticker):
+            return None  # not a recognized ETF
+
+    company_repo = FakeCompanyRepository()
+    provider = _EtfProvider(company=None)
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("ingest_etf", {"ticker": "NOTREAL"})],
+        company_repo=company_repo,
+        provider=provider,
+    )
+    use_case.execute("alice", "ingest NOTREAL", [])
+    assert "error" in fake_agent.dispatch_results[0]
+
+
+def test_ingest_etf_unsupported_provider_returns_error() -> None:
+    company_repo = FakeCompanyRepository()
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("ingest_etf", {"ticker": "SPY"})],
+        company_repo=company_repo,
+    )
+    use_case.execute("alice", "ingest SPY", [])
     assert "error" in fake_agent.dispatch_results[0]

@@ -40,6 +40,9 @@ class CompanyModel(Base):
     description: Mapped[str | None] = mapped_column(String, nullable=True)
     website: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    asset_type: Mapped[str] = mapped_column(String(16), nullable=False, default="EQUITY", server_default="EQUITY")
+    expense_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    aum: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

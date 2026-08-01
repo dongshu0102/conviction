@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
-from src.domain.entities.company import Company, Sector
+from src.domain.entities.company import AssetType, Company, Sector
 from src.domain.repositories.company_repository import CompanyRepository
 from src.infrastructure.persistence.database import session_scope
 from src.infrastructure.persistence.models import CompanyModel
@@ -20,6 +20,9 @@ def _to_domain(row: CompanyModel) -> Company:
         description=row.description,
         website=row.website,
         is_active=row.is_active,
+        asset_type=AssetType(row.asset_type) if row.asset_type in AssetType._value2member_map_ else AssetType.EQUITY,
+        expense_ratio=row.expense_ratio,
+        aum=row.aum,
     )
 
 
@@ -49,6 +52,9 @@ class SqlAlchemyCompanyRepository(CompanyRepository):
                         description=company.description,
                         website=company.website,
                         is_active=company.is_active,
+                        asset_type=company.asset_type.value,
+                        expense_ratio=company.expense_ratio,
+                        aum=company.aum,
                     )
                 )
             else:
@@ -61,6 +67,9 @@ class SqlAlchemyCompanyRepository(CompanyRepository):
                 existing.description = company.description
                 existing.website = company.website
                 existing.is_active = company.is_active
+                existing.asset_type = company.asset_type.value
+                existing.expense_ratio = company.expense_ratio
+                existing.aum = company.aum
 
     def get_by_ticker(self, ticker: str) -> Company | None:
         with session_scope() as session:

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.api.schemas import (
     BalanceSheetSchema,
+    EtfIngestResultSchema,
     FactorRankingResponseSchema,
     FactorRawMetricsSchema,
     FactorScoreResponseSchema,
@@ -41,6 +42,11 @@ from src.application.use_cases.get_company_financials import (
     GetCompanyFinancialsUseCase,
 )
 from src.application.use_cases.ingest_company_data import IngestCompanyDataUseCase
+from src.application.use_cases.ingest_etf_data import (
+    EtfLookupUnavailableError,
+    EtfNotFoundError,
+    IngestEtfDataUseCase,
+)
 from src.domain.entities.financial_statement import Period
 from src.infrastructure.config import get_settings
 from src.domain.entities.factor_scores import FactorWeights
@@ -224,6 +230,25 @@ def ingest_company(
         logger.warning("Ingestion failed for %s: %s", ticker, exc)
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return IngestResultSchema(**asdict(result))
+
+
+@router.post("/{ticker}/ingest-etf", response_model=EtfIngestResultSchema)
+def ingest_etf(
+    ticker: str,
+    company_repo: SqlAlchemyCompanyRepository = Depends(get_company_repository),
+    provider: FinancialModelingPrepProvider = Depends(get_data_provider),
+) -> EtfIngestResultSchema:
+    use_case = IngestEtfDataUseCase(company_repo, provider)
+    try:
+        company = use_case.execute(ticker)
+    except EtfNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except EtfLookupUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return EtfIngestResultSchema(
+        ticker=company.ticker, name=company.name,
+        expense_ratio=company.expense_ratio, aum=company.aum,
+    )
 
 
 @router.get("/sp500-constituents", response_model=SP500ConstituentsSchema)

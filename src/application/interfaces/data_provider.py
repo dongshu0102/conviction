@@ -11,6 +11,7 @@ from datetime import date
 
 from src.domain.entities.company import Company
 from src.domain.entities.earnings import EarningsEvent
+from src.domain.entities.etf import EtfProfile
 from src.domain.entities.financial_statement import (
     BalanceSheet,
     CashFlowStatement,
@@ -67,6 +68,12 @@ class FinancialDataProvider(ABC):
         """Every earnings announcement (any ticker) within the date
         range — callers filter to whichever tickers they care about."""
         raise NotImplementedError("This data provider does not support get_earnings_calendar")
+
+    def get_etf_profile(self, ticker: str) -> EtfProfile | None:
+        """None means the ticker isn't a recognized ETF (or the lookup
+        failed) — distinct from NotImplementedError, which means this
+        provider doesn't support ETF lookups at all."""
+        raise NotImplementedError("This data provider does not support get_etf_profile")
 
     @abstractmethod
     def get_quote(self, ticker: str) -> MarketQuote:

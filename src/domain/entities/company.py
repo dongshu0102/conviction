@@ -24,7 +24,17 @@ class Sector(str, Enum):
     MATERIALS = "Materials"
     REAL_ESTATE = "Real Estate"
     COMMUNICATION_SERVICES = "Communication Services"
+    ETF = "ETF"  # distinct from UNKNOWN — a fund has no GICS sector by
+    # nature, which is a different situation from a data gap on a real
+    # operating company. Keeping them distinct means a portfolio's
+    # sector-exposure breakdown can say "12% ETF" honestly instead of
+    # lumping funds in with genuine missing-data cases.
     UNKNOWN = "Unknown"
+
+
+class AssetType(str, Enum):
+    EQUITY = "EQUITY"
+    ETF = "ETF"
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +45,18 @@ class Company:
     financial statements, valuations, and every future agent's output
     reference a company by ticker rather than a synthetic surrogate id
     the domain layer doesn't own.
+
+    ETFs are modeled as a variant of this SAME entity (asset_type=ETF)
+    rather than a parallel type — deliberate choice: every existing
+    "is this ticker known" check across watchlists, themes, and
+    screening already queries this repository, and reusing it means
+    ETFs participate in all of that for free. An ETF ticker simply has
+    zero ingested financial statements (by construction — funds don't
+    file income statements), which the valuation/analysis pipeline
+    already treats as honestly-partial data, not a hard failure — the
+    exact machinery proven by the TSM currency-guard case. expense_ratio
+    and aum are meaningless (None) for an EQUITY; sector/industry are
+    meaningless (Sector.ETF / "ETF") for a fund.
     """
 
     ticker: str
@@ -47,6 +69,9 @@ class Company:
     description: str | None = None
     website: str | None = None
     is_active: bool = True
+    asset_type: AssetType = AssetType.EQUITY
+    expense_ratio: float | None = None  # ETF only
+    aum: float | None = None  # ETF only — analog to market_cap for factor Size
 
     def __post_init__(self) -> None:
         if not self.ticker or not self.ticker.strip():

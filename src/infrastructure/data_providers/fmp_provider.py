@@ -25,11 +25,13 @@ from src.domain.entities.financial_statement import (
     Period,
 )
 from src.domain.entities.earnings import EarningsEvent
+from src.domain.entities.etf import EtfProfile
 from src.domain.entities.market_quote import MarketQuote, PriceBar
 from src.domain.entities.news import NewsArticle
 from src.infrastructure.data_providers.fmp_parsing import (
     parse_earnings_calendar,
     parse_eod_light,
+    parse_etf_info,
     parse_stock_news,
 )
 from src.infrastructure.config import Settings
@@ -237,3 +239,7 @@ class FinancialModelingPrepProvider(FinancialDataProvider):
             "/earnings-calendar", **{"from": from_date.isoformat(), "to": to_date.isoformat()}
         )
         return parse_earnings_calendar(payload)
+
+    def get_etf_profile(self, ticker: str) -> EtfProfile | None:
+        payload = self._get("/etf/info", symbol=ticker)
+        return parse_etf_info(payload, ticker)
