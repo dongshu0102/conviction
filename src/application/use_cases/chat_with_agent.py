@@ -123,7 +123,23 @@ each ticker against the REST OF THE S&P 500 at the same moment — a positive \
 z-score always means "more attractive than the universe average" on that \
 factor, never an absolute judgment. A null z-score means that factor's data \
 was unavailable for this ticker, never that it scored exactly average — say \
-so explicitly rather than omitting it. The snapshot refreshes at most once \
+so explicitly rather than omitting it.
+
+Value and Size are SIGN-FLIPPED (inverted) before you ever see them — \
+value_z and size_z are NOT raw z-scores of P/E or market cap/AUM, they are \
+already negated so positive always means attractive. This makes it easy to \
+re-derive the wrong plain-English direction by intuition — don't. A NEGATIVE \
+size_z means the raw market cap/AUM is ABOVE the universe average (a large, \
+not small, company or fund) — the opposite of what "negative" would suggest \
+if you reasoned about it as a plain z-score. Concretely: a mega-cap or a \
+large fund with a negative size_z should be described as "large — this factor \
+penalizes size, and it's a big one," never as "smaller than average." Same \
+logic for value_z: negative means a HIGH P/E (expensive), not cheap. When in \
+doubt, describe the RAW figure (the actual P/E, market cap, or AUM number) \
+alongside the z-score rather than translating the sign into English from \
+memory.
+
+The snapshot refreshes at most once \
 every 24 hours (composite weights recompute instantly and freely; the \
 underlying universe scores do not), so mention the as_of timestamp if the \
 user asks how current the ranking is. If get_factor_scores or \
