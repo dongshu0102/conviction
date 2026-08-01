@@ -47,37 +47,83 @@ class RunMonitoringCheckUseCase:
         watchlist = self._watchlist_repo.list_for_user(user_id)
         new_alerts: list[Alert] = []
 
+        # The same ticker can be on multiple named lists. Group by
+        # ticker: fetch the quote once, read the prior snapshot once
+        # (BEFORE saving the new one — otherwise the first item's save
+        # would pollute the comparison baseline for later items), then
+        # evaluate every item's own threshold/target against that same
+        # prior, and save the new snapshot once at the end.
+        by_ticker: dict[str, list] = {}
         for item in watchlist:
+            by_ticker.setdefault(item.ticker, []).append(item)
+
+        for ticker, items in by_ticker.items():
             try:
-                quote = self._data_provider.get_quote(item.ticker)
+                quote = self._data_provider.get_quote(ticker)
             except DataProviderError:
-                logger.warning("Monitoring: quote fetch failed for %s, skipping", item.ticker)
+                logger.warning("Monitoring: quote fetch failed for %s, skipping", ticker)
                 continue
 
-            prior = self._snapshot_repo.get_latest(item.ticker)
+            prior = self._snapshot_repo.get_latest(ticker)
             now = datetime.now(timezone.utc)
 
             if prior is not None and prior.price > 0:
                 change_pct = (quote.price - prior.price) / prior.price
-                if abs(change_pct) >= self._threshold:
-                    direction = "up" if change_pct > 0 else "down"
-                    alert = Alert(
-                        user_id=user_id,
-                        ticker=item.ticker,
-                        alert_type=AlertType.PRICE_MOVE,
-                        message=(
-                            f"{item.ticker} moved {direction} "
-                            f"{abs(change_pct) * 100:.1f}% since last check "
-                            f"(${prior.price:.2f} -> ${quote.price:.2f})"
-                        ),
-                        created_at=now,
-                        change_pct=change_pct,
+
+                for item in items:
+                    # Per-item override falls back to the global default —
+                    # the IBKR-style "custom alert threshold per ticker".
+                    threshold = (
+                        item.alert_threshold_pct
+                        if item.alert_threshold_pct is not None
+                        else self._threshold
                     )
-                    saved = self._alert_repo.save(alert)
-                    new_alerts.append(saved)
+                    if abs(change_pct) >= threshold:
+                        direction = "up" if change_pct > 0 else "down"
+                        alert = Alert(
+                            user_id=user_id,
+                            ticker=ticker,
+                            alert_type=AlertType.PRICE_MOVE,
+                            message=(
+                                f"{ticker} moved {direction} "
+                                f"{abs(change_pct) * 100:.1f}% since last check "
+                                f"(${prior.price:.2f} -> ${quote.price:.2f})"
+                            ),
+                            created_at=now,
+                            change_pct=change_pct,
+                        )
+                        saved = self._alert_repo.save(alert)
+                        new_alerts.append(saved)
+
+                    # Entry-target alert: fires ONCE, on the crossing —
+                    # prior price was above the target and current price
+                    # is at or below it. Checks that stay below the
+                    # target afterward don't re-alert every run. With no
+                    # prior snapshot there is no crossing to detect
+                    # (same baseline-establishment principle as moves).
+                    if (
+                        item.target_price is not None
+                        and prior.price > item.target_price
+                        and quote.price <= item.target_price
+                    ):
+                        target_alert = Alert(
+                            user_id=user_id,
+                            ticker=ticker,
+                            alert_type=AlertType.TARGET_REACHED,
+                            message=(
+                                f"{ticker} reached your entry target of "
+                                f"${item.target_price:.2f} "
+                                f"(${prior.price:.2f} -> ${quote.price:.2f}) "
+                                f"on list '{item.list_name}'"
+                            ),
+                            created_at=now,
+                            change_pct=change_pct,
+                        )
+                        saved = self._alert_repo.save(target_alert)
+                        new_alerts.append(saved)
 
             self._snapshot_repo.save(
-                PriceSnapshot(ticker=item.ticker, price=quote.price, captured_at=now)
+                PriceSnapshot(ticker=ticker, price=quote.price, captured_at=now)
             )
 
         return new_alerts

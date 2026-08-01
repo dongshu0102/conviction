@@ -35,7 +35,13 @@ from src.api.routers.watchlist import get_list_use_case as get_get_watchlist_use
 from src.api.routers.watchlist import get_remove_use_case as get_remove_from_watchlist_use_case
 from src.api.schemas import ChatRequestSchema, ChatResponseSchema, VercelChatRequestSchema
 from src.application.interfaces.chat_agent import ChatAgentError, ChatMessage
+from src.api.routers.watchlist import get_watchlist_repository
 from src.application.use_cases.chat_with_agent import ChatWithAgentUseCase
+from src.application.use_cases.manage_watchlist import (
+    ListWatchlistNamesUseCase,
+    UpdateWatchlistItemUseCase,
+)
+from src.application.use_cases.triage_watchlist import TriageWatchlistUseCase
 from src.application.use_cases.compute_option_portfolio_valuation import (
     ComputeOptionPortfolioValuationUseCase,
 )
@@ -51,6 +57,9 @@ from src.application.use_cases.suggest_rebalancing import SuggestRebalancingUseC
 from src.infrastructure.config import get_settings
 from src.infrastructure.data_providers.marketdata_app_provider import MarketDataAppProvider
 from src.infrastructure.llm_providers.anthropic_chat_agent import AnthropicChatAgent
+from src.infrastructure.persistence.monitoring_repository_impl import (
+    SqlAlchemyPriceSnapshotRepository,
+)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -81,6 +90,8 @@ def get_chat_use_case(
     company_repo=Depends(get_company_repository),
     portfolio_repo=Depends(get_portfolio_repository),
     options_provider: MarketDataAppProvider = Depends(get_options_provider),
+    data_provider=Depends(get_data_provider),
+    watchlist_repo=Depends(get_watchlist_repository),
 ) -> ChatWithAgentUseCase:
     screen_stocks = ScreenStocksUseCase(compute_company_valuation, compute_analysis)
     return ChatWithAgentUseCase(
@@ -108,6 +119,14 @@ def get_chat_use_case(
             portfolio_repo, options_provider
         ),
         suggest_hedging=SuggestHedgingUseCase(portfolio_repo, options_provider),
+        update_watchlist_item=UpdateWatchlistItemUseCase(watchlist_repo),
+        list_watchlists=ListWatchlistNamesUseCase(watchlist_repo),
+        triage_watchlist=TriageWatchlistUseCase(
+            watchlist_repo,
+            data_provider,
+            SqlAlchemyPriceSnapshotRepository(),
+            valuation_use_case=compute_company_valuation,
+        ),
     )
 
 

@@ -28,7 +28,10 @@ from src.application.use_cases.manage_portfolio import (
     GetPortfolioUseCase,
     ListPortfoliosUseCase,
 )
+from src.application.use_cases.triage_watchlist import TriageWatchlistUseCase
 from src.application.use_cases.manage_watchlist import (
+    ListWatchlistNamesUseCase,
+    UpdateWatchlistItemUseCase,
     AddToWatchlistUseCase,
     GetWatchlistUseCase,
     RemoveFromWatchlistUseCase,
@@ -40,6 +43,7 @@ from src.application.use_cases.suggest_rebalancing import SuggestRebalancingUseC
 from src.domain.entities.company import Company, Sector
 from src.domain.entities.market_quote import MarketQuote
 from tests.unit.fakes import (
+    FakePriceSnapshotRepository,
     FakeCompanyRepository,
     FakeDataProvider,
     FakeFinancialStatementRepository,
@@ -125,6 +129,11 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
             portfolio_repo, options_provider
         ),
         suggest_hedging=SuggestHedgingUseCase(portfolio_repo, options_provider),
+        update_watchlist_item=UpdateWatchlistItemUseCase(watchlist_repo),
+        list_watchlists=ListWatchlistNamesUseCase(watchlist_repo),
+        triage_watchlist=TriageWatchlistUseCase(
+            watchlist_repo, provider, FakePriceSnapshotRepository()
+        ),
     )
     return use_case, fake_agent, portfolio_repo
 
@@ -141,7 +150,10 @@ def test_get_watchlist_returns_correct_tickers() -> None:
     )
     use_case.execute("alice", "what's on my watchlist", [])
 
-    assert fake_agent.dispatch_results[0] == {"tickers": [{"ticker": "AAPL", "notes": None}]}
+    result = fake_agent.dispatch_results[0]
+    assert [i["ticker"] for i in result["items"]] == ["AAPL"]
+    assert result["items"][0]["list_name"] == "Default"
+    assert result["items"][0]["added_price"] is None  # no provider wired in this test
 
 
 def test_ownership_check_blocks_access_to_another_users_portfolio() -> None:
@@ -568,3 +580,106 @@ def test_suggest_hedging_dispatches_correctly_for_owner() -> None:
     # 5 contracts * 0.5 delta * 100 = 250 net delta -> sell 250 shares
     assert abs(result["suggestions"][0]["net_delta"] - 250.0) < 1e-9
     assert abs(result["suggestions"][0]["shares_to_trade"] - (-250.0)) < 1e-9
+
+
+# ---- Smart watchlist chat tool tests ----
+
+
+def test_add_to_watchlist_passes_through_list_target_and_thesis() -> None:
+    company_repo = _company_repo("AAPL")
+    watchlist_repo = FakeWatchlistRepository()
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[(
+            "add_to_watchlist",
+            {"ticker": "AAPL", "list_name": "Tech Watch", "target_price": 150.0,
+             "alert_threshold_pct": 0.03, "notes": "cheap AI play"},
+        )],
+        company_repo=company_repo,
+        watchlist_repo=watchlist_repo,
+    )
+    use_case.execute("alice", "watch AAPL on my tech list, target 150", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["status"] == "added"
+    assert result["list_name"] == "Tech Watch"
+
+    stored = watchlist_repo.get("alice", "AAPL", "Tech Watch")
+    assert stored.target_price == 150.0
+    assert stored.alert_threshold_pct == 0.03
+    assert stored.notes == "cheap AI play"
+
+
+def test_update_watchlist_item_via_chat_sets_target_only() -> None:
+    company_repo = _company_repo("AAPL")
+    watchlist_repo = FakeWatchlistRepository()
+    AddToWatchlistUseCase(watchlist_repo, company_repo).execute(
+        "alice", "AAPL", notes="original thesis"
+    )
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("update_watchlist_item", {"ticker": "AAPL", "target_price": 120.0})],
+        company_repo=company_repo,
+        watchlist_repo=watchlist_repo,
+    )
+    use_case.execute("alice", "set a 120 target on AAPL", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["status"] == "updated"
+    assert result["target_price"] == 120.0
+    assert result["notes"] == "original thesis"  # untouched
+
+
+def test_list_watchlists_reports_names_and_counts() -> None:
+    company_repo = _company_repo("AAPL")
+    watchlist_repo = FakeWatchlistRepository()
+    add = AddToWatchlistUseCase(watchlist_repo, company_repo)
+    add.execute("alice", "AAPL", list_name="Tech Watch")
+    add.execute("alice", "AAPL", list_name="Default")
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("list_watchlists", {})],
+        company_repo=company_repo,
+        watchlist_repo=watchlist_repo,
+    )
+    use_case.execute("alice", "what watchlists do I have", [])
+
+    result = fake_agent.dispatch_results[0]
+    names = {w["name"]: w["item_count"] for w in result["watchlists"]}
+    assert names == {"Tech Watch": 1, "Default": 1}
+
+
+def test_triage_watchlist_embeds_attention_scoring_note() -> None:
+    """The screener-inversion lesson applied to triage: the tool result
+    MUST tell the LLM that higher = more attention, not better quality,
+    so the narrative can never invert the ranking's meaning."""
+    company_repo = _company_repo("AAPL")
+    watchlist_repo = FakeWatchlistRepository()
+    AddToWatchlistUseCase(watchlist_repo, company_repo).execute("alice", "AAPL")
+
+    from src.domain.entities.market_quote import MarketQuote
+    from datetime import datetime, timezone
+    provider = FakeDataProvider(
+        company=Company(ticker="AAPL", name="Apple", sector=Sector.TECHNOLOGY,
+                        industry="X", exchange="X", country="US"),
+        quotes_by_ticker={"AAPL": MarketQuote(
+            ticker="AAPL", price=100.0, market_cap=1.0,
+            as_of=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )},
+    )
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("triage_watchlist", {})],
+        company_repo=company_repo,
+        watchlist_repo=watchlist_repo,
+        provider=provider,
+    )
+    use_case.execute("alice", "triage my watchlist", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert "ATTENTION" in result["scoring_note"]
+    assert "NOT better quality" in result["scoring_note"]
+    assert len(result["items"]) == 1
+    item = result["items"][0]
+    assert item["ticker"] == "AAPL"
+    assert item["triage_score"] == 0.0  # no baselines, no snapshot -> honest zero
+    assert item["day_move_percent"] is None  # absent, not fabricated

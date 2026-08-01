@@ -55,8 +55,11 @@ from src.application.use_cases.manage_portfolio import (
 from src.application.use_cases.manage_watchlist import (
     AddToWatchlistUseCase,
     GetWatchlistUseCase,
+    ListWatchlistNamesUseCase,
     RemoveFromWatchlistUseCase,
+    UpdateWatchlistItemUseCase,
 )
+from src.application.use_cases.triage_watchlist import TriageWatchlistUseCase
 from src.application.use_cases.recommend_stocks import RecommendStocksUseCase
 from src.application.use_cases.screen_stocks import ScreenStocksUseCase
 from src.application.use_cases.suggest_hedging import SuggestHedgingUseCase
@@ -86,19 +89,84 @@ any ambiguity about which one they mean, ask first rather than guessing.
 suggest_hedging describes what a delta-neutral trade would mechanically \
 require, not a recommendation. Present the numbers as a fact about their \
 current exposure, and let them decide whether hedging fits their goals — \
-avoid phrasing like "you should hedge" or "I recommend.\""""
+avoid phrasing like "you should hedge" or "I recommend."
+
+Watchlists support multiple named lists (default list is "Default"), \
+per-ticker entry targets (alert when price falls to or below the target), \
+custom alert thresholds, and a thesis in notes. triage_watchlist ranks \
+items by how much ATTENTION they deserve — a high score is NOT a buy \
+signal or quality rank; a stock can rank first because it is collapsing. \
+Present triage results as "what changed / what to look at," never as \
+recommendations. If an item has a thesis in notes and its P/E has drifted \
+far from the add-time baseline, point out that the original thesis may \
+deserve a re-check — as an observation, not advice."""
 
 _TOOLS = [
-    ToolDefinition("get_watchlist", "Get the user's watchlist.", {"type": "object", "properties": {}}),
+    ToolDefinition(
+        "get_watchlist",
+        "Get the user's watchlist items across all named lists, or one list if "
+        "list_name is given. Includes per-item entry targets, alert thresholds, "
+        "thesis notes, and add-time price/PE baselines.",
+        {"type": "object", "properties": {"list_name": {"type": "string"}}},
+    ),
     ToolDefinition(
         "add_to_watchlist",
-        "Add a ticker to the user's watchlist. The ticker must already be ingested.",
-        {"type": "object", "properties": {"ticker": {"type": "string"}}, "required": ["ticker"]},
+        "Add a ticker to a named watchlist (default list is 'Default'). The ticker "
+        "must already be ingested. Optionally set an entry target_price (alerts when "
+        "price falls to or below it), a custom alert_threshold_pct as a fraction "
+        "(0.03 = 3% move alerts), and notes (the user's investment thesis). The "
+        "current price and P/E are captured automatically as baselines.",
+        {
+            "type": "object",
+            "properties": {
+                "ticker": {"type": "string"},
+                "list_name": {"type": "string"},
+                "target_price": {"type": "number"},
+                "alert_threshold_pct": {"type": "number"},
+                "notes": {"type": "string"},
+            },
+            "required": ["ticker"],
+        },
     ),
     ToolDefinition(
         "remove_from_watchlist",
-        "Remove a ticker from the user's watchlist.",
-        {"type": "object", "properties": {"ticker": {"type": "string"}}, "required": ["ticker"]},
+        "Remove a ticker from one named list (if list_name given) or from ALL of "
+        "the user's lists (if omitted).",
+        {
+            "type": "object",
+            "properties": {"ticker": {"type": "string"}, "list_name": {"type": "string"}},
+            "required": ["ticker"],
+        },
+    ),
+    ToolDefinition(
+        "update_watchlist_item",
+        "Update an existing watchlist item's target_price, alert_threshold_pct, or "
+        "notes without touching its add-time baselines. Only the fields provided "
+        "are changed. list_name defaults to 'Default'.",
+        {
+            "type": "object",
+            "properties": {
+                "ticker": {"type": "string"},
+                "list_name": {"type": "string"},
+                "target_price": {"type": "number"},
+                "alert_threshold_pct": {"type": "number"},
+                "notes": {"type": "string"},
+            },
+            "required": ["ticker"],
+        },
+    ),
+    ToolDefinition(
+        "list_watchlists",
+        "List the user's named watchlists with item counts.",
+        {"type": "object", "properties": {}},
+    ),
+    ToolDefinition(
+        "triage_watchlist",
+        "Rank watchlist items by attention-worthiness using live data: day move "
+        "since last monitoring check, move since the item was added, P/E drift vs "
+        "the add-time baseline, and whether the entry target was crossed. "
+        "Optionally scope to one list_name.",
+        {"type": "object", "properties": {"list_name": {"type": "string"}}},
     ),
     ToolDefinition(
         "list_portfolios", "List the user's portfolios (name and id, no holdings detail).",
@@ -345,6 +413,9 @@ class ChatWithAgentUseCase:
         compute_portfolio_greeks: ComputePortfolioGreeksUseCase,
         compute_option_portfolio_valuation: ComputeOptionPortfolioValuationUseCase,
         suggest_hedging: SuggestHedgingUseCase,
+        update_watchlist_item: UpdateWatchlistItemUseCase,
+        list_watchlists: ListWatchlistNamesUseCase,
+        triage_watchlist: TriageWatchlistUseCase,
     ) -> None:
         self._chat_agent = chat_agent
         self._get_watchlist = get_watchlist
@@ -368,6 +439,9 @@ class ChatWithAgentUseCase:
         self._compute_portfolio_greeks = compute_portfolio_greeks
         self._compute_option_portfolio_valuation = compute_option_portfolio_valuation
         self._suggest_hedging = suggest_hedging
+        self._update_watchlist_item = update_watchlist_item
+        self._list_watchlists = list_watchlists
+        self._triage_watchlist = triage_watchlist
         self._user_id: str = ""  # set per-request in execute()
 
     def execute(self, user_id: str, message: str, history: list[ChatMessage]) -> str:
@@ -398,21 +472,119 @@ class ChatWithAgentUseCase:
 
     def _dispatch(self, tool_name: str, tool_input: dict):
         if tool_name == "get_watchlist":
-            items = self._get_watchlist.execute(self._user_id)
-            return {"tickers": [{"ticker": i.ticker, "notes": i.notes} for i in items]}
+            items = self._get_watchlist.execute(self._user_id, tool_input.get("list_name"))
+            return {
+                "items": [
+                    {
+                        "ticker": i.ticker,
+                        "list_name": i.list_name,
+                        "notes": i.notes,
+                        "target_price": i.target_price,
+                        "alert_threshold_pct": i.alert_threshold_pct,
+                        "added_price": i.added_price,
+                        "added_pe": i.added_pe,
+                    }
+                    for i in items
+                ]
+            }
 
         if tool_name == "add_to_watchlist":
             try:
-                item = self._add_to_watchlist.execute(self._user_id, tool_input["ticker"])
-                return {"ticker": item.ticker, "status": "added"}
+                item = self._add_to_watchlist.execute(
+                    self._user_id,
+                    tool_input["ticker"],
+                    notes=tool_input.get("notes"),
+                    list_name=tool_input.get("list_name", "Default"),
+                    target_price=tool_input.get("target_price"),
+                    alert_threshold_pct=tool_input.get("alert_threshold_pct"),
+                )
+                return {
+                    "ticker": item.ticker,
+                    "list_name": item.list_name,
+                    "status": "added",
+                    "added_price": item.added_price,
+                    "added_pe": item.added_pe,
+                    "baseline_note": (
+                        "added_price/added_pe are the captured baselines; None means "
+                        "the baseline could not be captured (this never blocks adding)."
+                    ),
+                }
             except Exception as exc:
                 return {"error": str(exc)}
 
         if tool_name == "remove_from_watchlist":
-            removed = self._remove_from_watchlist.execute(self._user_id, tool_input["ticker"])
+            list_name = tool_input.get("list_name")
+            removed = self._remove_from_watchlist.execute(
+                self._user_id, tool_input["ticker"], list_name
+            )
             if not removed:
-                return {"error": f"'{tool_input['ticker']}' was not on the watchlist."}
+                where = f"list '{list_name}'" if list_name else "any watchlist"
+                return {"error": f"'{tool_input['ticker']}' was not on {where}."}
             return {"ticker": tool_input["ticker"], "status": "removed"}
+
+        if tool_name == "update_watchlist_item":
+            kwargs = {}
+            if "notes" in tool_input:
+                kwargs["notes"] = tool_input["notes"]
+            if "target_price" in tool_input:
+                kwargs["target_price"] = tool_input["target_price"]
+            if "alert_threshold_pct" in tool_input:
+                kwargs["alert_threshold_pct"] = tool_input["alert_threshold_pct"]
+            try:
+                item = self._update_watchlist_item.execute(
+                    self._user_id,
+                    tool_input["ticker"],
+                    list_name=tool_input.get("list_name", "Default"),
+                    **kwargs,
+                )
+                return {
+                    "ticker": item.ticker,
+                    "list_name": item.list_name,
+                    "status": "updated",
+                    "target_price": item.target_price,
+                    "alert_threshold_pct": item.alert_threshold_pct,
+                    "notes": item.notes,
+                }
+            except Exception as exc:
+                return {"error": str(exc)}
+
+        if tool_name == "list_watchlists":
+            counts = self._list_watchlists.execute(self._user_id)
+            return {"watchlists": [{"name": n, "item_count": c} for n, c in counts.items()]}
+
+        if tool_name == "triage_watchlist":
+            result = self._triage_watchlist.execute(
+                self._user_id, tool_input.get("list_name")
+            )
+
+            def _pct(v):
+                return round(v * 100, 2) if v is not None else None
+
+            return {
+                "scoring_note": (
+                    "triage_score is an ATTENTION ranking — HIGHER means more "
+                    "attention-worthy, NOT better quality or a buy signal; a stock "
+                    "can rank first because it is collapsing. Signals that are null "
+                    "mean the underlying data doesn't exist (no baseline or no "
+                    "prior snapshot), not zero."
+                ),
+                "items": [
+                    {
+                        "ticker": t.ticker,
+                        "list_name": t.list_name,
+                        "triage_score": round(t.triage_score, 2),
+                        "current_price": t.signals.current_price,
+                        "day_move_percent": _pct(t.signals.day_move_pct),
+                        "move_since_added_percent": _pct(t.signals.move_since_added_pct),
+                        "pe_drift_percent": _pct(t.signals.pe_drift_pct),
+                        "current_pe": t.signals.current_pe,
+                        "target_crossed": t.signals.target_crossed,
+                        "thesis_notes": t.notes,
+                    }
+                    for t in result.items
+                ],
+                "tickers_excluded_no_quote": result.tickers_excluded,
+            }
 
         if tool_name == "list_portfolios":
             portfolios = self._list_portfolios.execute(self._user_id)

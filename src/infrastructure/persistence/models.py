@@ -168,13 +168,20 @@ class OptionHoldingModel(Base):
 
 class WatchlistItemModel(Base):
     __tablename__ = "watchlist_items"
-    __table_args__ = (UniqueConstraint("user_id", "ticker", name="uq_watchlist_user_ticker"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", "list_name", "ticker", name="uq_watchlist_user_list_ticker"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     ticker: Mapped[str] = mapped_column(ForeignKey("companies.ticker"), nullable=False)
     added_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     notes: Mapped[str | None] = mapped_column(String, nullable=True)
+    list_name: Mapped[str] = mapped_column(String(128), nullable=False, default="Default", server_default="Default")
+    target_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    alert_threshold_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    added_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    added_pe: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 class IncomeStatementModel(Base):

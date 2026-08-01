@@ -216,23 +216,33 @@ class ScriptedFailureDataProvider(FinancialDataProvider):
 
 class FakeWatchlistRepository:
     def __init__(self) -> None:
-        self._items: dict[tuple[str, str], object] = {}
+        self._items: dict[tuple[str, str, str], object] = {}  # (user_id, list_name, ticker)
 
     def add(self, item) -> None:
-        self._items[(item.user_id, item.ticker)] = item
+        self._items[(item.user_id, item.list_name, item.ticker)] = item
 
-    def remove(self, user_id: str, ticker: str) -> bool:
-        key = (user_id, ticker.strip().upper())
-        if key in self._items:
-            del self._items[key]
-            return True
-        return False
+    def remove(self, user_id: str, ticker: str, list_name: str | None = None) -> bool:
+        ticker = ticker.strip().upper()
+        keys = [
+            k for k in self._items
+            if k[0] == user_id and k[2] == ticker and (list_name is None or k[1] == list_name)
+        ]
+        for k in keys:
+            del self._items[k]
+        return bool(keys)
 
-    def list_for_user(self, user_id: str) -> list:
-        return [item for (uid, _), item in self._items.items() if uid == user_id]
+    def get(self, user_id: str, ticker: str, list_name: str):
+        return self._items.get((user_id, list_name, ticker.strip().upper()))
+
+    def list_for_user(self, user_id: str, list_name: str | None = None) -> list:
+        return [
+            item for (uid, lname, _), item in self._items.items()
+            if uid == user_id and (list_name is None or lname == list_name)
+        ]
 
     def contains(self, user_id: str, ticker: str) -> bool:
-        return (user_id, ticker.strip().upper()) in self._items
+        ticker = ticker.strip().upper()
+        return any(k[0] == user_id and k[2] == ticker for k in self._items)
 
 
 class FakePortfolioRepository:

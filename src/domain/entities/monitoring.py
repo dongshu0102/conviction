@@ -16,6 +16,7 @@ from enum import Enum
 
 class AlertType(str, Enum):
     PRICE_MOVE = "PRICE_MOVE"
+    TARGET_REACHED = "TARGET_REACHED"
 
 
 @dataclass(frozen=True, slots=True)

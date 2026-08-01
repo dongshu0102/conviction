@@ -267,6 +267,11 @@ class WatchlistItemSchema(BaseModel):
     ticker: str
     added_at: datetime
     notes: str | None
+    list_name: str = "Default"
+    target_price: float | None = None
+    alert_threshold_pct: float | None = None
+    added_price: float | None = None
+    added_pe: float | None = None
 
 
 class ResearchReportSchema(BaseModel):
