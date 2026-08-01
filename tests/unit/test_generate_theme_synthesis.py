@@ -92,7 +92,7 @@ def _build(tickers_with_financials: list[str], tickers_with_factor_only: list[st
         ))
     if factor_scores:
         factor_repo.save_batch(factor_scores)
-    get_factor_scores = GetFactorScoresUseCase(factor_repo, _NoOpRefresh())
+    get_factor_scores = GetFactorScoresUseCase(factor_repo, _NoOpRefresh(), auto_refresh=True)
 
     theme_repo = FakeUniverseThemeRepository()
     return (

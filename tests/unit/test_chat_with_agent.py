@@ -107,7 +107,7 @@ def _company_repo(*tickers: str) -> FakeCompanyRepository:
     return repo
 
 
-def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watchlist_repo=None, provider=None, options_provider=None, theme_repo=None, statement_repo=None):
+def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watchlist_repo=None, provider=None, options_provider=None, theme_repo=None, statement_repo=None, get_factor_scores_override=None):
     company_repo = company_repo or _company_repo()
     portfolio_repo = portfolio_repo or FakePortfolioRepository()
     watchlist_repo = watchlist_repo or FakeWatchlistRepository()
@@ -125,11 +125,12 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
     fake_agent = FakeChatAgent(scripted_calls)
     _factor_score_repo = FakeFactorScoreRepository()
     theme_repo = theme_repo or FakeUniverseThemeRepository()
-    _get_factor_scores = GetFactorScoresUseCase(
+    _get_factor_scores = get_factor_scores_override or GetFactorScoresUseCase(
         _factor_score_repo,
         ComputeUniverseFactorSnapshotUseCase(
             provider, compute_company_valuation, compute_analysis, _factor_score_repo
         ),
+        auto_refresh=True,  # test fixtures have no rate-limit risk, unlike production
     )
     use_case = ChatWithAgentUseCase(
         chat_agent=fake_agent,
@@ -1033,3 +1034,54 @@ def test_construct_risk_parity_portfolio_error_surfaces_cleanly() -> None:
     )
     use_case.execute("alice", "allocate nothing", [])
     assert "error" in fake_agent.dispatch_results[0]
+
+
+# ---- Regression: cold-cache factor scoring must never crash a chat turn ----
+# (production incident: a cold factor-score cache triggered an inline
+# 500+-ticker refresh burst that tripped the data provider's rate/plan
+# ceiling — see get_factor_scores.py's module docstring)
+
+
+def test_cold_factor_cache_returns_clean_error_not_a_crash_for_rank() -> None:
+    company_repo = _company_repo("AAPL")
+    never_populated_repo = FakeFactorScoreRepository()
+    real_default_use_case = GetFactorScoresUseCase(
+        never_populated_repo,
+        ComputeUniverseFactorSnapshotUseCase(
+            FakeDataProvider(company=company_repo.get_by_ticker("AAPL")),
+            None, None, never_populated_repo,  # never actually called — see assertion below
+        ),
+        # auto_refresh NOT specified -> exercises the real production default (False)
+    )
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("rank_universe_by_factors", {})],
+        company_repo=company_repo,
+        get_factor_scores_override=real_default_use_case,
+    )
+    use_case.execute("alice", "rank stocks by factor", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert "error" in result
+    assert "not been computed" in result["error"]
+
+
+def test_cold_factor_cache_returns_clean_error_not_a_crash_for_single_ticker() -> None:
+    company_repo = _company_repo("AAPL")
+    never_populated_repo = FakeFactorScoreRepository()
+    real_default_use_case = GetFactorScoresUseCase(
+        never_populated_repo,
+        ComputeUniverseFactorSnapshotUseCase(
+            FakeDataProvider(company=company_repo.get_by_ticker("AAPL")),
+            None, None, never_populated_repo,
+        ),
+    )
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("get_factor_scores", {"ticker": "AAPL"})],
+        company_repo=company_repo,
+        get_factor_scores_override=real_default_use_case,
+    )
+    use_case.execute("alice", "AAPL factor score", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert "error" in result
+    assert "not been computed" in result["error"]

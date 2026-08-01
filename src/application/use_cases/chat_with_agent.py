@@ -124,7 +124,12 @@ was unavailable for this ticker, never that it scored exactly average — say \
 so explicitly rather than omitting it. The snapshot refreshes at most once \
 every 24 hours (composite weights recompute instantly and freely; the \
 underlying universe scores do not), so mention the as_of timestamp if the \
-user asks how current the ranking is.
+user asks how current the ranking is. If get_factor_scores or \
+rank_universe_by_factors returns an error mentioning factor scores are "not \
+ready" or haven't been computed yet, say plainly that this feature refreshes \
+on a schedule rather than on demand and to check back shortly — this is \
+expected behavior on a fresh instance or right after a scheduled refresh \
+window, not a broken feature.
 
 Universe themes (create_universe_theme, add/remove_ticker_to/from_theme, \
 list_universe_themes, get_theme_tickers) are GLOBAL — shared across every \
@@ -813,15 +818,21 @@ class ChatWithAgentUseCase:
             )
 
             if tool_name == "get_factor_scores":
-                ranked = self._get_factor_scores.execute_for_ticker(
-                    tool_input["ticker"], weights
-                )
+                try:
+                    ranked = self._get_factor_scores.execute_for_ticker(
+                        tool_input["ticker"], weights
+                    )
+                except Exception as exc:
+                    return {"error": str(exc)}
                 if ranked is None:
                     return {"error": f"No factor score available for '{tool_input['ticker']}'."}
                 return {"scoring_note": note, "result": _serialize(ranked)}
 
             top_n = tool_input.get("top_n", 10)
-            all_ranked = self._get_factor_scores.execute(weights)
+            try:
+                all_ranked = self._get_factor_scores.execute(weights)
+            except Exception as exc:
+                return {"error": str(exc)}
             theme_name = tool_input.get("theme_name")
             if theme_name:
                 try:
