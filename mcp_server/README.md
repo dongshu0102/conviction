@@ -4,17 +4,33 @@ Lets Claude Desktop (or any MCP client) read and manage your FinInsight
 watchlist, portfolios, and research directly in conversation — no
 `curl`, no dashboard.
 
-**Honest caveat**: this was written and syntax-checked, but never run
-against a real MCP client during development (no network access in the
-build environment). If something in the setup below doesn't work
-exactly as described, that's the most likely place — walk through it
-step by step and report back what actually happens at each stage,
-same as we debugged the AWS deployment.
+**Honest caveat**: the tool logic itself was written and syntax-checked
+against the deployed API, but the MCP server process wasn't actually
+run against a real client until it was tested live — which caught a
+real bug (a bare `python3` in the config resolves to a different
+interpreter than the one you install dependencies into, since Claude
+Desktop launches this as a subprocess with its own minimal
+environment). Fixed below by using the venv's absolute path. If
+something else in the setup doesn't work exactly as described, run the
+server directly first (see Troubleshooting) to see the real error
+before assuming the config is wrong.
 
 ## 1. Install dependencies
 
+Use an isolated virtualenv, not your system Python or the main app's
+venv — this project's dependencies conflict with the main app's pinned
+FastAPI/Starlette versions if installed into the same one, and more
+importantly, **Claude Desktop launches this as a subprocess with its
+own minimal environment, which usually does NOT include your shell's
+activated venv** — a bare `python3` in the config below can silently
+resolve to a completely different interpreter than the one you tested
+with. Point the config at this venv's Python by its full absolute
+path, not a bare command name.
+
 ```bash
 cd mcp_server
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
@@ -33,13 +49,14 @@ Find Claude Desktop's config file:
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 
-Add (or merge into) an `mcpServers` entry:
+Add (or merge into) an `mcpServers` entry — note `command` is the FULL
+ABSOLUTE PATH to the venv's Python (from step 1), not a bare `python3`:
 
 ```json
 {
   "mcpServers": {
     "fininsight": {
-      "command": "python3",
+      "command": "/absolute/path/to/fininsight/mcp_server/.venv/bin/python3",
       "args": ["/absolute/path/to/fininsight/mcp_server/server.py"],
       "env": {
         "FININSIGHT_API_KEY": "fi_live_your_actual_key_here"
