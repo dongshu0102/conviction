@@ -468,3 +468,29 @@ class FakeThemeSynthesisGenerator:
         self.received_theme_description = theme_description
         self.received_tickers = tickers
         return self._result
+
+
+class FakeThemeSuggestionGenerator:
+    """Records exactly what it was called with — same grounding-
+    verification pattern as FakeThemeSynthesisGenerator."""
+
+    def __init__(self, result=None) -> None:
+        from src.application.interfaces.theme_suggestion_generator import (
+            SuggestedTickerResult,
+            ThemeSuggestionGenerationResult,
+        )
+
+        self._result = result or ThemeSuggestionGenerationResult(
+            theme_name="Test Theme", rationale="Test rationale",
+            candidate_tickers=[
+                SuggestedTickerResult(ticker="AAA", company_name="AAA Inc", reasoning="Test"),
+            ],
+            model_used="test-model", raw_response={},
+        )
+        self.received_headlines = None
+        self.received_user_hint = None
+
+    def generate(self, headlines, user_hint):
+        self.received_headlines = headlines
+        self.received_user_hint = user_hint
+        return self._result

@@ -26,12 +26,14 @@ from src.domain.entities.financial_statement import (
 )
 from src.domain.entities.earnings import EarningsEvent
 from src.domain.entities.etf import EtfProfile
+from src.domain.entities.general_news import GeneralNewsHeadline
 from src.domain.entities.market_quote import MarketQuote, PriceBar
 from src.domain.entities.news import NewsArticle
 from src.infrastructure.data_providers.fmp_parsing import (
     parse_earnings_calendar,
     parse_eod_light,
     parse_etf_info,
+    parse_general_news,
     parse_stock_news,
 )
 from src.infrastructure.config import Settings
@@ -243,3 +245,9 @@ class FinancialModelingPrepProvider(FinancialDataProvider):
     def get_etf_profile(self, ticker: str) -> EtfProfile | None:
         payload = self._get("/etf/info", symbol=ticker)
         return parse_etf_info(payload, ticker)
+
+    def get_general_news(self, limit: int = 20) -> list[GeneralNewsHeadline]:
+        # Confirmed live: /stable/general-news (the docs-suggested path)
+        # 404s — the real path is /stable/news/general-latest.
+        payload = self._get("/news/general-latest", page=0, limit=limit)
+        return parse_general_news(payload)

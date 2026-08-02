@@ -12,6 +12,7 @@ from datetime import date
 from src.domain.entities.company import Company
 from src.domain.entities.earnings import EarningsEvent
 from src.domain.entities.etf import EtfProfile
+from src.domain.entities.general_news import GeneralNewsHeadline
 from src.domain.entities.financial_statement import (
     BalanceSheet,
     CashFlowStatement,
@@ -74,6 +75,12 @@ class FinancialDataProvider(ABC):
         failed) — distinct from NotImplementedError, which means this
         provider doesn't support ETF lookups at all."""
         raise NotImplementedError("This data provider does not support get_etf_profile")
+
+    def get_general_news(self, limit: int = 20) -> list[GeneralNewsHeadline]:
+        """Non-ticker-specific market/macro news — the grounding signal
+        for theme suggestion, distinct from get_stock_news which is
+        always scoped to one symbol."""
+        raise NotImplementedError("This data provider does not support get_general_news")
 
     @abstractmethod
     def get_quote(self, ticker: str) -> MarketQuote:

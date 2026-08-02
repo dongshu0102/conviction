@@ -341,6 +341,20 @@ async def generate_theme_synthesis(theme_name: str) -> str:
     return await _request("POST", f"/universe/themes/{theme_name}/synthesis")
 
 
+@mcp.tool()
+async def suggest_theme(user_hint: str = "") -> str:
+    """Propose a NEW investment theme, grounded in real recent general
+    market news. Optionally take a topic hint (e.g. "reshoring") or
+    infer purely from what's currently in the news. This is a
+    SUGGESTION for review — it never creates the theme or tags any
+    ticker itself. Some candidate tickers may not be ingested yet
+    (already_ingested: false) — those need ingest_company or ingest_etf
+    first, which will also fail cleanly if a ticker turns out not to
+    be real. Makes a real LLM call and has a real cost."""
+    params = {"user_hint": user_hint} if user_hint else None
+    return await _request("POST", "/universe/suggest-theme", params=params)
+
+
 # --- Risk-parity portfolio construction ---------------------------------------
 
 @mcp.tool()

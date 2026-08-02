@@ -65,6 +65,7 @@ from src.application.use_cases.construct_risk_parity_portfolio import (
 from src.application.use_cases.generate_theme_synthesis import GenerateThemeSynthesisUseCase
 from src.application.use_cases.get_upcoming_earnings import GetUpcomingEarningsUseCase
 from src.application.use_cases.ingest_etf_data import IngestEtfDataUseCase
+from src.application.use_cases.suggest_theme import SuggestThemeUseCase
 from src.application.use_cases.get_factor_scores import GetFactorScoresUseCase
 from src.application.use_cases.manage_universe_theme import (
     AddTickerToThemeUseCase,
@@ -186,7 +187,19 @@ data provider — never invent or guess an earnings date that isn't in the \
 returned data, and never speculate about what a company will report. If the \
 tool returns an error saying the earnings calendar isn't supported, say so \
 plainly rather than trying to answer from general knowledge about when a \
-company "usually" reports."""
+company "usually" reports.
+
+suggest_theme is a SUGGESTION tool, not an action tool — it proposes a theme \
+grounded in real news, it never creates the theme or tags any ticker itself. \
+Always present it as something for the user to review and decide on, using \
+language like "here's a candidate theme" rather than "I've created." Some \
+candidate tickers may have already_ingested: false — say plainly that those \
+need to be ingested first (ingest_company or ingest_etf) before they can be \
+tagged into a theme, and that this step will also reveal if a suggested \
+ticker turns out not to be real. Never skip straight to create_universe_theme \
+or add_ticker_to_theme after a suggestion without the user confirming they \
+want it — that confirmation is what keeps this a suggestion, not an action \
+taken on the user's behalf without being asked."""
 
 _TOOLS = [
     ToolDefinition(
@@ -447,6 +460,19 @@ _TOOLS = [
         },
     ),
     ToolDefinition(
+        "suggest_theme",
+        "Propose a NEW investment theme, grounded in real recent general "
+        "market news. Optionally take a user-supplied topic hint (e.g. "
+        "\"reshoring\") or infer purely from what's currently in the news. "
+        "This is a SUGGESTION for the user to review — it never creates the "
+        "theme or tags any ticker itself. Some suggested tickers may not be "
+        "ingested yet (already_ingested: false) — those need ingest_company "
+        "or ingest_etf before they can be tagged into a theme; that step "
+        "will also fail cleanly if a ticker turns out not to be real. Makes "
+        "a real LLM call and has a real cost.",
+        {"type": "object", "properties": {"user_hint": {"type": "string"}}},
+    ),
+    ToolDefinition(
         "ingest_etf",
         "Ingest an ETF's profile (name, expense ratio, AUM) so it can be added "
         "to watchlists, themes, and screened/factor-scored. ETFs have no "
@@ -689,6 +715,7 @@ class ChatWithAgentUseCase:
         get_upcoming_earnings: GetUpcomingEarningsUseCase,
         construct_risk_parity_portfolio: ConstructRiskParityPortfolioUseCase,
         ingest_etf: IngestEtfDataUseCase,
+        suggest_theme: SuggestThemeUseCase,
     ) -> None:
         self._chat_agent = chat_agent
         self._get_watchlist = get_watchlist
@@ -725,6 +752,7 @@ class ChatWithAgentUseCase:
         self._generate_theme_synthesis = generate_theme_synthesis
         self._get_upcoming_earnings = get_upcoming_earnings
         self._ingest_etf = ingest_etf
+        self._suggest_theme = suggest_theme
         self._construct_risk_parity_portfolio = construct_risk_parity_portfolio
         self._user_id: str = ""  # set per-request in execute()
 
@@ -984,6 +1012,33 @@ class ChatWithAgentUseCase:
                     for a in result.allocations
                 ],
                 "excluded": result.excluded,
+            }
+
+        if tool_name == "suggest_theme":
+            try:
+                suggestion = self._suggest_theme.execute(tool_input.get("user_hint"))
+            except Exception as exc:
+                return {"error": str(exc)}
+            return {
+                "theme_name": suggestion.theme_name,
+                "rationale": suggestion.rationale,
+                "candidate_tickers": [
+                    {
+                        "ticker": t.ticker,
+                        "company_name": t.company_name,
+                        "reasoning": t.reasoning,
+                        "already_ingested": t.already_ingested,
+                    }
+                    for t in suggestion.candidate_tickers
+                ],
+                "sourced_headlines": suggestion.sourced_headlines,
+                "note": (
+                    "This is a suggestion only — nothing has been created or "
+                    "tagged. Review with the user before calling "
+                    "create_universe_theme / add_ticker_to_theme. Any "
+                    "already_ingested=false ticker needs ingest_company or "
+                    "ingest_etf first."
+                ),
             }
 
         if tool_name == "ingest_etf":

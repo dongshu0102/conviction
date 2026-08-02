@@ -50,6 +50,7 @@ from src.application.use_cases.construct_risk_parity_portfolio import (
 from src.application.use_cases.generate_theme_synthesis import GenerateThemeSynthesisUseCase
 from src.application.use_cases.get_upcoming_earnings import GetUpcomingEarningsUseCase
 from src.application.use_cases.ingest_etf_data import IngestEtfDataUseCase
+from src.application.use_cases.suggest_theme import SuggestThemeUseCase
 from src.application.use_cases.get_factor_scores import GetFactorScoresUseCase
 from src.application.use_cases.manage_universe_theme import (
     AddTickerToThemeUseCase,
@@ -77,6 +78,9 @@ from src.infrastructure.data_providers.marketdata_app_provider import MarketData
 from src.infrastructure.llm_providers.anthropic_chat_agent import AnthropicChatAgent
 from src.infrastructure.persistence.factor_score_repository_impl import (
     SqlAlchemyFactorScoreRepository,
+)
+from src.infrastructure.llm_providers.anthropic_theme_suggestion_generator import (
+    AnthropicThemeSuggestionGenerator,
 )
 from src.infrastructure.llm_providers.anthropic_theme_synthesis_generator import (
     AnthropicThemeSynthesisGenerator,
@@ -178,6 +182,9 @@ def get_chat_use_case(
         construct_risk_parity_portfolio=ConstructRiskParityPortfolioUseCase(data_provider),
         get_upcoming_earnings=GetUpcomingEarningsUseCase(watchlist_repo, data_provider),
         ingest_etf=IngestEtfDataUseCase(company_repo, data_provider),
+        suggest_theme=SuggestThemeUseCase(
+            data_provider, company_repo, AnthropicThemeSuggestionGenerator(get_settings())
+        ),
     )
 
 

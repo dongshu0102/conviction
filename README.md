@@ -23,6 +23,15 @@ from Financial Modeling Prep (profile + 5 years of annual statements),
 stored with a typed-fields-plus-raw-JSON schema so no vendor data is
 ever silently dropped.
 
+**AI-suggested themes** — grounded in real, live general market news
+(not symbol-specific), proposes a candidate theme name, rationale, and
+shortlist of tickers — some possibly not yet ingested, honestly
+flagged as such. Deliberately a SUGGESTION, never an autonomous action:
+creating the theme and tagging tickers still goes through the existing
+human-confirmed tools. A hallucinated ticker is structurally
+self-correcting — it would simply fail a real ingestion attempt, not
+silently enter the system.
+
 **Curated investment universe** — global, shared themes ("AI
 Infrastructure," "China," etc.) as a many-to-many tag on top of
 `Company`, not a separate parallel system. Screening and factor
@@ -86,7 +95,7 @@ always `null` for a fund — not a data gap, genuinely not applicable
 **Real API key authentication** — SHA-256 hashed, shown once, with
 ownership checks on every portfolio-scoped endpoint.
 
-**Chat agent** — 35 tools via Anthropic's tool-use API, streamed to
+**Chat agent** — 36 tools via Anthropic's tool-use API, streamed to
 the frontend through the Vercel AI SDK. Deterministic computation
 stays deterministic even inside the chat — share counts, Greeks,
 factor composites, and risk-parity weights are all computed by plain
@@ -101,7 +110,7 @@ management, factor rankings, AI synthesis, risk-parity allocator, ETF
 ingestion), and per-portfolio risk analysis — all built on top of the
 REST API, not duplicating the chat agent's logic.
 
-**MCP server** — 35 tools for Claude Desktop / claude.ai, at parity
+**MCP server** — 36 tools for Claude Desktop / claude.ai, at parity
 with the chat agent for everything that has a REST endpoint to proxy
 (this is a thin HTTP client over the same production API, not a
 reimplementation). Genuinely NOT at parity for a handful of chat-only
@@ -298,7 +307,7 @@ easy to re-discover the hard way if this list doesn't exist:
 - No real user accounts/sessions — API keys are the whole auth story;
   fine for a single-operator instance, a real gap if this ever gets
   multiple untrusted users
-- **MCP server (35 tools) doesn't cover a handful of chat-only
+- **MCP server (36 tools) doesn't cover a handful of chat-only
   capabilities** — options, screening, rebalancing suggestions, and
   watchlist list-management were built chat-only, with no REST
   endpoint yet for MCP to proxy

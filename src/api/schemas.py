@@ -347,6 +347,22 @@ class FactorRankingResponseSchema(BaseModel):
     results: list[RankedFactorScoreSchema]
 
 
+class SuggestedTickerSchema(BaseModel):
+    ticker: str
+    company_name: str
+    reasoning: str
+    already_ingested: bool
+
+
+class ThemeSuggestionSchema(BaseModel):
+    theme_name: str
+    rationale: str
+    candidate_tickers: list[SuggestedTickerSchema]
+    sourced_headlines: list[str]
+    generated_at: datetime
+    model_used: str
+
+
 class ThemeSynthesisReportSchema(BaseModel):
     theme_name: str
     generated_at: datetime

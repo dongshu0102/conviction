@@ -14,6 +14,8 @@ from src.api.routers.companies import (
     get_valuation_use_case,
 )
 from src.api.schemas import (
+    SuggestedTickerSchema,
+    ThemeSuggestionSchema,
     ThemeSynthesisReportSchema,
     ThemeTickersSchema,
     UniverseThemeListSchema,
@@ -42,6 +44,14 @@ from src.application.use_cases.generate_theme_synthesis import (
     ThemeEmptyError,
 )
 from src.application.use_cases.screen_stocks import ScreenStocksUseCase
+from src.application.use_cases.suggest_theme import (
+    GeneralNewsUnavailableError,
+    NoNewsAvailableError,
+    SuggestThemeUseCase,
+)
+from src.infrastructure.llm_providers.anthropic_theme_suggestion_generator import (
+    AnthropicThemeSuggestionGenerator,
+)
 from src.infrastructure.llm_providers.anthropic_theme_synthesis_generator import (
     AnthropicThemeSynthesisGenerator,
 )
@@ -206,4 +216,38 @@ def generate_synthesis(
         notable_divergences=report.notable_divergences,
         key_risks=report.key_risks,
         model_used=report.model_used,
+    )
+
+
+def get_theme_suggestion_use_case(
+    company_repo: SqlAlchemyCompanyRepository = Depends(get_company_repository),
+    data_provider=Depends(get_data_provider),
+) -> SuggestThemeUseCase:
+    return SuggestThemeUseCase(
+        data_provider, company_repo, AnthropicThemeSuggestionGenerator(get_settings())
+    )
+
+
+@router.post("/suggest-theme", response_model=ThemeSuggestionSchema)
+def suggest_theme(
+    user_hint: str | None = None,
+    use_case: SuggestThemeUseCase = Depends(get_theme_suggestion_use_case),
+) -> ThemeSuggestionSchema:
+    try:
+        suggestion = use_case.execute(user_hint)
+    except (GeneralNewsUnavailableError, NoNewsAvailableError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return ThemeSuggestionSchema(
+        theme_name=suggestion.theme_name,
+        rationale=suggestion.rationale,
+        candidate_tickers=[
+            SuggestedTickerSchema(
+                ticker=t.ticker, company_name=t.company_name,
+                reasoning=t.reasoning, already_ingested=t.already_ingested,
+            )
+            for t in suggestion.candidate_tickers
+        ],
+        sourced_headlines=suggestion.sourced_headlines,
+        generated_at=suggestion.generated_at,
+        model_used=suggestion.model_used,
     )

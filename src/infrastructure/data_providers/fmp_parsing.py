@@ -11,6 +11,7 @@ from datetime import date, datetime
 
 from src.domain.entities.earnings import EarningsEvent
 from src.domain.entities.etf import EtfProfile
+from src.domain.entities.general_news import GeneralNewsHeadline
 from src.domain.entities.market_quote import PriceBar
 from src.domain.entities.news import NewsArticle
 
@@ -137,3 +138,30 @@ def parse_etf_info(payload, ticker: str) -> EtfProfile | None:
         expense_ratio=row.get("expenseRatio"),
         aum=row.get("assetsUnderManagement"),
     )
+
+
+def parse_general_news(payload) -> list[GeneralNewsHeadline]:
+    """Real confirmed shape from /stable/news/general-latest: symbol is
+    always null (unlike parse_stock_news's payload), publishedDate,
+    publisher, title, text, url. Malformed rows skipped, not fatal."""
+    if not isinstance(payload, list):
+        logger.warning("Unexpected general-news payload shape: %s", type(payload))
+        return []
+
+    headlines: list[GeneralNewsHeadline] = []
+    for i, row in enumerate(payload):
+        try:
+            title = row["title"]
+        except (KeyError, TypeError) as exc:
+            logger.warning("Skipping malformed general-news row %d: %s", i, exc)
+            continue
+        headlines.append(
+            GeneralNewsHeadline(
+                title=title,
+                published_at=_parse_news_datetime(row.get("publishedDate")),
+                publisher=row.get("publisher"),
+                url=row.get("url"),
+                snippet=row.get("text"),
+            )
+        )
+    return headlines

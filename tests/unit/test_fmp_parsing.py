@@ -151,3 +151,38 @@ def test_parse_etf_info_empty_list_returns_none() -> None:
 
 def test_parse_etf_info_non_list_payload_returns_none() -> None:
     assert parse_etf_info({"Error Message": "nope"}, "XYZ") is None
+
+
+# ---- General (non-ticker-specific) news ----
+
+from src.infrastructure.data_providers.fmp_parsing import parse_general_news
+
+
+def test_parse_general_news_real_confirmed_shape() -> None:
+    # Real payload confirmed live against FMP's /stable/news/general-latest.
+    payload = [{
+        "symbol": None,
+        "publishedDate": "2026-08-01 21:00:00",
+        "publisher": "WSJ",
+        "title": "The Race to Build an American Alternative to Cheap AI From China",
+        "site": "wsj.com",
+        "text": "Silicon Valley startups are setting up open models...",
+        "url": "https://www.wsj.com/tech/ai/example",
+    }]
+    headlines = parse_general_news(payload)
+    assert len(headlines) == 1
+    h = headlines[0]
+    assert h.title == "The Race to Build an American Alternative to Cheap AI From China"
+    assert h.publisher == "WSJ"
+    assert h.published_at is not None
+
+
+def test_parse_general_news_skips_malformed_rows() -> None:
+    payload = [{"publisher": "WSJ"}, {"title": "Valid headline"}]  # first missing title
+    headlines = parse_general_news(payload)
+    assert len(headlines) == 1
+    assert headlines[0].title == "Valid headline"
+
+
+def test_parse_general_news_rejects_non_list_payload() -> None:
+    assert parse_general_news({"Error Message": "nope"}) == []

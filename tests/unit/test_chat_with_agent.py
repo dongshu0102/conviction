@@ -37,6 +37,7 @@ from src.application.use_cases.construct_risk_parity_portfolio import (
 from src.application.use_cases.generate_theme_synthesis import GenerateThemeSynthesisUseCase
 from src.application.use_cases.get_upcoming_earnings import GetUpcomingEarningsUseCase
 from src.application.use_cases.ingest_etf_data import IngestEtfDataUseCase
+from src.application.use_cases.suggest_theme import SuggestThemeUseCase
 from src.application.use_cases.get_factor_scores import GetFactorScoresUseCase
 from src.application.use_cases.manage_universe_theme import (
     AddTickerToThemeUseCase,
@@ -62,6 +63,7 @@ from src.domain.entities.company import Company, Sector
 from src.domain.entities.market_quote import MarketQuote
 from tests.unit.fakes import (
     FakeFactorScoreRepository,
+    FakeThemeSuggestionGenerator,
     FakeThemeSynthesisGenerator,
     FakeUniverseThemeRepository,
     FakePriceSnapshotRepository,
@@ -179,6 +181,9 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
         construct_risk_parity_portfolio=ConstructRiskParityPortfolioUseCase(provider),
         get_upcoming_earnings=GetUpcomingEarningsUseCase(watchlist_repo, provider),
         ingest_etf=IngestEtfDataUseCase(company_repo, provider),
+        suggest_theme=SuggestThemeUseCase(
+            provider, company_repo, FakeThemeSuggestionGenerator()
+        ),
     )
     return use_case, fake_agent, portfolio_repo
 
@@ -1193,4 +1198,47 @@ def test_ingest_etf_unsupported_provider_returns_error() -> None:
         company_repo=company_repo,
     )
     use_case.execute("alice", "ingest SPY", [])
+    assert "error" in fake_agent.dispatch_results[0]
+
+
+# ---- Theme suggestion chat tool tests ----
+
+
+def test_suggest_theme_via_chat_includes_grounding_note() -> None:
+    from src.domain.entities.general_news import GeneralNewsHeadline
+    from datetime import datetime, timezone
+
+    class _NewsProvider(FakeDataProvider):
+        def get_general_news(self, limit=20):
+            return [GeneralNewsHeadline(title="Real headline", published_at=datetime.now(timezone.utc),
+                                          publisher="Test", url=None, snippet=None)]
+
+    company_repo = _company_repo("AAPL")
+    provider = _NewsProvider(company=company_repo.get_by_ticker("AAPL"))
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("suggest_theme", {"user_hint": "reshoring"})],
+        company_repo=company_repo,
+        provider=provider,
+    )
+    use_case.execute("alice", "suggest a theme about reshoring", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["theme_name"] == "Test Theme"
+    assert "suggestion only" in result["note"]
+    assert len(result["candidate_tickers"]) == 1
+
+
+def test_suggest_theme_error_surfaces_cleanly() -> None:
+    """Default FakeDataProvider has no get_general_news override."""
+    company_repo = _company_repo("AAPL")
+
+    class _NoNewsProvider(FakeDataProvider):
+        pass  # no get_general_news override -> NotImplementedError via base class
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("suggest_theme", {})],
+        company_repo=company_repo,
+        provider=_NoNewsProvider(company=company_repo.get_by_ticker("AAPL")),
+    )
+    use_case.execute("alice", "suggest a theme", [])
     assert "error" in fake_agent.dispatch_results[0]
