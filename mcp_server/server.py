@@ -46,7 +46,9 @@ mcp = MCPServer(
 )
 
 
-async def _request(method: str, path: str, params: dict[str, Any] | None = None) -> str:
+async def _request(
+    method: str, path: str, params: dict[str, Any] | None = None, json: dict[str, Any] | None = None
+) -> str:
     """Shared HTTP call + error handling for every tool below. Returns a
     string either way (JSON on success, a plain-English error message on
     failure) since MCP tool results are text — never raises, so a failed
@@ -56,7 +58,7 @@ async def _request(method: str, path: str, params: dict[str, Any] | None = None)
         base_url=API_BASE_URL, headers={"X-Api-Key": API_KEY}, timeout=60.0
     ) as client:
         try:
-            response = await client.request(method, path, params=params)
+            response = await client.request(method, path, params=params, json=json)
             response.raise_for_status()
             return response.text
         except httpx.HTTPStatusError as exc:
@@ -210,6 +212,168 @@ async def get_daily_brief() -> str:
     has a real cost — don't call it more than once per conversation unless
     the user explicitly asks for a refresh."""
     return await _request("GET", "/brief")
+
+
+@mcp.tool()
+async def delete_portfolio(portfolio_id: str) -> str:
+    """Permanently delete a portfolio and all its holdings. This cannot
+    be undone — confirm with the user before calling this."""
+    return await _request("DELETE", f"/portfolios/{portfolio_id}")
+
+
+@mcp.tool()
+async def mark_alert_read(alert_id: int) -> str:
+    """Mark one alert as read."""
+    return await _request("POST", f"/alerts/{alert_id}/read")
+
+
+@mcp.tool()
+async def run_monitoring_check() -> str:
+    """Run a monitoring check right now (price moves, entry targets,
+    upcoming earnings) instead of waiting for the next scheduled cron
+    run. Returns any new alerts generated."""
+    return await _request("POST", "/alerts/check")
+
+
+# --- Watchlist extras: named lists, triage, news, earnings ------------------
+
+@mcp.tool()
+async def triage_watchlist(list_name: str = "") -> str:
+    """Rank watchlist items by attention-worthiness using live data: day
+    move, move since added, P/E drift vs. add-time baseline, and whether
+    an entry target was crossed. HIGHER score means MORE attention-
+    worthy, NOT better quality — a stock can rank first because it's
+    collapsing. Optionally scope to one named list."""
+    params = {"list_name": list_name} if list_name else None
+    return await _request("GET", "/watchlist/triage", params=params)
+
+
+@mcp.tool()
+async def get_watchlist_news(list_name: str = "", limit_per_ticker: int = 5) -> str:
+    """Get recent news headlines for every ticker on the watchlist (or
+    one named list). Real, sourced, dated headlines — never invent one
+    beyond what's returned."""
+    params: dict[str, Any] = {"limit_per_ticker": limit_per_ticker}
+    if list_name:
+        params["list_name"] = list_name
+    return await _request("GET", "/watchlist/news", params=params)
+
+
+@mcp.tool()
+async def get_upcoming_earnings(list_name: str = "", lookahead_days: int = 14) -> str:
+    """Get upcoming earnings announcements for the watchlist (or one
+    named list) within the given number of days. Real dates and analyst
+    EPS estimates from the data provider — never invent one."""
+    params: dict[str, Any] = {"lookahead_days": lookahead_days}
+    if list_name:
+        params["list_name"] = list_name
+    return await _request("GET", "/watchlist/earnings", params=params)
+
+
+# --- Factor scoring ------------------------------------------------------------
+
+@mcp.tool()
+async def get_factor_score(ticker: str) -> str:
+    """Cross-sectional factor score for one ticker: Value, Quality,
+    Growth, Momentum, Size, each standardized (z-scored) against the
+    rest of the S&P 500 at the same point in time. DIFFERENT from a
+    fixed-band screen — a positive z-score always means "more
+    attractive than the universe average," never an absolute judgment.
+    A null value means that factor's data was unavailable, not that it
+    scored exactly average."""
+    return await _request("GET", f"/companies/{ticker}/factor-score")
+
+
+@mcp.tool()
+async def rank_universe_by_factors(top_n: int = 10) -> str:
+    """Rank the S&P 500 universe by composite factor score (equal-
+    weighted across Value/Quality/Growth/Momentum/Size). Use for "what
+    are the best value/growth/momentum names right now" — a live
+    cross-sectional ranking, not a fixed screen."""
+    return await _request("GET", "/companies/factor-rankings", params={"top_n": top_n})
+
+
+# --- Curated investment universe (global themes) ------------------------------
+
+@mcp.tool()
+async def create_universe_theme(name: str, description: str = "") -> str:
+    """Create a new global curated theme (e.g. "AI Infrastructure",
+    "China") that companies can be tagged into. Themes are shared
+    across every user — a system-wide taxonomy, not a personal list."""
+    params = {"description": description} if description else None
+    return await _request("POST", f"/universe/themes/{name}", params=params)
+
+
+@mcp.tool()
+async def list_universe_themes() -> str:
+    """List every curated theme with its member count."""
+    return await _request("GET", "/universe/themes")
+
+
+@mcp.tool()
+async def get_theme_tickers(theme_name: str) -> str:
+    """Get every ticker tagged into a given theme."""
+    return await _request("GET", f"/universe/themes/{theme_name}/tickers")
+
+
+@mcp.tool()
+async def add_ticker_to_theme(theme_name: str, ticker: str) -> str:
+    """Tag a ticker into a theme. A ticker can belong to multiple themes
+    at once. The ticker must already be ingested; the theme must
+    already exist."""
+    return await _request("POST", f"/universe/themes/{theme_name}/tickers/{ticker}")
+
+
+@mcp.tool()
+async def remove_ticker_from_theme(theme_name: str, ticker: str) -> str:
+    """Untag a ticker from one theme (does not affect its other
+    themes)."""
+    return await _request("DELETE", f"/universe/themes/{theme_name}/tickers/{ticker}")
+
+
+@mcp.tool()
+async def generate_theme_synthesis(theme_name: str) -> str:
+    """Generate an AI-written narrative synthesis across an ENTIRE
+    theme — common threads, notable divergences, and risks visible
+    across the group as a whole. Grounded in real screening/factor
+    data. Makes a real LLM call and has a real cost; not persisted, so
+    it regenerates fresh each time."""
+    return await _request("POST", f"/universe/themes/{theme_name}/synthesis")
+
+
+# --- Risk-parity portfolio construction ---------------------------------------
+
+@mcp.tool()
+async def construct_risk_parity_portfolio(tickers: list[str], total_investment: float) -> str:
+    """Propose a FROM-SCRATCH dollar allocation across a list of
+    tickers using risk parity: lower-volatility tickers get more
+    capital, higher-volatility tickers get less. NOT a return forecast
+    and NOT a recommendation of which tickers to buy — only how to
+    size positions across ones already chosen."""
+    return await _request(
+        "POST", "/portfolios/construct-risk-parity",
+        json={"tickers": [t.upper() for t in tickers], "total_investment": total_investment},
+    )
+
+
+# --- ETF support ---------------------------------------------------------------
+
+@mcp.tool()
+async def get_sp500_constituents() -> str:
+    """Live, authoritative current S&P 500 membership from the data
+    provider — not a static list, reflects index rebalances
+    automatically."""
+    return await _request("GET", "/companies/sp500-constituents")
+
+
+@mcp.tool()
+async def ingest_etf(ticker: str) -> str:
+    """Ingest an ETF's profile (name, expense ratio, AUM) — separate
+    from ingest_company, since a fund has no income statement. Once
+    ingested, an ETF can be watchlisted, tagged into a theme, and
+    factor-scored (Momentum and Size only — Value/Quality/Growth will
+    always be null for a fund, honestly, not a data gap)."""
+    return await _request("POST", f"/companies/{ticker}/ingest-etf")
 
 
 if __name__ == "__main__":

@@ -68,7 +68,7 @@ startup.
 ## 5. Verify it connected
 
 In Claude Desktop, look for a small tools/plug icon near the message
-input — clicking it should show `fininsight` with 18 tools listed. If
+input — clicking it should show `fininsight` with 35 tools listed. If
 it's not there, check Claude Desktop's logs (usually accessible from
 its settings/developer menu) for a startup error from this server.
 
@@ -79,6 +79,10 @@ Ask Claude something like:
 - "Create a portfolio called Growth and add 10 shares of AAPL at $150"
 - "What's the risk profile of my Retirement portfolio?"
 - "Give me my daily brief" (note: this one costs real money — it's an LLM call)
+- "Create a theme called AI Infrastructure, tag NVDA and AVGO into it, then synthesize it" (also a real LLM call)
+- "What's NVDA's factor score?" or "Rank the S&P 500 by factor score"
+- "Ingest the SPY ETF" then "What's SPY's factor score?" (expect Value/Quality/Growth to come back null — honest, not a bug, funds have no income statement)
+- "Split $10,000 across NVDA, AMD, and AVGO using risk parity"
 
 ## Troubleshooting
 

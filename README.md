@@ -5,55 +5,112 @@ data, deterministic financial computation where correctness matters, and
 an LLM layer for synthesis, conversation, and action — grounded in that
 data, never guessing at numbers it should have looked up.
 
-Live at **https://p8xpcshdn9.us-east-1.awsapprunner.com** (API) — see
+Live at **https://p8xpcshdn9.us-east-1.awsapprunner.com** (API) and
+**https://p35bdqdzmp.us-east-1.awsapprunner.com** (web app) — see
 `frontend/` for the web app and `mcp_server/` for the Claude
 Desktop/claude.ai integration.
 
 ## What's built
 
-**Data foundation** — 503 S&P 500 companies ingested from Financial
-Modeling Prep (profile + 5 years of annual statements), stored with a
-typed-fields-plus-raw-JSON schema so no vendor data is ever silently
-dropped.
+This platform implements the full professional investment workflow —
+Universe → Watchlist → Screen → Research → Factor Score → Value → Risk
+→ Construct → Monitor → Review — end to end, with one deliberate gap
+(Execution/order routing, a different trust category entirely, out of
+scope by design).
 
-**Three deterministic agents** — Financial Analysis (margins, growth,
-ROE/ROA, leverage), Valuation (P/E, P/S, EV/EBITDA against live
-quotes), and Company Research (LLM-grounded, but only ever generated
-from real ingested statements — raises before calling the model if no
-data exists, rather than letting it improvise).
+**Data foundation** — 503+ S&P 500 companies and any ingested ETF,
+from Financial Modeling Prep (profile + 5 years of annual statements),
+stored with a typed-fields-plus-raw-JSON schema so no vendor data is
+ever silently dropped.
 
-**Portfolio & watchlist** — full CRUD, live valuation, and Herfindahl-
-index-based concentration/sector/leverage risk analysis.
+**Curated investment universe** — global, shared themes ("AI
+Infrastructure," "China," etc.) as a many-to-many tag on top of
+`Company`, not a separate parallel system. Screening and factor
+rankings can scope to a theme directly.
 
-**Continuous monitoring** — price-move alerts via a standalone
-cron-invoked script (`scripts/run_monitoring.py`), deliberately not an
-in-process scheduler (that pattern caused a real multi-worker race
-condition earlier in development — see `Dockerfile` comments).
+**Cross-sectional factor scoring** — Value, Quality, Growth, Momentum,
+Size, each standardized (z-scored) against the live S&P 500 universe,
+not fixed bands — genuinely different from the screener below. Cached
+(the full universe refresh is expensive — 500+ tickers, hundreds of
+API calls) with a 24-hour staleness window, retry-with-backoff on
+transient failures, and a hard split between permanent failures (a
+delisted or un-ingested ticker — never retried) and transient ones (a
+429 — retried with exponential backoff). Value/Size are sign-flipped
+so a positive z-score always means "attractive" uniformly.
+
+**Stock screening** — value/quality composite scoring against a
+caller-named, bounded ticker list (≤15) or an entire curated theme
+(≤40) — deliberately distinct scoring philosophy from factor scoring
+(fixed absolute bands, not universe-relative).
+
+**Thematic AI research synthesis** — a narrative across an entire
+theme's members (common threads, divergences, risks), grounded in real
+screening + factor data, never persisted (cheap to regenerate,
+would go stale as a stored artifact). Explicitly warns the model about
+the screen-score/factor-score polarity difference in its own prompt —
+the single easiest way to accidentally invert a "good" and "bad" score.
+
+**Real portfolio risk analysis** — concentration (HHI), sector
+exposure, weighted leverage, plus actual volatility/correlation/95%
+1-day parametric VaR computed from live 60-day price history. Every
+volatility figure is honestly scoped (`volatility_covered_weight`) —
+a ticker with too little history is excluded, never force-fit.
+
+**Risk-parity portfolio construction** — proposes a from-scratch
+dollar allocation across a list of tickers, sized purely by inverse
+volatility (lower vol → more capital). Deliberately NOT mean-variance
+optimization — that needs an expected-return forecast, and there's no
+reliable source for one, so it isn't faked.
+
+**Options subsystem** — Greeks, P&L, delta hedging suggestions via
+MarketData.app, mixed into the same portfolios as equities.
+
+**Continuous monitoring** — price-move alerts, entry-target alerts
+(per-ticker custom thresholds), and earnings-date alerts (deduped
+against existing alerts so a 15-minute cron doesn't re-fire on the
+same event dozens of times a day), via a standalone cron-invoked
+script — deliberately not an in-process scheduler (a real multi-worker
+race condition earlier in development — see `Dockerfile` comments).
 
 **Daily Brief** — an AI narrative synthesizing watchlist moves,
-portfolio performance, and alerts into one short paragraph, grounded
-in the same structured data a person could otherwise read directly.
+portfolio performance, and alerts, grounded in the same structured
+data a person could otherwise read directly.
+
+**ETF support** — modeled as a variant of `Company` (`asset_type`
+flag), not a parallel system, so ETFs participate in watchlists,
+themes, and screening for free. Value/Quality/Growth factor scores are
+always `null` for a fund — not a data gap, genuinely not applicable
+(no income statement to compute them from) — while Momentum and Size
+(via AUM) work normally.
 
 **Real API key authentication** — SHA-256 hashed, shown once, with
-ownership checks on every portfolio-scoped endpoint (a gap that was
-genuinely absent in earlier iterations and got fixed alongside the
-auth rollout, not before).
+ownership checks on every portfolio-scoped endpoint.
 
-**Chat agent** — 11 tools (watchlist, portfolios, valuation, risk,
-analysis, research, rebalancing suggestions, a value/quality stock
-screener) via Anthropic's tool-use API, streamed to the frontend
-through the Vercel AI SDK. Deterministic computation stays
-deterministic even inside the chat — e.g. rebalancing share counts are
-computed by a plain use case, never estimated by the model.
+**Chat agent** — 35 tools via Anthropic's tool-use API, streamed to
+the frontend through the Vercel AI SDK. Deterministic computation
+stays deterministic even inside the chat — share counts, Greeks,
+factor composites, and risk-parity weights are all computed by plain
+use cases, never estimated by the model. The system prompt is
+unusually explicit about sign conventions and scoring polarity —
+several real bugs this session were the *model's own narration*
+inverting a correctly-computed number, not the math itself.
 
-**MCP server** — the same capabilities, exposed to Claude Desktop /
-claude.ai as 18 tools, for anyone who wants programmatic/conversational
-access outside the web app.
+**Web frontend** — Next.js, "Refined Terminal" dark design. `/terminal`
+(watchlist triage, news, upcoming earnings), `/universe` (theme
+management, factor rankings, AI synthesis, risk-parity allocator, ETF
+ingestion), and per-portfolio risk analysis — all built on top of the
+REST API, not duplicating the chat agent's logic.
 
-**Web frontend** — Next.js, real streaming chat, a dark "Refined
-Terminal" design, deployed as its own App Runner service alongside the
-API (no VPC connector needed — it only calls the public API over
-HTTPS).
+**MCP server** — 35 tools for Claude Desktop / claude.ai, at parity
+with the chat agent for everything that has a REST endpoint to proxy
+(this is a thin HTTP client over the same production API, not a
+reimplementation). Genuinely NOT at parity for a handful of chat-only
+tools that were never given a REST endpoint in the first place —
+options (Greeks, hedging, option holdings), `screen_stocks`,
+`recommend_stocks`, `suggest_rebalancing`, and watchlist named-list
+management (`list_watchlists`, `update_watchlist_item`). Those would
+need new REST endpoints before MCP could reach them; that's a
+different, larger piece of work than wiring up what already exists.
 
 ## Architecture
 
@@ -62,33 +119,39 @@ HTTPS).
 ```
 src/
 ├── domain/           # Entities + repository interfaces. Zero external deps.
+│   └── services/       # Pure math (z-scoring, portfolio risk, factor composites)
 ├── application/       # Use cases + provider/agent interfaces. Framework-free.
 │   ├── use_cases/      # One class per business operation
 │   └── interfaces/     # FinancialDataProvider, ResearchGenerator, ChatAgent, ...
 ├── infrastructure/    # Concrete implementations of the above interfaces.
-│   ├── data_providers/ # FinancialModelingPrepProvider (FMP adapter)
-│   ├── llm_providers/  # Anthropic adapters — research, brief, chat
+│   ├── data_providers/ # FMP + MarketData.app adapters, pure parsing modules
+│   ├── llm_providers/  # Anthropic adapters — research, brief, chat, synthesis
 │   └── persistence/    # SQLAlchemy models + repository implementations
 └── api/                # FastAPI — routers, Pydantic schemas, DI wiring
 
 frontend/               # Next.js web app (separate deployable, own Dockerfile)
-mcp_server/              # MCP server for Claude Desktop (separate deployable)
-scripts/                 # Bulk ingestion, monitoring cron job
+mcp_server/              # MCP server for Claude Desktop (separate deployable, STALE)
+scripts/                 # Bulk ingestion, monitoring cron, factor snapshot refresh cron
 ```
 
 **Dependency rule**: `domain` knows nothing about the other three layers.
 `application` knows about `domain` only. `infrastructure` and `api` depend
-inward. This is what let the LLM provider swap from a single-purpose
-research generator to a full tool-calling chat agent without touching
-domain logic — the interface (`ChatAgent`) is the seam; Anthropic's
-specific wire format lives only in `infrastructure/llm_providers/`.
+inward. The interface (`FinancialDataProvider`, `ChatAgent`, etc.) is the
+seam — a provider's specific wire format never leaks past its adapter.
+
+**Optional provider capabilities** (news, price history, earnings
+calendar, ETF profiles) are non-abstract methods on `FinancialDataProvider`
+that raise `NotImplementedError` by default, checked via `hasattr` at
+call sites — lets a capability be added without touching every existing
+fake/test provider, and every consumer degrades honestly (a `None`
+signal, not a crash) when a provider doesn't support it.
 
 ## Local setup
 
 ### Backend
 
 ```bash
-cp .env.example .env   # set FMP_API_KEY, ANTHROPIC_API_KEY, DATABASE_URL
+cp .env.example .env   # set FMP_API_KEY, ANTHROPIC_API_KEY, DATABASE_URL, MARKETDATA_API_KEY
 pip install -r requirements.txt
 brew services start postgresql@16   # or your local Postgres
 alembic upgrade head
@@ -107,14 +170,13 @@ npm run dev
 ```
 
 **Restart the dev server after any `.env.local` change** — Next.js only
-reads it at startup, not on hot-reload. This has been the single most
-common local-testing snag in this project's history.
+reads it at startup, not on hot-reload.
 
 ### MCP server (Claude Desktop / claude.ai)
 
-See `mcp_server/README.md` for the full setup — it needs its own
-isolated virtualenv (its dependencies conflict with the main app's
-pinned FastAPI/Starlette versions if installed into the same one).
+See `mcp_server/README.md` for setup. At parity with the chat agent
+for everything with a REST endpoint (see "What's built" above for the
+handful of chat-only exceptions).
 
 ## Try it
 
@@ -122,15 +184,18 @@ pinned FastAPI/Starlette versions if installed into the same one).
 # Ingest a company
 curl -X POST "http://localhost:8000/companies/AAPL/ingest?years=5"
 
+# Ingest an ETF (separate path — no financial statements to fetch)
+curl -X POST "http://localhost:8000/companies/SPY/ingest-etf"
+
 # Create an API key (the closest thing to "signup" this MVP has)
 curl -X POST "http://localhost:8000/api-keys?user_id=YOUR_NAME&name=cli"
 
 # Everything else needs that key
-curl "http://localhost:8000/companies/AAPL/analysis" -H "X-Api-Key: fi_live_..."
-curl -X POST "http://localhost:8000/watchlist/AAPL" -H "X-Api-Key: fi_live_..."
+curl "http://localhost:8000/companies/AAPL/factor-score" -H "X-Api-Key: fi_live_..."
+curl -X POST "http://localhost:8000/universe/themes/AI%20Infrastructure" -H "X-Api-Key: fi_live_..."
 curl -X POST "http://localhost:8000/chat" -H "X-Api-Key: fi_live_..." \
   -H "Content-Type: application/json" \
-  -d '{"message": "what is on my watchlist", "history": []}'
+  -d '{"message": "synthesize my AI Infrastructure theme", "history": []}'
 ```
 
 ## Tests
@@ -139,14 +204,20 @@ curl -X POST "http://localhost:8000/chat" -H "X-Api-Key: fi_live_..." \
 pytest tests/ -v
 ```
 
-59 tests, all against in-memory fakes (`tests/unit/fakes.py`) — no
+240 tests, all against in-memory fakes (`tests/unit/fakes.py`) — no
 database, no network, no mocking framework. If a repository or agent
 interface changes shape, the fakes fail to implement it and the suite
 fails to even collect, catching the break at the earliest possible
-point. Frontend/MCP server code has no automated test suite yet — real
-usage this session (streaming chat, screener output, redesign) was the
-verification, same limitation as any code that needed a live network
-connection this sandbox didn't have.
+point. Every real production bug caught this session got a regression
+test using the actual numbers involved (e.g. TSM's real TWD-denominated
+EPS, not a synthetic example) — see `test_compute_valuation.py`'s
+currency-guard tests for the pattern.
+
+**Frontend and MCP server have no automated tests** — real usage
+(browser testing, live curl checks against production) was the
+verification for every frontend/infra change this session, the same
+limitation as any code needing a live network connection this sandbox
+doesn't have. This is the single biggest remaining gap in the project.
 
 ## Database migrations
 
@@ -156,27 +227,85 @@ alembic revision -m "add X"  # create a new empty migration to edit by hand
 alembic downgrade -1         # roll back one migration
 ```
 
+12 migrations as of this writing (`0001` baseline through `0012` ETF
+support).
+
 ## Deployment (production)
 
-AWS: RDS Postgres (private), ECR, App Runner (backend + separate
-frontend service), Secrets Manager, GitHub Actions OIDC (no long-lived
-AWS credentials in CI). The backend's VPC connector lives on a
-dedicated private subnet routed through a NAT Gateway to a *separate*
-public subnet — an earlier attempt that put the NAT Gateway in the
-same subnet it was supposed to route for caused a real routing loop
-that took a full debugging session to trace via CloudTrail. The
-frontend needs no VPC connector at all — it only calls the public API
-over HTTPS.
+AWS: RDS Postgres (private, `PubliclyAccessible: false` — genuinely no
+route from outside AWS, by design), ECR, App Runner (backend + separate
+frontend service), Secrets Manager, EventBridge Scheduler (daily factor
+snapshot refresh), GitHub Actions OIDC (no long-lived AWS credentials
+in CI). The backend's VPC connector lives on a dedicated private subnet
+routed through a NAT Gateway to a *separate* public subnet — an earlier
+attempt that put the NAT Gateway in the same subnet it was supposed to
+route for caused a real routing loop that took a full debugging session
+to trace via CloudTrail. The frontend needs no VPC connector at all —
+it only calls the public API over HTTPS.
+
+### Hard-won operational lessons
+
+These cost real debugging time and are exactly the kind of thing that's
+easy to re-discover the hard way if this list doesn't exist:
+
+- **`aws apprunner wait ...` does not exist.** App Runner has no CLI
+  waiters defined at all (only some services, like EC2, ship them).
+  Poll `describe-service` in a loop instead — see
+  `.github/workflows/deploy-frontend.yml`.
+- **`update-service` diffs the JSON config text, not the image digest.**
+  If the source configuration is byte-identical to the last deploy
+  (same tag, same env vars — the normal case), App Runner treats it as
+  "no change" and silently skips pulling the new image, even though
+  the call returns success. Confirmed in production: months of deploys
+  were no-ops. Always follow `update-service` with an explicit
+  `start-deployment` if the image itself changed.
+- **`iam:PassRole` conditions can silently never match.** A policy
+  conditioned on `iam:PassedToService` can report "allowed" from
+  `simulate-principal-policy` (which lets you assert any hypothetical
+  context value) while the real API call never actually populates that
+  context key — so the live call denies anyway. If simulation says
+  allowed but the real call still 403s, suspect the condition itself,
+  not the resource/action.
+- **A private RDS instance has no route from a local machine, ever** —
+  not a security-group fix, a fundamentally different network path.
+  Maintenance operations (factor snapshot refresh, etc.) that need DB
+  access run as backend-triggered admin endpoints
+  (`POST /admin/refresh-factor-snapshot`), executed as a
+  `BackgroundTask` so the HTTP response doesn't block on a multi-minute
+  job — not from a local script.
+- **Postgres silently strips timezone info on a plain `timestamp`
+  column.** A value saved with `datetime.now(timezone.utc)` comes back
+  *naive* on read, even though nothing about the write looked wrong.
+  Any arithmetic against a fresh `datetime.now(timezone.utc)` then
+  raises `TypeError: can't subtract offset-naive and offset-aware
+  datetimes` — invisible in tests using in-memory fakes, since those
+  never round-trip through real Postgres. Fixed by normalizing to UTC
+  at the repository boundary (see `factor_score_repository_impl.py`).
+- **Mixing a USD price with a non-USD financial statement produces a
+  number, not an error.** TSM reports in TWD; its USD ADR price
+  divided by its TWD EPS produced a P/E of ~1.2 — arithmetically valid,
+  completely meaningless, and screening ranked it #1 cheapest in the
+  S&P 500 on the strength of it. `ComputeValuationUseCase` now checks
+  `reported_currency` and returns `None` rather than a wrong number for
+  any ratio that mixes currencies.
+- **FastAPI's default parameter binding for `list[str]` is a JSON
+  body, not repeated query params** — the opposite of what feels
+  intuitive. A bare `list[str]` function parameter (no `Query()`/
+  `Body()` annotation) expects `{"field": [...]}` in the request body.
 
 ## Known limitations, honestly
 
-- No real user accounts/sessions — API keys are the whole auth story
-- Monitoring/alerts only track tickers actively on someone's watchlist,
-  not the full ingested universe
-- The stock screener works on a caller-named, bounded list of tickers
-  (~15 max) — a true "screen the whole S&P 500" feature needs a
-  periodic batch-valuation job that doesn't exist yet
-- No "hot stocks" / price-momentum list — would need historical price
-  storage this system doesn't have (only one live snapshot per ticker,
-  for monitoring diffs)
-- Frontend has no automated tests
+- No real user accounts/sessions — API keys are the whole auth story;
+  fine for a single-operator instance, a real gap if this ever gets
+  multiple untrusted users
+- **MCP server (35 tools) doesn't cover a handful of chat-only
+  capabilities** — options, screening, rebalancing suggestions, and
+  watchlist list-management were built chat-only, with no REST
+  endpoint yet for MCP to proxy
+- Momentum/factor trading-day alignment across tickers is positional,
+  not by explicit calendar date — a documented simplification, fine
+  for ordinary listed equities, a known edge case for a very recent
+  IPO or a halted stock
+- App Runner is closed to new customers as of April 2026 — fine for
+  this existing instance, worth knowing before starting a new project
+  on it
