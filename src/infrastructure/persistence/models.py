@@ -60,6 +60,14 @@ class CompanyModel(Base):
     )
 
 
+class UserModel(Base):
+    __tablename__ = "users"
+
+    user_id: Mapped[str] = mapped_column(String(128), primary_key=True)  # normalized email
+    password_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
 class ApiKeyModel(Base):
     __tablename__ = "api_keys"
 

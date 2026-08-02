@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "vitest run"
   },
   "dependencies": {
     "next": "16.2.12",
@@ -16,9 +17,14 @@
     "@ai-sdk/react": "^3.0.0"
   },
   "devDependencies": {
-    "@types/node": "20.14.10",
+    "@types/node": "^20.19.0",
     "@types/react": "19.1.2",
     "@types/react-dom": "19.1.2",
-    "typescript": "5.5.3"
+    "typescript": "5.5.3",
+    "vitest": "^2.1.0",
+    "@testing-library/react": "^16.0.1",
+    "@testing-library/jest-dom": "^6.5.0",
+    "@vitejs/plugin-react": "^4.3.3",
+    "jsdom": "^25.0.1"
   }
 }

@@ -5,26 +5,34 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { api, setApiKey, ApiError } from "@/lib/api";
 
-export default function LoginPage() {
+const MIN_PASSWORD_LENGTH = 8;
+
+export default function SignUpPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!email.trim() || !password) return;
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Passwords don't match.");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const result = await api.logIn(email.trim(), password);
+      const result = await api.signUp(email.trim(), password);
       setApiKey(result.plaintext_key);
       router.push("/dashboard");
     } catch (err) {
-      // Deliberately the same message the backend gives for both a
-      // wrong password and an unregistered email — never confirm
-      // which one it was.
       setError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
     } finally {
       setLoading(false);
@@ -45,9 +53,10 @@ export default function LoginPage() {
         <p className="eyebrow" style={{ marginBottom: "0.5rem" }}>
           FinInsight
         </p>
-        <h1 style={{ fontSize: "2rem", marginBottom: "0.75rem" }}>Open your ledger.</h1>
+        <h1 style={{ fontSize: "2rem", marginBottom: "0.75rem" }}>Create your account.</h1>
         <p style={{ color: "var(--text-soft)", marginBottom: "2rem", lineHeight: 1.6 }}>
-          Log in with your email and password.
+          Real email and password now — this account is yours alone, and no one
+          else can mint a key under your identity without knowing this password.
         </p>
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
           <input
@@ -60,10 +69,17 @@ export default function LoginPage() {
           />
           <input
             type="password"
-            placeholder="Password"
+            placeholder={`Password (min ${MIN_PASSWORD_LENGTH} characters)`}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
+            autoComplete="new-password"
+          />
+          <input
+            type="password"
+            placeholder="Confirm password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            autoComplete="new-password"
           />
           {error && (
             <p className="num loss" style={{ fontSize: "0.9rem" }}>
@@ -71,13 +87,13 @@ export default function LoginPage() {
             </p>
           )}
           <button type="submit" className="btn-primary" disabled={loading}>
-            {loading ? "Logging in…" : "Log in"}
+            {loading ? "Creating account…" : "Create account"}
           </button>
         </form>
         <p style={{ marginTop: "1.5rem", fontSize: "0.9rem", color: "var(--text-soft)" }}>
-          New here?{" "}
-          <Link href="/signup" style={{ color: "var(--accent)" }}>
-            Create an account
+          Already have an account?{" "}
+          <Link href="/login" style={{ color: "var(--accent)" }}>
+            Log in
           </Link>
         </p>
       </div>

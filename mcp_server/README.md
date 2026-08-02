@@ -36,8 +36,19 @@ pip install -r requirements.txt
 
 ## 2. Get an API key
 
+If you don't already have a FinInsight account:
 ```bash
-curl -X POST "https://p8xpcshdn9.us-east-1.awsapprunner.com/api-keys?user_id=YOUR_NAME&name=mcp-client"
+curl -X POST "https://p8xpcshdn9.us-east-1.awsapprunner.com/auth/signup" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "you@example.com", "password": "yourpassword"}'
+```
+
+Already have one and just want a second key for MCP specifically?
+Log in instead — same shape, mints a fresh key each time:
+```bash
+curl -X POST "https://p8xpcshdn9.us-east-1.awsapprunner.com/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "you@example.com", "password": "yourpassword"}'
 ```
 
 Copy the `plaintext_key` from the response — shown exactly once, same
@@ -100,6 +111,24 @@ Ask Claude something like:
 - "What's NVDA's factor score?" or "Rank the S&P 500 by factor score"
 - "Ingest the SPY ETF" then "What's SPY's factor score?" (expect Value/Quality/Growth to come back null — honest, not a bug, funds have no income statement)
 - "Split $10,000 across NVDA, AMD, and AVGO using risk parity"
+
+## Tests
+
+```bash
+cd mcp_server
+FININSIGHT_API_KEY=test_key python3 tests/run_tests.py
+```
+
+9 tests against the REAL, unmodified `server.py` — including a
+systematic sweep checking every one of the 36 tools against the exact
+REST path it should hit, which self-checks that no new tool gets added
+without a corresponding entry (see `tests/test_server.py`). Since
+neither `httpx` nor `mcp` needs to be actually installed to run these
+(they're faked at the `sys.modules` level — see `tests/fake_deps.py`),
+this also works as a zero-dependency sanity check before you even set
+up the real venv. Also runnable with plain `pytest tests/` if you have
+pytest installed — every test is a normal sync function internally
+managing its own `asyncio.run()`, no special plugin needed.
 
 ## Troubleshooting
 

@@ -246,6 +246,16 @@ class EtfIngestResultSchema(BaseModel):
     aum: float | None
 
 
+class SignUpRequestSchema(BaseModel):
+    email: str
+    password: str
+
+
+class LogInRequestSchema(BaseModel):
+    email: str
+    password: str
+
+
 class ApiKeyCreatedSchema(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
 

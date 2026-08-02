@@ -1,17 +1,20 @@
 """API key management routes.
 
-POST /api-keys is deliberately open (no auth required to call it) —
-there is no login/signup system yet, so creating a key IS the closest
-equivalent to signing up. This is a known, documented MVP shortcut: in
-a real product, key creation would require an authenticated session
-(you'd log in first, then generate API keys from your account
-settings). Flagging this explicitly rather than pretending the auth
-story is more complete than it is.
+POST /api-keys now requires an already-authenticated caller (a valid
+existing key) rather than accepting an arbitrary user_id from anyone —
+this is what closes the impersonation gap that existed before real
+auth (see manage_auth.py): previously, anyone could mint a key for ANY
+user_id string with zero proof of ownership. The FIRST key for a new
+identity now only ever comes from POST /auth/signup, which requires a
+real password no one else knows. This endpoint is for creating
+ADDITIONAL keys for an identity you already hold (e.g. one for the web
+session, a separate one for MCP/CLI use).
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 
+from src.api.auth import get_authenticated_user_id
 from src.api.schemas import ApiKeyCreatedSchema, ApiKeySummarySchema
 from src.application.use_cases.manage_api_keys import CreateApiKeyUseCase, ListApiKeysUseCase
 from src.infrastructure.persistence.api_key_repository_impl import SqlAlchemyApiKeyRepository
@@ -37,8 +40,8 @@ def get_list_use_case(
 
 @router.post("", response_model=ApiKeyCreatedSchema)
 def create_api_key(
-    user_id: str = Query(..., description="Choose any identifier — this is your account id"),
-    name: str = Query(..., description="A label to identify this key later, e.g. 'CLI key'"),
+    name: str,
+    user_id: str = Depends(get_authenticated_user_id),
     use_case: CreateApiKeyUseCase = Depends(get_create_use_case),
 ) -> ApiKeyCreatedSchema:
     record, plaintext_key = use_case.execute(user_id, name)
@@ -50,11 +53,12 @@ def create_api_key(
 
 @router.get("", response_model=list[ApiKeySummarySchema])
 def list_api_keys(
-    user_id: str = Query(...),
+    user_id: str = Depends(get_authenticated_user_id),
     use_case: ListApiKeysUseCase = Depends(get_list_use_case),
 ) -> list[ApiKeySummarySchema]:
     """Lists key metadata only — never the plaintext, which is
-    unrecoverable by design after creation."""
+    unrecoverable by design after creation. Now scoped to the
+    authenticated caller's own keys, not an arbitrary user_id."""
     return [
         ApiKeySummarySchema(
             key_prefix=k.key_prefix, user_id=k.user_id, name=k.name,

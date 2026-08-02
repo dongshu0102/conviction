@@ -494,3 +494,28 @@ class FakeThemeSuggestionGenerator:
         self.received_headlines = headlines
         self.received_user_hint = user_hint
         return self._result
+
+
+class FakeUserRepository:
+    def __init__(self) -> None:
+        self._users = {}
+
+    def save(self, user) -> None:
+        self._users[user.user_id] = user
+
+    def get_by_user_id(self, user_id: str):
+        return self._users.get(user_id.strip().lower())
+
+
+class FakeApiKeyRepository:
+    def __init__(self) -> None:
+        self._keys = []
+
+    def save(self, api_key) -> None:
+        self._keys.append(api_key)
+
+    def get_by_hash(self, key_hash: str):
+        return next((k for k in self._keys if k.key_hash == key_hash), None)
+
+    def list_for_user(self, user_id: str):
+        return [k for k in self._keys if k.user_id == user_id]

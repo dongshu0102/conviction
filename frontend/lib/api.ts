@@ -300,11 +300,22 @@ export interface UpcomingEarningsResponse {
 }
 
 export const api = {
-  createApiKey: (userId: string, name: string) =>
-    request<{ plaintext_key: string }>(
-      `/api-keys?user_id=${encodeURIComponent(userId)}&name=${encodeURIComponent(name)}`,
-      { method: "POST" }
-    ),
+  signUp: (email: string, password: string) =>
+    request<{ plaintext_key: string; user_id: string }>("/auth/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    }),
+  logIn: (email: string, password: string) =>
+    request<{ plaintext_key: string; user_id: string }>("/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    }),
+  createApiKey: (name: string) =>
+    request<{ plaintext_key: string }>(`/api-keys?name=${encodeURIComponent(name)}`, {
+      method: "POST",
+    }),
   getWatchlist: () => request<WatchlistItem[]>("/watchlist"),
   addToWatchlist: (ticker: string) =>
     request<WatchlistItem>(`/watchlist/${encodeURIComponent(ticker.toUpperCase())}`, {

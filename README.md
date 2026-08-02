@@ -92,8 +92,21 @@ always `null` for a fund — not a data gap, genuinely not applicable
 (no income statement to compute them from) — while Momentum and Size
 (via AUM) work normally.
 
-**Real API key authentication** — SHA-256 hashed, shown once, with
-ownership checks on every portfolio-scoped endpoint.
+**Real authentication** — email/password signup and login
+(`POST /auth/signup`, `POST /auth/login`), bcrypt-hashed passwords,
+both producing a genuine API key rather than a separate session
+mechanism — deliberately, so nothing else in the system (36 chat
+tools, MCP, every existing REST endpoint) needed to change at all.
+API keys themselves stay SHA-256 hashed (correct for high-entropy
+random tokens — a different threat model than human-chosen passwords,
+which is exactly why they use bcrypt instead). Creating an
+*additional* key now requires already holding a valid one — the first
+key for any identity only ever comes from a real, password-verified
+signup, closing a real gap where anyone could previously mint a key
+for any `user_id` string with zero proof of ownership. Every
+portfolio-scoped endpoint still enforces ownership checks on top of
+this — authentication proves who you are, these checks enforce what
+you're allowed to touch.
 
 **Chat agent** — 36 tools via Anthropic's tool-use API, streamed to
 the frontend through the Vercel AI SDK. Deterministic computation
@@ -196,8 +209,11 @@ curl -X POST "http://localhost:8000/companies/AAPL/ingest?years=5"
 # Ingest an ETF (separate path — no financial statements to fetch)
 curl -X POST "http://localhost:8000/companies/SPY/ingest-etf"
 
-# Create an API key (the closest thing to "signup" this MVP has)
-curl -X POST "http://localhost:8000/api-keys?user_id=YOUR_NAME&name=cli"
+# Sign up (real email + password now — this is the actual account creation step)
+curl -X POST "http://localhost:8000/auth/signup" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "you@example.com", "password": "yourpassword"}'
+# Returns a plaintext_key — save it, shown exactly once
 
 # Everything else needs that key
 curl "http://localhost:8000/companies/AAPL/factor-score" -H "X-Api-Key: fi_live_..."
@@ -222,11 +238,19 @@ test using the actual numbers involved (e.g. TSM's real TWD-denominated
 EPS, not a synthetic example) — see `test_compute_valuation.py`'s
 currency-guard tests for the pattern.
 
-**Frontend and MCP server have no automated tests** — real usage
-(browser testing, live curl checks against production) was the
-verification for every frontend/infra change this session, the same
-limitation as any code needing a live network connection this sandbox
-doesn't have. This is the single biggest remaining gap in the project.
+**Frontend and MCP server now have automated tests** (`frontend/lib/api.test.ts`,
+`frontend/components/LedgerRow.test.tsx`, `mcp_server/tests/test_server.py`)
+— but **none of them have actually been run**. This sandbox has no
+PyPI or npm registry access at all, so `httpx`, `pytest-asyncio`,
+`vitest`, and `@testing-library/react` could never be installed here
+to execute anything. Written carefully against known-correct
+conventions, focused especially on the exact request-shape bugs that
+were real, confirmed production issues this session (e.g. `vitest run`
+should include a dedicated test proving `constructRiskParity` sends a
+JSON body, not query params — the precise thing that broke live
+earlier). Run `npm test` (frontend) and `pip install -r
+requirements-dev.txt && pytest` (`mcp_server/`) to get the real,
+first-ever verification.
 
 ## Database migrations
 
@@ -304,9 +328,14 @@ easy to re-discover the hard way if this list doesn't exist:
 
 ## Known limitations, honestly
 
-- No real user accounts/sessions — API keys are the whole auth story;
-  fine for a single-operator instance, a real gap if this ever gets
-  multiple untrusted users
+- Real email/password auth exists now (`POST /auth/signup` /
+  `POST /auth/login`), but it's account-level only — no roles, no
+  admin/user distinction, no password reset flow yet. Fine for
+  personal use; a real gap before this could safely serve untrusted
+  strangers
+- **Frontend/MCP tests exist but have never actually been run** — no
+  registry access in the environment that wrote them; run `npm test`
+  and `pytest` (`mcp_server/`) locally for the real first verification
 - **MCP server (36 tools) doesn't cover a handful of chat-only
   capabilities** — options, screening, rebalancing suggestions, and
   watchlist list-management were built chat-only, with no REST

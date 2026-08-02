@@ -12,7 +12,7 @@ that logic belongs in the API, not here.
 
 Setup:
     1. pip install -r requirements.txt (in this directory)
-    2. Get an API key: POST to {API_URL}/api-keys?user_id=...&name=...
+    2. Get an API key: POST to {API_URL}/auth/signup with {"email", "password"}
     3. Add to Claude Desktop's config (see README.md in this directory)
 
 Environment variables:
@@ -32,12 +32,13 @@ API_BASE_URL = os.environ.get(
 )
 API_KEY = os.environ.get("FININSIGHT_API_KEY")
 
-if not API_KEY:
-    raise RuntimeError(
-        "FININSIGHT_API_KEY environment variable is required. "
-        "Create one via: curl -X POST "
-        f"'{API_BASE_URL}/api-keys?user_id=YOUR_NAME&name=mcp-client'"
-    )
+# Deliberately NOT validated here — a module-level raise makes this file
+# impossible to import at all without a real key set, which breaks
+# testing (nothing in tests/ needs a real key; every HTTP call is
+# mocked). Confirmed in practice: pytest failed to even COLLECT this
+# file before this was moved. The same protection for real usage is
+# enforced in main() instead, which is the only thing that actually
+# needs a real key to do anything useful.
 
 mcp = MCPServer(
     name="fininsight",
@@ -390,5 +391,20 @@ async def ingest_etf(ticker: str) -> str:
     return await _request("POST", f"/companies/{ticker}/ingest-etf")
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Real entry point — this is where FININSIGHT_API_KEY actually
+    needs to exist, not at import time. Running this file directly
+    (the normal way Claude Desktop launches it) still gets the exact
+    same early, clear error it always did if the key is missing."""
+    if not API_KEY:
+        raise RuntimeError(
+            "FININSIGHT_API_KEY environment variable is required. "
+            "Create one via: curl -X POST "
+            f"'{API_BASE_URL}/auth/signup' -H 'Content-Type: application/json' "
+            "-d '{\"email\": \"you@example.com\", \"password\": \"yourpassword\"}'"
+        )
     mcp.run()
+
+
+if __name__ == "__main__":
+    main()
