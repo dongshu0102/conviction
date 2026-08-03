@@ -37,3 +37,14 @@ class SqlAlchemyApiKeyRepository(ApiKeyRepository):
                 select(ApiKeyModel).where(ApiKeyModel.user_id == user_id)
             ).scalars().all()
             return [_to_domain(row) for row in rows]
+
+    def deactivate_all_for_user(self, user_id: str) -> int:
+        with session_scope() as session:
+            rows = session.execute(
+                select(ApiKeyModel).where(
+                    ApiKeyModel.user_id == user_id, ApiKeyModel.is_active.is_(True)
+                )
+            ).scalars().all()
+            for row in rows:
+                row.is_active = False
+            return len(rows)

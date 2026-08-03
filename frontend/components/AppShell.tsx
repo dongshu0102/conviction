@@ -10,6 +10,13 @@
 // structure, which would be real risk to already-working code for a
 // purely organizational win. Each page imports <AppShell> and wraps
 // its content in it instead of rolling its own header.
+//
+// Layout/responsive structure lives in globals.css (.app-shell-*
+// classes) rather than inline styles — inline styles can't hold media
+// queries, and below 768px this collapses into a fixed bottom tab bar
+// instead of squeezing a 220px sidebar onto a phone screen. Only the
+// per-item ACTIVE state (genuinely dynamic, depends on the current
+// route) stays inline.
 
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -34,24 +41,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
-      <nav
-        style={{
-          width: "220px",
-          flexShrink: 0,
-          borderRight: "1px solid var(--rule)",
-          padding: "1.75rem 1rem",
-          display: "flex",
-          flexDirection: "column",
-          position: "sticky",
-          top: 0,
-          height: "100vh",
-        }}
-      >
-        <Link href="/dashboard" style={{ textDecoration: "none", marginBottom: "2.5rem", display: "block" }}>
+      <nav className="app-shell-nav">
+        <Link href="/dashboard" className="app-shell-logo" style={{ textDecoration: "none", display: "block" }}>
           <p className="eyebrow" style={{ margin: 0 }}>FinInsight</p>
         </Link>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", flex: 1 }}>
+        <div className="app-shell-items">
           {NAV_ITEMS.map((item) => {
             const active = pathname === item.href || pathname?.startsWith(item.href + "/");
             return (
@@ -81,24 +76,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           })}
         </div>
 
-        <button
-          onClick={logout}
-          className="num"
-          style={{
-            background: "none",
-            border: "none",
-            color: "var(--text-soft)",
-            fontSize: "0.82rem",
-            padding: "0.6rem 0.75rem",
-            textAlign: "left",
-            cursor: "pointer",
-          }}
-        >
+        <button onClick={logout} className="num app-shell-logout">
           Log out
         </button>
       </nav>
 
-      <main style={{ flex: 1, minWidth: 0 }}>{children}</main>
+      <main className="app-shell-main">{children}</main>
     </div>
   );
 }

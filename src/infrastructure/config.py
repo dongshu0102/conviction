@@ -30,6 +30,14 @@ class Settings(BaseSettings):
     # -- MarketData.app (options data) --
     marketdata_api_key: str = ""
 
+    # -- Email (AWS SES) --
+    # Must be a verified SES identity or the send fails — see
+    # ses_email_sender.py's docstring for the sandbox-mode caveat.
+    ses_sender_email: str = "noreply@fininsight.example.com"
+    ses_aws_region: str = "us-east-1"
+    # Used to build the password-reset link embedded in the email.
+    frontend_base_url: str = "https://p35bdqdzmp.us-east-1.awsapprunner.com"
+
     # -- App --
     environment: str = "development"
     log_level: str = "INFO"

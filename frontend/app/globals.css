@@ -137,3 +137,91 @@ input:focus-visible {
     animation: none !important;
   }
 }
+
+/* AppShell responsive nav — a fixed 220px inline-styled sidebar has no
+   way to respond to viewport width (inline styles can't hold media
+   queries), so this lives here instead. Below 768px the sidebar
+   becomes a fixed bottom tab bar: icon + tiny label, horizontal, no
+   JS toggle state needed — the standard, reliable mobile-nav pattern,
+   not a collapsed hamburger drawer requiring open/close state. */
+.app-shell-nav {
+  width: 220px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--rule);
+  padding: 1.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.app-shell-logo {
+  margin-bottom: 2.5rem;
+}
+
+.app-shell-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+}
+
+.app-shell-logout {
+  background: none;
+  border: none;
+  color: var(--text-soft);
+  font-size: 0.82rem;
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.app-shell-main {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 768px) {
+  .app-shell-nav {
+    width: 100%;
+    height: auto;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 20;
+    border-right: none;
+    border-top: 1px solid var(--rule);
+    background: var(--bg);
+    padding: 0.4rem 0.5rem;
+    /* iOS home-indicator safe area — a fixed bottom bar with no
+       bottom padding gets partially covered on notched devices. */
+    padding-bottom: calc(0.4rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .app-shell-logo,
+  .app-shell-logout {
+    display: none; /* wordmark + logout don't earn their place in five inches of width */
+  }
+
+  .app-shell-items {
+    flex-direction: row;
+    justify-content: space-around;
+    gap: 0;
+  }
+
+  .app-shell-items a {
+    flex-direction: column !important;
+    gap: 0.2rem !important;
+    padding: 0.4rem 0.5rem !important;
+    font-size: 0.68rem !important;
+    text-align: center;
+  }
+
+  /* The fixed bottom bar would otherwise cover the last ~70px of
+     every page's content. */
+  .app-shell-main {
+    padding-bottom: 70px;
+  }
+}

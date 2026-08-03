@@ -7,6 +7,8 @@ the test suite won't compile, catching the break immediately.
 """
 from __future__ import annotations
 
+from dataclasses import replace
+
 from src.application.interfaces.data_provider import FinancialDataProvider
 from src.domain.entities.company import Company
 from src.domain.entities.financial_statement import (
@@ -519,3 +521,43 @@ class FakeApiKeyRepository:
 
     def list_for_user(self, user_id: str):
         return [k for k in self._keys if k.user_id == user_id]
+
+    def deactivate_all_for_user(self, user_id: str) -> int:
+        count = 0
+        for i, k in enumerate(self._keys):
+            if k.user_id == user_id and k.is_active:
+                self._keys[i] = replace(k, is_active=False)
+                count += 1
+        return count
+
+
+class FakeEmailSender:
+    """Records every send, and can be configured to fail — used to
+    prove RequestPasswordResetUseCase never lets an email failure leak
+    account-existence information to the caller."""
+
+    def __init__(self, fail: bool = False) -> None:
+        self._fail = fail
+        self.sent: list[tuple[str, str, str]] = []  # (to, subject, body)
+
+    def send(self, to: str, subject: str, body_text: str) -> None:
+        if self._fail:
+            from src.application.interfaces.email_sender import EmailSendError
+            raise EmailSendError("simulated send failure")
+        self.sent.append((to, subject, body_text))
+
+
+class FakePasswordResetTokenRepository:
+    def __init__(self) -> None:
+        self._tokens = {}
+
+    def save(self, token) -> None:
+        self._tokens[token.token_hash] = token
+
+    def get_by_hash(self, token_hash: str):
+        return self._tokens.get(token_hash)
+
+    def mark_used(self, token_hash: str) -> None:
+        existing = self._tokens.get(token_hash)
+        if existing is not None:
+            self._tokens[token_hash] = replace(existing, used=True)

@@ -68,6 +68,16 @@ class UserModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
 
+class PasswordResetTokenModel(Base):
+    __tablename__ = "password_reset_tokens"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+
 class ApiKeyModel(Base):
     __tablename__ = "api_keys"
 

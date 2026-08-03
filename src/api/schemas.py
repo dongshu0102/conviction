@@ -246,6 +246,19 @@ class EtfIngestResultSchema(BaseModel):
     aum: float | None
 
 
+class ForgotPasswordRequestSchema(BaseModel):
+    email: str
+
+
+class ResetPasswordRequestSchema(BaseModel):
+    token: str
+    new_password: str
+
+
+class GenericMessageSchema(BaseModel):
+    message: str
+
+
 class SignUpRequestSchema(BaseModel):
     email: str
     password: str

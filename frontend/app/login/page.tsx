@@ -65,6 +65,13 @@ export default function LoginPage() {
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="current-password"
           />
+          <Link
+            href="/forgot-password"
+            className="num"
+            style={{ fontSize: "0.85rem", color: "var(--text-soft)", alignSelf: "flex-end" }}
+          >
+            Forgot password?
+          </Link>
           {error && (
             <p className="num loss" style={{ fontSize: "0.9rem" }}>
               {error}
