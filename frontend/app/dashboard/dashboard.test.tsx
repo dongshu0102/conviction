@@ -49,7 +49,13 @@ describe("Dashboard page", () => {
     render(<DashboardPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Portfolios")).toBeInTheDocument();
+      // "Portfolios" alone is ambiguous — AppShell's sidebar nav link
+      // has the same text and is present even during the loading
+      // state, which let this resolve BEFORE the real async data ever
+      // rendered. "View all →" only exists in the loaded snapshot
+      // card content, same fix already proven correct in the
+      // "links the snapshot cards" test below.
+      expect(screen.getByText("View all →")).toBeInTheDocument();
     });
     // The count, not a rendered list of every holding/ticker — proves
     // this is a snapshot, not a duplicate of the full watchlist table.

@@ -329,10 +329,20 @@ export const api = {
       method: "POST",
     }),
   getWatchlist: () => request<WatchlistItem[]>("/watchlist"),
-  addToWatchlist: (ticker: string) =>
-    request<WatchlistItem>(`/watchlist/${encodeURIComponent(ticker.toUpperCase())}`, {
-      method: "POST",
-    }),
+  addToWatchlist: (ticker: string, listName?: string) =>
+    request<WatchlistItem>(
+      `/watchlist/${encodeURIComponent(ticker.toUpperCase())}${
+        listName ? `?list_name=${encodeURIComponent(listName)}` : ""
+      }`,
+      { method: "POST" }
+    ),
+  removeFromWatchlist: (ticker: string, listName?: string) =>
+    request<{ removed: boolean }>(
+      `/watchlist/${encodeURIComponent(ticker.toUpperCase())}${
+        listName ? `?list_name=${encodeURIComponent(listName)}` : ""
+      }`,
+      { method: "DELETE" }
+    ),
   listPortfolios: () => request<Portfolio[]>("/portfolios"),
   createPortfolio: (name: string) =>
     request<Portfolio>(`/portfolios?name=${encodeURIComponent(name)}`, { method: "POST" }),

@@ -57,6 +57,11 @@ export default function TerminalPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [newTicker, setNewTicker] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [removingKey, setRemovingKey] = useState<string | null>(null);
+
   const load = useCallback(async (listName?: string) => {
     setLoading(true);
     setError(null);
@@ -99,6 +104,36 @@ export default function TerminalPage() {
     load();
   }, [load, router]);
 
+  async function handleAdd(e: React.FormEvent) {
+    e.preventDefault();
+    const ticker = newTicker.trim();
+    if (!ticker) return;
+    setAdding(true);
+    setAddError(null);
+    try {
+      await api.addToWatchlist(ticker, listFilter || undefined);
+      setNewTicker("");
+      await load(listFilter || undefined);
+    } catch (err) {
+      setAddError(err instanceof Error ? err.message : "Couldn't add that ticker.");
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  async function handleRemove(ticker: string, itemListName: string) {
+    const key = `${itemListName}:${ticker}`;
+    setRemovingKey(key);
+    try {
+      await api.removeFromWatchlist(ticker, itemListName);
+      await load(listFilter || undefined);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't remove that ticker.");
+    } finally {
+      setRemovingKey(null);
+    }
+  }
+
   const listNames = useMemo(() => {
     const names = new Set<string>();
     triage?.items.forEach((i) => names.add(i.list_name));
@@ -119,6 +154,31 @@ export default function TerminalPage() {
         <p className="eyebrow">FinInsight · Watchlist</p>
         <h1 style={{ margin: "0.2rem 0 0" }}>Watchlist Terminal</h1>
       </header>
+
+      <form
+        onSubmit={handleAdd}
+        style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center", margin: "1rem 0" }}
+      >
+        <input
+          type="text"
+          placeholder="Add ticker, e.g. NVDA"
+          value={newTicker}
+          onChange={(e) => setNewTicker(e.target.value)}
+          className="num"
+          style={{ maxWidth: "200px", padding: "0.5rem 0.75rem", fontSize: "0.85rem", textTransform: "uppercase" }}
+        />
+        <button type="submit" className="btn-primary" disabled={adding || !newTicker.trim()} style={{ padding: "0.5rem 1.1rem", fontSize: "0.85rem" }}>
+          {adding ? "Adding…" : "Add"}
+        </button>
+        {listFilter && (
+          <span className="num" style={{ color: "var(--text-soft)", fontSize: "0.75rem" }}>
+            → adds to &ldquo;{listFilter}&rdquo;
+          </span>
+        )}
+      </form>
+      {addError && (
+        <p className="num loss" style={{ fontSize: "0.8rem", margin: "0 0 0.5rem" }}>{addError}</p>
+      )}
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center", margin: "1rem 0 1.5rem" }}>
         <label className="num" htmlFor="list-filter" style={{ color: "var(--text-soft)", fontSize: "0.8rem" }}>
@@ -163,8 +223,8 @@ export default function TerminalPage() {
         <section className="card">
           <p style={{ margin: 0 }}>Nothing on this watchlist yet.</p>
           <p className="num" style={{ margin: "0.5rem 0 0", color: "var(--text-soft)", fontSize: "0.85rem" }}>
-            Add a ticker from the dashboard, or ask the chat agent — e.g. &quot;add NVDA to
-            my AI Watch list with a $150 entry target&quot;.
+            Add a ticker above to get started — or ask the chat agent for more, e.g.
+            &quot;add NVDA to my AI Watch list with a $150 entry target&quot;.
           </p>
         </section>
       )}
@@ -182,6 +242,7 @@ export default function TerminalPage() {
                 <th style={{ padding: "0.4rem 0.6rem" }}>P/E DRIFT</th>
                 <th style={{ padding: "0.4rem 0.6rem" }}>TARGET</th>
                 <th style={{ textAlign: "left", padding: "0.4rem 0.6rem", width: "180px" }}>ATTENTION</th>
+                <th style={{ padding: "0.4rem 0.6rem", width: "40px" }}></th>
               </tr>
             </thead>
             <tbody>
@@ -238,6 +299,21 @@ export default function TerminalPage() {
                         />
                       </div>
                     </div>
+                  </td>
+                  <td style={{ padding: "0.55rem 0.6rem", textAlign: "center" }}>
+                    <button
+                      onClick={() => handleRemove(item.ticker, item.list_name)}
+                      disabled={removingKey === `${item.list_name}:${item.ticker}`}
+                      title={`Remove ${item.ticker} from ${item.list_name}`}
+                      aria-label={`Remove ${item.ticker} from watchlist`}
+                      style={{
+                        background: "none", border: "none", cursor: "pointer",
+                        color: "var(--text-soft)", fontSize: "0.9rem", padding: "0.2rem 0.4rem",
+                        lineHeight: 1,
+                      }}
+                    >
+                      {removingKey === `${item.list_name}:${item.ticker}` ? "…" : "×"}
+                    </button>
                   </td>
                 </tr>
               ))}
