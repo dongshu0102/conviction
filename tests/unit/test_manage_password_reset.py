@@ -7,6 +7,7 @@ sending genuinely fails).
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 from src.application.use_cases.manage_api_keys import CreateApiKeyUseCase
@@ -208,3 +209,43 @@ def test_reset_password_rejects_weak_new_password() -> None:
         raise AssertionError("expected WeakPasswordError")
     except WeakPasswordError:
         pass
+
+
+# ---- Regression: naive datetime from a real Postgres round-trip must ----
+# never crash the expiry comparison (production incident: plain
+# `timestamp` columns strip tzinfo, so get_by_hash() can return a naive
+# datetime even though everything is saved as UTC-aware — this exact
+# bug class was already fixed once this session for factor scores and
+# should have been applied here from the start).
+
+
+class _NaiveDatetimeTokenRepo(FakePasswordResetTokenRepository):
+    """Simulates exactly what the repository would return WITHOUT the
+    fix: a naive datetime, even though the app always saves UTC-aware."""
+
+    def get_by_hash(self, token_hash: str):
+        token = super().get_by_hash(token_hash)
+        if token is None:
+            return None
+        return replace(token, expires_at=token.expires_at.replace(tzinfo=None))
+
+
+def test_naive_expires_at_from_repository_does_not_crash_reset() -> None:
+    user_repo = FakeUserRepository()
+    token_repo = _NaiveDatetimeTokenRepo()
+    api_key_repo = FakeApiKeyRepository()
+    user_id = _seed_user(user_repo)
+    plaintext_token = "some-real-token"
+    token_repo.save(PasswordResetToken(
+        token_hash=_hash_token(plaintext_token), user_id=user_id,
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+        created_at=datetime.now(timezone.utc), used=False,
+    ))
+
+    # Must not raise TypeError: can't compare offset-naive and
+    # offset-aware datetimes — this is the exact production crash.
+    result_user_id = _build_reset_use_case(user_repo, token_repo, api_key_repo).execute(
+        plaintext_token, "newpassword123"
+    )
+
+    assert result_user_id == user_id

@@ -117,6 +117,12 @@ class ResetPasswordUseCase:
 
         token_hash = _hash_token(plaintext_token)
         token = self._token_repo.get_by_hash(token_hash)
+        if token is not None and token.expires_at.tzinfo is None:
+            # Defensive second layer — the repository is responsible
+            # for returning UTC-aware datetimes, but this guards
+            # against any implementation forgetting that, the exact
+            # bug that crashed this method in production.
+            token = replace(token, expires_at=token.expires_at.replace(tzinfo=timezone.utc))
         if token is None or token.used or token.expires_at < datetime.now(timezone.utc):
             raise InvalidOrExpiredTokenError()
 
