@@ -1,2 +1,7 @@
 mcp[cli]>=1.2.0
 httpx>=0.27.0
+# Explicit floor, not left to automatic resolution — confirmed via a
+# real error that resolution can settle on something older than what
+# mcp actually needs internally (its own schema-generation code uses
+# pydantic.create_model in a way that genuinely requires >=2.12).
+pydantic>=2.12.0

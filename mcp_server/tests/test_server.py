@@ -169,3 +169,150 @@ async def test_remove_ticker_from_theme_uses_delete_not_post():
     mock_req.assert_called_once_with(
         "DELETE", "/universe/themes/AI Infrastructure/tickers/NVDA"
     )
+
+
+# --- The 11 tools added to close the MCP gap (options, screening, --------
+# recommendations, rebalancing, watchlist extras) — none of these had any
+# test coverage until now, despite three of them sending a JSON body, the
+# exact request shape that already caused one real production bug this
+# session (construct_risk_parity_portfolio, tested above).
+
+@pytest.mark.asyncio
+async def test_add_option_holding_sends_json_body_with_uppercased_ticker():
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.add_option_holding(
+            "port-1", "nvda", 500.0, "2026-12-18", "call", 2.0, 15.5
+        )
+    mock_req.assert_called_once_with(
+        "POST", "/portfolios/port-1/options",
+        json={
+            "underlying_ticker": "NVDA", "strike": 500.0, "expiration": "2026-12-18",
+            "option_type": "call", "contracts_held": 2.0, "cost_basis_per_contract": 15.5,
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_remove_option_holding_sends_json_body_not_query_params():
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.remove_option_holding("port-1", "nvda", 500.0, "2026-12-18", "call")
+    mock_req.assert_called_once_with(
+        "DELETE", "/portfolios/port-1/options",
+        json={
+            "underlying_ticker": "NVDA", "strike": 500.0,
+            "expiration": "2026-12-18", "option_type": "call",
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_compute_portfolio_greeks_simple_get():
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.compute_portfolio_greeks("port-1")
+    mock_req.assert_called_once_with("GET", "/portfolios/port-1/options/greeks")
+
+
+@pytest.mark.asyncio
+async def test_compute_option_portfolio_valuation_simple_get():
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.compute_option_portfolio_valuation("port-1")
+    mock_req.assert_called_once_with("GET", "/portfolios/port-1/options/valuation")
+
+
+@pytest.mark.asyncio
+async def test_suggest_hedging_simple_get():
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.suggest_hedging("port-1")
+    mock_req.assert_called_once_with("GET", "/portfolios/port-1/options/hedging-suggestion")
+
+
+@pytest.mark.asyncio
+async def test_screen_stocks_sends_json_body_with_tickers_and_theme_name():
+    """The exact request shape (list[str] in a JSON body, not query
+    params) that broke construct_risk_parity_portfolio in the REST
+    layer earlier this session — proving it wasn't repeated here."""
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.screen_stocks(tickers=["aapl", "msft"], theme_name=None)
+    mock_req.assert_called_once_with(
+        "POST", "/companies/screen",
+        json={"tickers": ["aapl", "msft"], "theme_name": None},
+    )
+
+
+@pytest.mark.asyncio
+async def test_screen_stocks_defaults_to_none_for_both_when_omitted():
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.screen_stocks()
+    mock_req.assert_called_once_with(
+        "POST", "/companies/screen", json={"tickers": None, "theme_name": None}
+    )
+
+
+@pytest.mark.asyncio
+async def test_recommend_stocks_query_param_default():
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.recommend_stocks("port-1")
+    mock_req.assert_called_once_with(
+        "GET", "/portfolios/port-1/recommendations", params={"max_recommendations": 5}
+    )
+
+
+@pytest.mark.asyncio
+async def test_recommend_stocks_query_param_explicit():
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.recommend_stocks("port-1", max_recommendations=10)
+    mock_req.assert_called_once_with(
+        "GET", "/portfolios/port-1/recommendations", params={"max_recommendations": 10}
+    )
+
+
+@pytest.mark.asyncio
+async def test_suggest_rebalancing_query_param_default():
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.suggest_rebalancing("port-1")
+    mock_req.assert_called_once_with(
+        "GET", "/portfolios/port-1/rebalance-suggestion", params={"target_max_weight": 0.30}
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_watchlists_simple_get():
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.list_watchlists()
+    mock_req.assert_called_once_with("GET", "/watchlist/lists")
+
+
+@pytest.mark.asyncio
+async def test_update_watchlist_item_only_includes_explicitly_passed_fields():
+    """The subtle correctness requirement: an omitted field must NOT
+    appear in the body at all (so the backend's model_fields_set
+    distinction between 'omitted' and 'explicitly null' works) — only
+    list_name is always present."""
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.update_watchlist_item("aapl", notes="watching earnings")
+    mock_req.assert_called_once_with(
+        "PATCH", "/watchlist/AAPL",
+        json={"list_name": "Default", "notes": "watching earnings"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_update_watchlist_item_all_fields_given():
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.update_watchlist_item(
+            "aapl", list_name="Growth", notes="hold", target_price=200.0, alert_threshold_pct=0.05
+        )
+    mock_req.assert_called_once_with(
+        "PATCH", "/watchlist/AAPL",
+        json={
+            "list_name": "Growth", "notes": "hold",
+            "target_price": 200.0, "alert_threshold_pct": 0.05,
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_stock_news_uppercases_ticker_and_passes_limit():
+    with patch("server._request", new=AsyncMock(return_value="[]")) as mock_req:
+        await server.get_stock_news("aapl", limit=5)
+    mock_req.assert_called_once_with("GET", "/companies/AAPL/news", params={"limit": 5})
