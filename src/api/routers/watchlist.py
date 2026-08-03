@@ -18,8 +18,10 @@ from src.api.schemas import (
     TriageResponseSchema,
     TriageSignalsSchema,
     UpcomingEarningsResponseSchema,
+    UpdateWatchlistItemRequestSchema,
     WatchlistItemSchema,
     WatchlistNewsResponseSchema,
+    WatchlistSummarySchema,
 )
 from src.application.use_cases.get_upcoming_earnings import (
     EarningsCalendarUnavailableError,
@@ -29,8 +31,10 @@ from src.application.use_cases.get_watchlist_news import GetWatchlistNewsUseCase
 from src.application.use_cases.manage_watchlist import (
     AddToWatchlistUseCase,
     GetWatchlistUseCase,
+    ListWatchlistNamesUseCase,
     RemoveFromWatchlistUseCase,
     TickerNotIngestedError,
+    UpdateWatchlistItemUseCase,
 )
 from src.application.use_cases.triage_watchlist import TriageWatchlistUseCase
 from src.infrastructure.persistence.monitoring_repository_impl import (
@@ -244,4 +248,63 @@ def upcoming_earnings(
             )
             for e in events
         ]
+    )
+
+
+# --- Watchlist extras: named-list summary + partial update ------------------
+
+def get_list_names_use_case(
+    watchlist_repo: SqlAlchemyWatchlistRepository = Depends(get_watchlist_repository),
+) -> ListWatchlistNamesUseCase:
+    return ListWatchlistNamesUseCase(watchlist_repo)
+
+
+def get_update_item_use_case(
+    watchlist_repo: SqlAlchemyWatchlistRepository = Depends(get_watchlist_repository),
+) -> UpdateWatchlistItemUseCase:
+    return UpdateWatchlistItemUseCase(watchlist_repo)
+
+
+@router.get("/lists", response_model=list[WatchlistSummarySchema])
+def list_watchlists(
+    user_id: str = Depends(get_authenticated_user_id),
+    use_case: ListWatchlistNamesUseCase = Depends(get_list_names_use_case),
+) -> list[WatchlistSummarySchema]:
+    counts = use_case.execute(user_id)
+    return [WatchlistSummarySchema(name=n, item_count=c) for n, c in counts.items()]
+
+
+@router.patch("/{ticker}", response_model=WatchlistItemSchema)
+def update_watchlist_item(
+    ticker: str,
+    body: UpdateWatchlistItemRequestSchema,
+    user_id: str = Depends(get_authenticated_user_id),
+    use_case: UpdateWatchlistItemUseCase = Depends(get_update_item_use_case),
+) -> WatchlistItemSchema:
+    """Only fields actually present in the request body are changed —
+    an omitted field is left as-is, an explicit null clears it. Uses
+    Pydantic's model_fields_set (which fields were present in the raw
+    JSON) rather than checking for None, since None is itself a valid,
+    meaningful value here (explicitly clearing target_price, say), not
+    a signal to skip that field — same distinction the chat tool
+    already makes by checking key presence in the raw dict."""
+    kwargs = {}
+    provided = body.model_fields_set
+    if "notes" in provided:
+        kwargs["notes"] = body.notes
+    if "target_price" in provided:
+        kwargs["target_price"] = body.target_price
+    if "alert_threshold_pct" in provided:
+        kwargs["alert_threshold_pct"] = body.alert_threshold_pct
+
+    try:
+        item = use_case.execute(user_id, ticker, list_name=body.list_name, **kwargs)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return WatchlistItemSchema(
+        user_id=item.user_id, ticker=item.ticker, list_name=item.list_name, added_at=item.added_at,
+        notes=item.notes, target_price=item.target_price,
+        alert_threshold_pct=item.alert_threshold_pct,
+        added_price=item.added_price, added_pe=item.added_pe,
     )

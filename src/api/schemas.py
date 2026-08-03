@@ -357,6 +357,145 @@ class FactorRankingResponseSchema(BaseModel):
     results: list[RankedFactorScoreSchema]
 
 
+# --- Options subsystem ---------------------------------------------------
+
+class OptionHoldingRequestSchema(BaseModel):
+    underlying_ticker: str
+    strike: float
+    expiration: date
+    option_type: str
+    contracts_held: float
+    cost_basis_per_contract: float
+
+
+class OptionHoldingRemoveRequestSchema(BaseModel):
+    underlying_ticker: str
+    strike: float
+    expiration: date
+    option_type: str
+
+
+class OptionHoldingResultSchema(BaseModel):
+    underlying_ticker: str
+    strike: float
+    expiration: date
+    option_type: str
+    contracts_held: float
+    status: str
+
+
+class PortfolioGreeksSchema(BaseModel):
+    total_delta: float
+    total_gamma: float
+    total_theta: float
+    total_vega: float
+    positions_included: int
+    positions_excluded: list[str]
+
+
+class OptionPositionSchema(BaseModel):
+    contract: str
+    contracts_held: float
+    current_price: float
+    market_value: float
+    unrealized_gain: float
+    unrealized_gain_pct: float
+
+
+class OptionPortfolioValuationSchema(BaseModel):
+    total_market_value: float
+    total_cost_basis: float
+    total_unrealized_gain: float
+    total_unrealized_gain_pct: float
+    positions: list[OptionPositionSchema]
+    positions_excluded: list[str]
+
+
+class HedgingSuggestionSchema(BaseModel):
+    underlying_ticker: str
+    net_delta: float
+    shares_to_trade: float
+    resulting_delta: float
+
+
+class HedgingPlanSchema(BaseModel):
+    suggestions: list[HedgingSuggestionSchema]
+    positions_excluded: list[str]
+    note: str | None = None
+
+
+# --- Screening / recommendations / rebalancing ----------------------------
+
+class ScreenRequestSchema(BaseModel):
+    tickers: list[str] | None = None
+    theme_name: str | None = None
+
+
+class ScreenedStockSchema(BaseModel):
+    ticker: str
+    price: float
+    price_to_earnings: float | None
+    price_to_sales: float | None
+    ev_to_ebitda: float | None
+    return_on_equity: float | None
+    net_margin: float | None
+    debt_to_equity: float | None
+    value_score: float | None
+    quality_score: float | None
+    composite_score: float | None
+
+
+class ScreenResultSchema(BaseModel):
+    scoring_note: str
+    excluded: list[str]
+    results: list[ScreenedStockSchema]
+
+
+class RecommendationPickSchema(BaseModel):
+    ticker: str
+    gap_sector: str
+    current_sector_weight: float
+    price: float
+    price_to_earnings: float | None
+    return_on_equity: float | None
+    composite_score: float | None
+
+
+class RecommendationsSchema(BaseModel):
+    gap_sectors: list[str]
+    scoring_note: str | None = None
+    picks: list[RecommendationPickSchema]
+    note: str | None = None
+
+
+class RebalanceSuggestionSchema(BaseModel):
+    ticker: str
+    current_weight: float
+    target_weight: float
+    shares_to_trim: float
+    estimated_proceeds: float
+
+
+class RebalancePlanSchema(BaseModel):
+    target_max_weight: float
+    suggestions: list[RebalanceSuggestionSchema]
+    note: str | None = None
+
+
+# --- Watchlist extras -------------------------------------------------------
+
+class WatchlistSummarySchema(BaseModel):
+    name: str
+    item_count: int
+
+
+class UpdateWatchlistItemRequestSchema(BaseModel):
+    list_name: str = "Default"
+    notes: str | None = None
+    target_price: float | None = None
+    alert_threshold_pct: float | None = None
+
+
 class SuggestedTickerSchema(BaseModel):
     ticker: str
     company_name: str

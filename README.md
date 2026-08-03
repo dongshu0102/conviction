@@ -123,16 +123,16 @@ management, factor rankings, AI synthesis, risk-parity allocator, ETF
 ingestion), and per-portfolio risk analysis — all built on top of the
 REST API, not duplicating the chat agent's logic.
 
-**MCP server** — 36 tools for Claude Desktop / claude.ai, at parity
-with the chat agent for everything that has a REST endpoint to proxy
-(this is a thin HTTP client over the same production API, not a
-reimplementation). Genuinely NOT at parity for a handful of chat-only
-tools that were never given a REST endpoint in the first place —
-options (Greeks, hedging, option holdings), `screen_stocks`,
-`recommend_stocks`, `suggest_rebalancing`, and watchlist named-list
-management (`list_watchlists`, `update_watchlist_item`). Those would
-need new REST endpoints before MCP could reach them; that's a
-different, larger piece of work than wiring up what already exists.
+**MCP server** — 47 tools for Claude Desktop / claude.ai. Previously
+had a real gap — options (Greeks, hedging, option holdings),
+`screen_stocks`, `recommend_stocks`, `suggest_rebalancing`, and
+watchlist named-list management had no REST endpoint for MCP to proxy
+at all. Closed by adding 11 new REST endpoints for those exact
+capabilities (`/portfolios/{id}/options/*`, `/companies/screen`,
+`/portfolios/{id}/recommendations`, `/portfolios/{id}/rebalance-suggestion`,
+`/watchlist/lists`, `PATCH /watchlist/{ticker}`, `/companies/{ticker}/news`),
+then MCP tools proxying each — the same thin-HTTP-client pattern as
+everything else here, not a reimplementation.
 
 ## Architecture
 
@@ -336,10 +336,6 @@ easy to re-discover the hard way if this list doesn't exist:
 - **Frontend/MCP tests exist but have never actually been run** — no
   registry access in the environment that wrote them; run `npm test`
   and `pytest` (`mcp_server/`) locally for the real first verification
-- **MCP server (36 tools) doesn't cover a handful of chat-only
-  capabilities** — options, screening, rebalancing suggestions, and
-  watchlist list-management were built chat-only, with no REST
-  endpoint yet for MCP to proxy
 - Momentum/factor trading-day alignment across tickers is positional,
   not by explicit calendar date — a documented simplification, fine
   for ordinary listed equities, a known edge case for a very recent

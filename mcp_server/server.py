@@ -391,6 +391,125 @@ async def ingest_etf(ticker: str) -> str:
     return await _request("POST", f"/companies/{ticker}/ingest-etf")
 
 
+@mcp.tool()
+async def add_option_holding(
+    portfolio_id: str, underlying_ticker: str, strike: float, expiration: str,
+    option_type: str, contracts_held: float, cost_basis_per_contract: float,
+) -> str:
+    """Add an option position to a portfolio. expiration is an ISO date
+    (YYYY-MM-DD). option_type is "call" or "put"."""
+    return await _request(
+        "POST", f"/portfolios/{portfolio_id}/options",
+        json={
+            "underlying_ticker": underlying_ticker.upper(), "strike": strike,
+            "expiration": expiration, "option_type": option_type,
+            "contracts_held": contracts_held, "cost_basis_per_contract": cost_basis_per_contract,
+        },
+    )
+
+
+@mcp.tool()
+async def remove_option_holding(
+    portfolio_id: str, underlying_ticker: str, strike: float, expiration: str, option_type: str,
+) -> str:
+    """Remove an option position, identified by its exact contract
+    terms (ticker, strike, expiration, type) — not by an id."""
+    return await _request(
+        "DELETE", f"/portfolios/{portfolio_id}/options",
+        json={
+            "underlying_ticker": underlying_ticker.upper(), "strike": strike,
+            "expiration": expiration, "option_type": option_type,
+        },
+    )
+
+
+@mcp.tool()
+async def compute_portfolio_greeks(portfolio_id: str) -> str:
+    """Aggregate Greeks (delta, gamma, theta, vega) across every option
+    position in a portfolio, from live options data."""
+    return await _request("GET", f"/portfolios/{portfolio_id}/options/greeks")
+
+
+@mcp.tool()
+async def compute_option_portfolio_valuation(portfolio_id: str) -> str:
+    """Live market value, cost basis, and unrealized gain across every
+    option position in a portfolio."""
+    return await _request("GET", f"/portfolios/{portfolio_id}/options/valuation")
+
+
+@mcp.tool()
+async def suggest_hedging(portfolio_id: str) -> str:
+    """Suggest a share-count hedge per underlying to neutralize net
+    delta exposure from option positions. A mechanical delta-neutral
+    calculation, not investment advice."""
+    return await _request("GET", f"/portfolios/{portfolio_id}/options/hedging-suggestion")
+
+
+@mcp.tool()
+async def screen_stocks(tickers: list[str] | None = None, theme_name: str | None = None) -> str:
+    """Screen stocks against fixed value/quality bands — pass either
+    an explicit ticker list (capped at 15) or a theme_name (capped at
+    40), not both. LOWER scores are better here — a genuinely
+    different scoring direction from factor rankings, see the
+    response's own scoring_note."""
+    return await _request(
+        "POST", "/companies/screen",
+        json={"tickers": tickers, "theme_name": theme_name},
+    )
+
+
+@mcp.tool()
+async def recommend_stocks(portfolio_id: str, max_recommendations: int = 5) -> str:
+    """Recommend stocks to fill sector gaps in a portfolio's current
+    exposure. Lower value_score/quality_score/composite_score is
+    better within the picks returned."""
+    return await _request(
+        "GET", f"/portfolios/{portfolio_id}/recommendations",
+        params={"max_recommendations": max_recommendations},
+    )
+
+
+@mcp.tool()
+async def suggest_rebalancing(portfolio_id: str, target_max_weight: float = 0.30) -> str:
+    """Suggest trims for any position exceeding target_max_weight
+    (default 30%) of the portfolio, sized to bring it back to target."""
+    return await _request(
+        "GET", f"/portfolios/{portfolio_id}/rebalance-suggestion",
+        params={"target_max_weight": target_max_weight},
+    )
+
+
+@mcp.tool()
+async def list_watchlists() -> str:
+    """List every named watchlist for the user, with item counts."""
+    return await _request("GET", "/watchlist/lists")
+
+
+@mcp.tool()
+async def update_watchlist_item(
+    ticker: str, list_name: str = "Default", notes: str | None = None,
+    target_price: float | None = None, alert_threshold_pct: float | None = None,
+) -> str:
+    """Update fields on an existing watchlist item without disturbing
+    the others — add-time price/P/E baselines are preserved. Only
+    fields you actually pass are changed."""
+    body: dict = {"list_name": list_name}
+    if notes is not None:
+        body["notes"] = notes
+    if target_price is not None:
+        body["target_price"] = target_price
+    if alert_threshold_pct is not None:
+        body["alert_threshold_pct"] = alert_threshold_pct
+    return await _request("PATCH", f"/watchlist/{ticker.upper()}", json=body)
+
+
+@mcp.tool()
+async def get_stock_news(ticker: str, limit: int = 10) -> str:
+    """Real, sourced, dated news headlines for one ticker — never
+    invent or embellish a headline beyond what's returned."""
+    return await _request("GET", f"/companies/{ticker.upper()}/news", params={"limit": limit})
+
+
 def main() -> None:
     """Real entry point — this is where FININSIGHT_API_KEY actually
     needs to exist, not at import time. Running this file directly

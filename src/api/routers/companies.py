@@ -18,11 +18,20 @@ from src.api.schemas import (
     CompanySchema,
     IncomeStatementSchema,
     IngestResultSchema,
+    NewsArticleSchema,
+    ScreenedStockSchema,
+    ScreenRequestSchema,
+    ScreenResultSchema,
     SP500ConstituentsSchema,
     ValuationSnapshotSchema,
     YearlyRatiosSchema,
 )
 from src.application.interfaces.data_provider import DataProviderError
+from src.application.use_cases.manage_universe_theme import GetThemeTickersUseCase
+from src.application.use_cases.screen_stocks import ScreenStocksUseCase
+from src.infrastructure.persistence.universe_theme_repository_impl import (
+    SqlAlchemyUniverseThemeRepository,
+)
 from src.application.use_cases.compute_financial_analysis import (
     ComputeFinancialAnalysisUseCase,
 )
@@ -399,3 +408,94 @@ def get_valuation(
         price_to_free_cash_flow=result.price_to_free_cash_flow,
         ev_to_ebitda=result.ev_to_ebitda,
     )
+
+
+# --- Screening ---------------------------------------------------------------
+
+def get_screen_use_case(
+    company_repo: SqlAlchemyCompanyRepository = Depends(get_company_repository),
+    provider: FinancialModelingPrepProvider = Depends(get_data_provider),
+    analysis_use_case: ComputeFinancialAnalysisUseCase = Depends(get_analysis_use_case),
+) -> ScreenStocksUseCase:
+    compute_valuation = ComputeValuationUseCase(
+        GetCompanyFinancialsUseCase(company_repo, SqlAlchemyFinancialStatementRepository()), provider
+    )
+    return ScreenStocksUseCase(compute_valuation, analysis_use_case)
+
+
+def get_theme_repository_for_screen() -> SqlAlchemyUniverseThemeRepository:
+    return SqlAlchemyUniverseThemeRepository()
+
+
+def get_theme_tickers_use_case_for_screen(
+    theme_repo: SqlAlchemyUniverseThemeRepository = Depends(get_theme_repository_for_screen),
+) -> GetThemeTickersUseCase:
+    return GetThemeTickersUseCase(theme_repo)
+
+
+@router.post("/screen", response_model=ScreenResultSchema)
+def screen_stocks(
+    body: ScreenRequestSchema,
+    use_case: ScreenStocksUseCase = Depends(get_screen_use_case),
+    theme_tickers_use_case: GetThemeTickersUseCase = Depends(get_theme_tickers_use_case_for_screen),
+) -> ScreenResultSchema:
+    """Screen against an explicit ticker list (capped 15) OR a named
+    theme (capped 40) — the two ways this is used from chat, exposed
+    identically here. Fixed-band scoring, a different methodology from
+    factor-rankings — see scoring_note."""
+    if body.theme_name:
+        try:
+            tickers = theme_tickers_use_case.execute(body.theme_name)[:40]
+        except Exception as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+    else:
+        tickers = (body.tickers or [])[:15]
+
+    if not tickers:
+        raise HTTPException(
+            status_code=422, detail="No tickers to screen — theme is empty or no tickers were provided."
+        )
+
+    result = use_case.execute(tickers)
+    return ScreenResultSchema(
+        scoring_note=(
+            "LOWER score is ALWAYS better/more attractive for value_score, "
+            "quality_score, and composite_score. A score of 1 means this "
+            "ticker ranked BEST among the group screened; a higher score "
+            "means it ranked worse."
+        ),
+        excluded=result.excluded,
+        results=[
+            ScreenedStockSchema(
+                ticker=s.ticker, price=s.price, price_to_earnings=s.price_to_earnings,
+                price_to_sales=s.price_to_sales, ev_to_ebitda=s.ev_to_ebitda,
+                return_on_equity=s.return_on_equity, net_margin=s.net_margin,
+                debt_to_equity=s.debt_to_equity, value_score=s.value_score,
+                quality_score=s.quality_score, composite_score=s.composite_score,
+            )
+            for s in result.results
+        ],
+    )
+
+
+# --- Per-ticker news ----------------------------------------------------------
+
+@router.get("/{ticker}/news", response_model=list[NewsArticleSchema])
+def get_ticker_news(
+    ticker: str,
+    limit: int = Query(default=10, ge=1, le=50),
+    provider: FinancialModelingPrepProvider = Depends(get_data_provider),
+) -> list[NewsArticleSchema]:
+    if not hasattr(provider, "get_stock_news"):
+        raise HTTPException(status_code=503, detail="This data provider does not support stock news.")
+    try:
+        articles = provider.get_stock_news(ticker, limit=limit)
+    except (NotImplementedError, DataProviderError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return [
+        NewsArticleSchema(
+            ticker=a.ticker, title=a.title, published_at=a.published_at,
+            source=a.source, url=a.url, snippet=a.snippet,
+        )
+        for a in articles
+    ]
