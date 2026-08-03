@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+import { AppShell } from "@/components/AppShell";
 import { api, getApiKey, PortfolioRiskAnalysis, PortfolioValuation } from "@/lib/api";
 import { LedgerRow } from "@/components/LedgerRow";
 
@@ -118,22 +119,26 @@ export default function PortfolioDetailPage() {
 
   if (loading) {
     return (
-      <main style={{ padding: "3rem", maxWidth: 720, margin: "0 auto" }}>
-        <p className="num" style={{ color: "var(--text-soft)" }}>
-          Loading…
-        </p>
-      </main>
+      <AppShell>
+        <main style={{ padding: "3rem", maxWidth: 720, margin: "0 auto" }}>
+          <p className="num" style={{ color: "var(--text-soft)" }}>
+            Loading…
+          </p>
+        </main>
+      </AppShell>
     );
   }
 
   if (error || !valuation) {
     return (
-      <main style={{ padding: "3rem", maxWidth: 720, margin: "0 auto" }}>
-        <p className="num loss">{error || "Portfolio not found."}</p>
-        <Link href="/dashboard" style={{ fontSize: "0.9rem" }}>
-          ← Back to dashboard
-        </Link>
-      </main>
+      <AppShell>
+        <main style={{ padding: "3rem", maxWidth: 720, margin: "0 auto" }}>
+          <p className="num loss">{error || "Portfolio not found."}</p>
+          <Link href="/portfolios" style={{ fontSize: "0.9rem" }}>
+            ← Back to portfolios
+          </Link>
+        </main>
+      </AppShell>
     );
   }
 
@@ -144,13 +149,14 @@ export default function PortfolioDetailPage() {
   const totalGainClass = valuation.total_unrealized_gain >= 0 ? "gain" : "loss";
 
   return (
+    <AppShell>
     <main style={{ padding: "2rem 1.5rem 4rem", maxWidth: 720, margin: "0 auto" }}>
       <Link
-        href="/dashboard"
+        href="/portfolios"
         className="num"
         style={{ fontSize: "0.85rem", color: "var(--text-soft)", textDecoration: "none" }}
       >
-        ← Dashboard
+        ← Portfolios
       </Link>
       <h1 style={{ fontSize: "1.75rem", margin: "0.5rem 0 2rem" }}>{valuation.name}</h1>
 
@@ -301,5 +307,6 @@ export default function PortfolioDetailPage() {
         </section>
       )}
     </main>
+    </AppShell>
   );
 }

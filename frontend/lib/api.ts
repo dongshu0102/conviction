@@ -5,7 +5,7 @@
 // user_id was Phase 3-4's known limitation" pattern: closing it further is a
 // reasonable next step, not something silently pretended away here.
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://p8xpcshdn9.us-east-1.awsapprunner.com";
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://p8xpcshdn9.us-east-1.awsapprunner.com";
 const STORAGE_KEY = "fininsight_api_key";
 
 export function getApiKey(): string | null {

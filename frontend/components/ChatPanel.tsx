@@ -27,7 +27,7 @@ function getMessageText(message: any): string {
   return "";
 }
 
-export function ChatPanel() {
+export function ChatPanel({ height = 380 }: { height?: string | number } = {}) {
   const [input, setInput] = useState("");
   const [transport] = useState(
     () =>
@@ -57,7 +57,7 @@ export function ChatPanel() {
       <p className="eyebrow" style={{ marginBottom: "0.75rem" }}>
         Ask FinInsight
       </p>
-      <div className="card" style={{ display: "flex", flexDirection: "column", height: 380 }}>
+      <div className="card" style={{ display: "flex", flexDirection: "column", height }}>
         <div style={{ flex: 1, overflowY: "auto", marginBottom: "1rem" }}>
           {messages.length === 0 && (
             <p style={{ color: "var(--text-soft)", fontSize: "0.9rem", lineHeight: 1.6 }}>

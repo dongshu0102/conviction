@@ -10,8 +10,8 @@
 // one coherent workflow rather than four unrelated tools bolted
 // together.
 
+import { AppShell } from "@/components/AppShell";
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   api,
@@ -282,23 +282,20 @@ export default function UniversePage() {
 
   if (loading) {
     return (
-      <main style={{ padding: "3rem", maxWidth: "1180px", margin: "0 auto" }}>
-        <p className="num" style={{ color: "var(--text-soft)" }}>Loading…</p>
-      </main>
+      <AppShell>
+        <main style={{ padding: "3rem", maxWidth: "1180px", margin: "0 auto" }}>
+          <p className="num" style={{ color: "var(--text-soft)" }}>Loading…</p>
+        </main>
+      </AppShell>
     );
   }
 
   return (
+    <AppShell>
     <main style={{ maxWidth: "1180px", margin: "0 auto", padding: "2rem 1.25rem 4rem" }}>
-      <header style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "1rem", marginBottom: "1.5rem" }}>
-        <div style={{ flex: "1 1 auto" }}>
-          <p className="eyebrow">FinInsight · Universe</p>
-          <h1 style={{ margin: "0.2rem 0 0" }}>Investment Universe</h1>
-        </div>
-        <nav style={{ display: "flex", gap: "1.25rem" }} className="num">
-          <Link href="/terminal" style={{ color: "var(--text-soft)" }}>Terminal</Link>
-          <Link href="/dashboard" style={{ color: "var(--text-soft)" }}>Dashboard</Link>
-        </nav>
+      <header style={{ marginBottom: "1.5rem" }}>
+        <p className="eyebrow">FinInsight · Universe</p>
+        <h1 style={{ margin: "0.2rem 0 0" }}>Investment Universe</h1>
       </header>
 
       {error && (
@@ -482,5 +479,6 @@ export default function UniversePage() {
         </>
       )}
     </main>
+    </AppShell>
   );
 }

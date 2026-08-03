@@ -9,8 +9,8 @@
 // verbatim — the honesty contract extends to the UI.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { AppShell } from "@/components/AppShell";
 import {
   api,
   ApiError,
@@ -113,15 +113,11 @@ export default function TerminalPage() {
   const asOf = triage ? new Date(triage.as_of) : null;
 
   return (
+    <AppShell>
     <main style={{ maxWidth: "1180px", margin: "0 auto", padding: "2rem 1.25rem 4rem" }}>
-      <header style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "1rem", marginBottom: "0.5rem" }}>
-        <div style={{ flex: "1 1 auto" }}>
-          <p className="eyebrow">FinInsight · Terminal</p>
-          <h1 style={{ margin: "0.2rem 0 0" }}>Watchlist Terminal</h1>
-        </div>
-        <nav style={{ display: "flex", gap: "1.25rem" }} className="num">
-          <Link href="/dashboard">Dashboard</Link>
-        </nav>
+      <header style={{ marginBottom: "0.5rem" }}>
+        <p className="eyebrow">FinInsight · Watchlist</p>
+        <h1 style={{ margin: "0.2rem 0 0" }}>Watchlist Terminal</h1>
       </header>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center", margin: "1rem 0 1.5rem" }}>
@@ -332,5 +328,6 @@ export default function TerminalPage() {
         </footer>
       )}
     </main>
+    </AppShell>
   );
 }
