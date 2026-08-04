@@ -58,6 +58,7 @@ from src.application.use_cases.manage_portfolio import (
 )
 from src.application.use_cases.manage_alerts import GetAlertsUseCase
 from src.application.use_cases.generate_daily_brief import GenerateDailyBriefUseCase
+from src.application.use_cases.ingest_company_data import IngestCompanyDataUseCase
 from src.application.use_cases.manage_watchlist import (
     AddToWatchlistUseCase,
     GetWatchlistUseCase,
@@ -440,6 +441,19 @@ _TOOLS = [
         {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
     ),
     ToolDefinition(
+        "get_portfolio",
+        "Get a portfolio's raw detail — every holding (stock/ETF and "
+        "option) with no computed valuation or risk. Use "
+        "get_portfolio_valuation or get_portfolio_risk instead when the "
+        "user actually wants numbers on how it's doing; use this when they "
+        "just want to see what's in it.",
+        {
+            "type": "object",
+            "properties": {"portfolio_id": {"type": "string"}},
+            "required": ["portfolio_id"],
+        },
+    ),
+    ToolDefinition(
         "get_portfolio_valuation",
         "Get live market valuation for one of the user's portfolios, by its id "
         "(use list_portfolios first if you only know the name).",
@@ -477,6 +491,19 @@ _TOOLS = [
         "will also fail cleanly if a ticker turns out not to be real. Makes "
         "a real LLM call and has a real cost.",
         {"type": "object", "properties": {"user_hint": {"type": "string"}}},
+    ),
+    ToolDefinition(
+        "ingest_company",
+        "Ingest a company's profile and financial statements (income "
+        "statement, balance sheet, cash flow) so it can be watchlisted, "
+        "added to a portfolio, or have research/analysis/valuation run on "
+        "it. Not for ETFs/funds — use ingest_etf for those. Safe to call "
+        "even if already ingested (re-ingests fresh data).",
+        {
+            "type": "object",
+            "properties": {"ticker": {"type": "string"}, "years": {"type": "integer"}},
+            "required": ["ticker"],
+        },
     ),
     ToolDefinition(
         "ingest_etf",
@@ -772,6 +799,7 @@ class ChatWithAgentUseCase:
         get_alerts: GetAlertsUseCase,
         generate_daily_brief: GenerateDailyBriefUseCase,
         get_company_financials: GetCompanyFinancialsUseCase,
+        ingest_company: IngestCompanyDataUseCase,
     ) -> None:
         self._chat_agent = chat_agent
         self._get_watchlist = get_watchlist
@@ -813,6 +841,7 @@ class ChatWithAgentUseCase:
         self._get_alerts = get_alerts
         self._generate_daily_brief = generate_daily_brief
         self._get_company_financials = get_company_financials
+        self._ingest_company = ingest_company
         self._construct_risk_parity_portfolio = construct_risk_parity_portfolio
         self._user_id: str = ""  # set per-request in execute()
 
@@ -1101,6 +1130,21 @@ class ChatWithAgentUseCase:
                 ),
             }
 
+        if tool_name == "ingest_company":
+            try:
+                result = self._ingest_company.execute(
+                    tool_input["ticker"], years=tool_input.get("years", 5)
+                )
+            except Exception as exc:
+                return {"error": str(exc)}
+            return {
+                "ticker": result.ticker,
+                "income_statements_ingested": result.income_statements_ingested,
+                "balance_sheets_ingested": result.balance_sheets_ingested,
+                "cash_flow_statements_ingested": result.cash_flow_statements_ingested,
+                "status": "ingested",
+            }
+
         if tool_name == "ingest_etf":
             try:
                 company = self._ingest_etf.execute(tool_input["ticker"])
@@ -1208,6 +1252,34 @@ class ChatWithAgentUseCase:
         if tool_name == "create_portfolio":
             portfolio = self._create_portfolio.execute(self._user_id, tool_input["name"])
             return {"portfolio_id": portfolio.portfolio_id, "name": portfolio.name, "status": "created"}
+
+        if tool_name == "get_portfolio":
+            err = self._own_portfolio_or_error(tool_input["portfolio_id"])
+            if err:
+                return err
+            portfolio = self._get_portfolio.execute(tool_input["portfolio_id"])
+            return {
+                "portfolio_id": portfolio.portfolio_id,
+                "name": portfolio.name,
+                "created_at": portfolio.created_at.isoformat(),
+                "holdings": [
+                    {
+                        "ticker": h.ticker, "shares": h.shares,
+                        "cost_basis_per_share": h.cost_basis_per_share,
+                    }
+                    for h in portfolio.holdings
+                ],
+                "option_holdings": [
+                    {
+                        "underlying_ticker": h.contract.underlying_ticker,
+                        "strike": h.contract.strike,
+                        "expiration": h.contract.expiration.isoformat(),
+                        "option_type": h.contract.option_type,
+                        "contracts_held": h.contracts_held,
+                    }
+                    for h in portfolio.option_holdings
+                ],
+            }
 
         if tool_name == "get_portfolio_valuation":
             err = self._own_portfolio_or_error(tool_input["portfolio_id"])

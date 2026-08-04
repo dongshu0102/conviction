@@ -72,6 +72,7 @@ from src.application.use_cases.manage_option_holdings import (
 )
 from src.application.use_cases.manage_alerts import GetAlertsUseCase
 from src.application.use_cases.generate_daily_brief import GenerateDailyBriefUseCase
+from src.application.use_cases.ingest_company_data import IngestCompanyDataUseCase
 from src.application.use_cases.get_company_financials import GetCompanyFinancialsUseCase
 from src.application.use_cases.manage_portfolio import RemoveHoldingUseCase
 from src.application.use_cases.recommend_stocks import RecommendStocksUseCase
@@ -215,6 +216,7 @@ def get_chat_use_case(
             compute_valuation, compute_risk, brief_generator,
         ),
         get_company_financials=GetCompanyFinancialsUseCase(company_repo, statement_repo),
+        ingest_company=IngestCompanyDataUseCase(data_provider, company_repo, statement_repo),
     )
 
 

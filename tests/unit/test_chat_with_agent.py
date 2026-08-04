@@ -81,6 +81,7 @@ from tests.unit.fakes import (
 )
 from src.application.use_cases.manage_alerts import GetAlertsUseCase
 from src.application.use_cases.generate_daily_brief import GenerateDailyBriefUseCase
+from src.application.use_cases.ingest_company_data import IngestCompanyDataUseCase
 
 
 class FakeChatAgent(ChatAgent):
@@ -200,6 +201,7 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
             compute_valuation, compute_risk, brief_generator,
         ),
         get_company_financials=get_financials,
+        ingest_company=IngestCompanyDataUseCase(provider, company_repo, statement_repo),
     )
     return use_case, fake_agent, portfolio_repo
 
@@ -313,6 +315,65 @@ def test_get_company_financials_unknown_ticker_returns_error_not_crash() -> None
 
     result = fake_agent.dispatch_results[0]
     assert "error" in result
+
+
+def test_get_portfolio_dispatches_correctly() -> None:
+    portfolio_repo = FakePortfolioRepository()
+    company_repo = _company_repo("AAPL")
+    portfolio = CreatePortfolioUseCase(portfolio_repo).execute("alice", "Growth")
+    AddHoldingUseCase(portfolio_repo, company_repo).execute(portfolio.portfolio_id, "AAPL", 10, 150.0)
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("get_portfolio", {"portfolio_id": portfolio.portfolio_id})],
+        portfolio_repo=portfolio_repo,
+        company_repo=company_repo,
+    )
+    use_case.execute("alice", "what's in my Growth portfolio", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["name"] == "Growth"
+    assert len(result["holdings"]) == 1
+    assert result["holdings"][0]["ticker"] == "AAPL"
+    assert result["holdings"][0]["shares"] == 10
+    assert result["option_holdings"] == []
+
+
+def test_get_portfolio_blocks_access_to_another_users_portfolio() -> None:
+    portfolio_repo = FakePortfolioRepository()
+    alice_portfolio = CreatePortfolioUseCase(portfolio_repo).execute("alice", "Alice's")
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("get_portfolio", {"portfolio_id": alice_portfolio.portfolio_id})],
+        portfolio_repo=portfolio_repo,
+    )
+    use_case.execute("bob", "what's in that portfolio", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert "error" in result
+    assert "portfolio" in result["error"].lower()
+
+
+def test_ingest_company_dispatches_correctly() -> None:
+    company_repo = FakeCompanyRepository()
+    provider = FakeDataProvider(
+        company=Company(ticker="AAPL", name="Apple", sector=Sector.TECHNOLOGY,
+                         industry="X", exchange="X", country="US")
+    )
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("ingest_company", {"ticker": "AAPL", "years": 3})],
+        company_repo=company_repo,
+        provider=provider,
+    )
+    use_case.execute("alice", "ingest AAPL", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["status"] == "ingested"
+    assert result["ticker"] == "AAPL"
+    # The real effect that matters: the company is now actually saved —
+    # confirmed against the SAME provider ticker used above, since
+    # FakeDataProvider.get_company_profile ignores its ticker argument
+    # and always returns whatever was configured at construction time.
+    assert company_repo.get_by_ticker("AAPL") is not None
 
 
 def test_ownership_check_blocks_access_to_another_users_portfolio() -> None:
