@@ -223,6 +223,25 @@ curl -X POST "http://localhost:8000/chat" -H "X-Api-Key: fi_live_..." \
   -d '{"message": "synthesize my AI Infrastructure theme", "history": []}'
 ```
 
+## Bootstrapping the first admin
+
+`/admin/*` endpoints (factor-snapshot refresh, non-USD-reporter audit,
+user role management) require a real `admin` role, not just a valid
+API key — but every account starts as `user`, including the very
+first one, since there's deliberately no self-promotion endpoint (that
+would defeat the whole point).
+
+To get a first admin:
+1. Sign up normally (`POST /auth/signup`) with the email you want as admin.
+2. Set the `BOOTSTRAP_ADMIN_EMAIL` environment variable to that same
+   (normalized, lowercase) email.
+3. Redeploy. On every startup, if that email matches an existing
+   account, it's promoted to admin — idempotent, safe to leave
+   configured permanently, never touches any other account.
+4. From there, that admin can promote others via
+   `PATCH /admin/users/{user_id}/role` — no need to keep touching the
+   environment variable for every subsequent admin.
+
 ## Tests
 
 ```bash
@@ -328,11 +347,15 @@ easy to re-discover the hard way if this list doesn't exist:
 
 ## Known limitations, honestly
 
-- Real email/password auth exists now (`POST /auth/signup` /
-  `POST /auth/login`), but it's account-level only — no roles, no
-  admin/user distinction, no password reset flow yet. Fine for
-  personal use; a real gap before this could safely serve untrusted
-  strangers
+- Real email/password auth exists (`POST /auth/signup` / `POST /auth/login`),
+  with a real password-reset flow (`POST /auth/forgot-password` /
+  `POST /auth/reset-password`, rate-limited, revokes prior API keys on
+  completion) and real role-based access (`user`/`admin`, admin-only
+  endpoints under `/admin`, a last-admin safety check so you can't
+  accidentally lock every admin endpoint out). Password reset emails
+  currently only reach one verified address — AWS SES is still in
+  sandbox mode, requiring a real domain + DKIM/SPF/DMARC records and a
+  production-access request before real other users can receive one.
 - **Frontend/MCP tests exist but have never actually been run** — no
   registry access in the environment that wrote them; run `npm test`
   and `pytest` (`mcp_server/`) locally for the real first verification

@@ -508,6 +508,9 @@ class FakeUserRepository:
     def get_by_user_id(self, user_id: str):
         return self._users.get(user_id.strip().lower())
 
+    def list_all(self):
+        return list(self._users.values())
+
 
 class FakeApiKeyRepository:
     def __init__(self) -> None:

@@ -13,6 +13,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
+
+
+class Role(str, Enum):
+    """A real enum, not a bare boolean — extensible if a third role
+    (e.g. a support/read-only role) is ever genuinely needed, without
+    another migration to change the column's shape."""
+
+    USER = "user"
+    ADMIN = "admin"
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,3 +30,4 @@ class User:
     user_id: str  # normalized (lowercased, stripped) email
     password_hash: str
     created_at: datetime
+    role: Role = Role.USER

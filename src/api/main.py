@@ -53,7 +53,26 @@ def on_startup() -> None:
     # Schema changes go through `alembic upgrade head` — run that as an
     # explicit step (locally, or as a deploy step in CI) before starting
     # the app, not implicitly on every process start.
-    pass
+
+    # This IS a data operation, not a schema one — safe here. Bootstraps
+    # the very first admin: if bootstrap_admin_email is configured and
+    # a matching account already exists, ensure it has the admin role.
+    # Idempotent (checks before writing), does nothing if the account
+    # hasn't signed up yet (promotion happens on the next startup after
+    # they do), and never touches any other account.
+    if settings.bootstrap_admin_email:
+        from dataclasses import replace
+
+        from src.domain.entities.user import Role
+        from src.infrastructure.persistence.user_repository_impl import (
+            SqlAlchemyUserRepository,
+        )
+
+        user_repo = SqlAlchemyUserRepository()
+        user_id = settings.bootstrap_admin_email.strip().lower()
+        user = user_repo.get_by_user_id(user_id)
+        if user is not None and user.role != Role.ADMIN:
+            user_repo.save(replace(user, role=Role.ADMIN))
 
 
 @app.get("/health")

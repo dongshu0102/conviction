@@ -12,3 +12,6 @@ class UserRepository(ABC):
 
     @abstractmethod
     def get_by_user_id(self, user_id: str) -> User | None: ...
+
+    @abstractmethod
+    def list_all(self) -> list[User]: ...

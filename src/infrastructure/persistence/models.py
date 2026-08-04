@@ -66,6 +66,7 @@ class UserModel(Base):
     user_id: Mapped[str] = mapped_column(String(128), primary_key=True)  # normalized email
     password_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False, server_default="user")
 
 
 class PasswordResetTokenModel(Base):

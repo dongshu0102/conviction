@@ -12,7 +12,9 @@ from __future__ import annotations
 from fastapi import Depends, Header, HTTPException
 
 from src.application.use_cases.manage_api_keys import ValidateApiKeyUseCase
+from src.domain.entities.user import Role
 from src.infrastructure.persistence.api_key_repository_impl import SqlAlchemyApiKeyRepository
+from src.infrastructure.persistence.user_repository_impl import SqlAlchemyUserRepository
 
 
 def get_api_key_repository() -> SqlAlchemyApiKeyRepository:
@@ -36,4 +38,24 @@ def get_authenticated_user_id(
             detail="Missing or invalid API key. Pass it in the X-Api-Key header. "
             "Create one via POST /api-keys.",
         )
+    return user_id
+
+
+def get_user_repository() -> SqlAlchemyUserRepository:
+    return SqlAlchemyUserRepository()
+
+
+def get_admin_user_id(
+    user_id: str = Depends(get_authenticated_user_id),
+    user_repo: SqlAlchemyUserRepository = Depends(get_user_repository),
+) -> str:
+    """Same as get_authenticated_user_id, plus a real role check. Fails
+    closed: an API key with no corresponding users row (e.g. one that
+    predates the role column) is denied, not silently treated as
+    admin. Unlike password reset's deliberately vague errors, this is
+    a genuine authorization boundary — a plain, honest 403 is correct
+    here, not a security concern to hide."""
+    user = user_repo.get_by_user_id(user_id)
+    if user is None or user.role != Role.ADMIN:
+        raise HTTPException(status_code=403, detail="This endpoint requires an admin account.")
     return user_id

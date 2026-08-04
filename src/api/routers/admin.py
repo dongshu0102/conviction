@@ -1,10 +1,13 @@
 """Admin/maintenance endpoints.
 
-These are NOT distinguished from ordinary users by role — this app has
-no admin/user distinction in its auth model, so "protected" here means
-"requires a valid API key," same as everything else. Good enough given
-this is a single-operator instance; would need real role-based auth
-before this app ever had multiple untrusted users.
+Gated by get_admin_user_id, not just get_authenticated_user_id — a
+real role check, not merely "has a valid API key" (that was the
+previous, explicitly-flagged gap: any signed-up user could trigger
+these regardless of role, low practical exposure only because SES
+sandbox mode meant realistically only the operator's own email could
+sign up — never an actual protection, and gone the moment production
+SES access exists). See src/api/routers/auth_admin.py for how the
+very first admin account gets bootstrapped.
 
 The factor-snapshot refresh specifically exists here because RDS is
 correctly configured with PubliclyAccessible=False — no route from
@@ -22,7 +25,7 @@ from __future__ import annotations
 import logging
 import threading
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
@@ -48,7 +51,7 @@ _refresh_lock = threading.Lock()
 from src.infrastructure.persistence.database import session_scope
 from src.infrastructure.persistence.models import CompanyModel, IncomeStatementModel
 
-from src.api.auth import get_authenticated_user_id
+from src.api.auth import get_admin_user_id
 from src.api.routers.companies import get_analysis_use_case, get_company_repository, get_data_provider
 from src.api.routers.companies import get_valuation_use_case
 from src.application.use_cases.compute_financial_analysis import ComputeFinancialAnalysisUseCase
@@ -103,7 +106,7 @@ def _run_factor_snapshot_refresh(
 @router.post("/refresh-factor-snapshot")
 def refresh_factor_snapshot(
     background_tasks: BackgroundTasks,
-    user_id: str = Depends(get_authenticated_user_id),
+    user_id: str = Depends(get_admin_user_id),
     provider: FinancialModelingPrepProvider = Depends(get_data_provider),
     valuation_use_case: ComputeValuationUseCase = Depends(get_valuation_use_case),
     analysis_use_case: ComputeFinancialAnalysisUseCase = Depends(get_analysis_use_case),
@@ -140,7 +143,7 @@ def refresh_factor_snapshot(
 
 @router.get("/non-usd-reporters")
 def list_non_usd_reporters(
-    user_id: str = Depends(get_authenticated_user_id),
+    user_id: str = Depends(get_admin_user_id),
 ) -> dict[str, list[dict[str, str]]]:
     """Diagnostic endpoint: every ingested ticker whose MOST RECENT
     annual income statement reports in a currency other than USD.
@@ -195,3 +198,72 @@ def list_non_usd_reporters(
                 for row in sorted(non_usd, key=lambda r: r.ticker)
             ]
         }
+
+
+# --- User role management ----------------------------------------------------
+
+from src.api.schemas import ChangeRoleRequestSchema, UserSummarySchema
+from src.application.use_cases.manage_user_roles import (
+    ChangeUserRoleUseCase,
+    LastAdminError,
+    ListUsersUseCase,
+    UserNotFoundError,
+)
+from src.domain.entities.user import Role
+from src.infrastructure.persistence.user_repository_impl import SqlAlchemyUserRepository
+
+
+def get_user_repository_for_admin() -> SqlAlchemyUserRepository:
+    return SqlAlchemyUserRepository()
+
+
+def get_list_users_use_case(
+    user_repo: SqlAlchemyUserRepository = Depends(get_user_repository_for_admin),
+) -> ListUsersUseCase:
+    return ListUsersUseCase(user_repo)
+
+
+def get_change_role_use_case(
+    user_repo: SqlAlchemyUserRepository = Depends(get_user_repository_for_admin),
+) -> ChangeUserRoleUseCase:
+    return ChangeUserRoleUseCase(user_repo)
+
+
+@router.get("/users", response_model=list[UserSummarySchema])
+def list_users(
+    admin_user_id: str = Depends(get_admin_user_id),
+    use_case: ListUsersUseCase = Depends(get_list_users_use_case),
+) -> list[UserSummarySchema]:
+    """Every account and its role — never the password hash, even to
+    an admin."""
+    return [
+        UserSummarySchema(user_id=u.user_id, role=u.role.value, created_at=u.created_at)
+        for u in use_case.execute()
+    ]
+
+
+@router.patch("/users/{user_id}/role", response_model=UserSummarySchema)
+def change_user_role(
+    user_id: str,
+    body: ChangeRoleRequestSchema,
+    admin_user_id: str = Depends(get_admin_user_id),
+    use_case: ChangeUserRoleUseCase = Depends(get_change_role_use_case),
+) -> UserSummarySchema:
+    try:
+        new_role = Role(body.role)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"'{body.role}' isn't a real role. Valid roles: {[r.value for r in Role]}",
+        ) from exc
+
+    try:
+        updated = use_case.execute(user_id, new_role)
+    except UserNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except LastAdminError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return UserSummarySchema(
+        user_id=updated.user_id, role=updated.role.value, created_at=updated.created_at
+    )

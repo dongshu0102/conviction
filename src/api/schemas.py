@@ -259,6 +259,16 @@ class GenericMessageSchema(BaseModel):
     message: str
 
 
+class UserSummarySchema(BaseModel):
+    user_id: str
+    role: str
+    created_at: datetime
+
+
+class ChangeRoleRequestSchema(BaseModel):
+    role: str
+
+
 class SignUpRequestSchema(BaseModel):
     email: str
     password: str

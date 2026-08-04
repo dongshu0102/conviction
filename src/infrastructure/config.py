@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     # Used to build the password-reset link embedded in the email.
     frontend_base_url: str = "https://p35bdqdzmp.us-east-1.awsapprunner.com"
 
+    # -- Admin bootstrap --
+    # Safe to leave set permanently — idempotent, only ever ensures
+    # THIS specific pre-configured email has the admin role, never
+    # grants it to anyone else, never demotes anyone. The only way to
+    # get a first admin at all without direct database access.
+    bootstrap_admin_email: str = ""
+
     # -- App --
     environment: str = "development"
     log_level: str = "INFO"
