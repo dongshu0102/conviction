@@ -37,7 +37,10 @@ from src.application.use_cases.compute_portfolio_valuation import (
     ComputePortfolioValuationUseCase,
 )
 from src.application.use_cases.compute_valuation import ComputeValuationUseCase
-from src.application.use_cases.get_company_financials import CompanyNotFoundError
+from src.application.use_cases.get_company_financials import (
+    CompanyNotFoundError,
+    GetCompanyFinancialsUseCase,
+)
 from src.application.use_cases.manage_option_holdings import (
     AddOptionHoldingUseCase,
     InvalidOptionTypeError,
@@ -50,8 +53,11 @@ from src.application.use_cases.manage_portfolio import (
     GetPortfolioUseCase,
     ListPortfoliosUseCase,
     PortfolioNotFoundError,
+    RemoveHoldingUseCase,
     TickerNotIngestedError,
 )
+from src.application.use_cases.manage_alerts import GetAlertsUseCase
+from src.application.use_cases.generate_daily_brief import GenerateDailyBriefUseCase
 from src.application.use_cases.manage_watchlist import (
     AddToWatchlistUseCase,
     GetWatchlistUseCase,
@@ -497,6 +503,52 @@ _TOOLS = [
         },
     ),
     ToolDefinition(
+        "remove_holding",
+        "Remove a stock/ETF position from a portfolio entirely. Not for "
+        "options — use remove_option_holding for those.",
+        {
+            "type": "object",
+            "properties": {
+                "portfolio_id": {"type": "string"},
+                "ticker": {"type": "string"},
+            },
+            "required": ["portfolio_id", "ticker"],
+        },
+    ),
+    ToolDefinition(
+        "get_alerts",
+        "Get the user's price-move alerts from continuous monitoring — "
+        "includes earnings alerts too. Set unread_only=true to see only "
+        "alerts the user hasn't seen yet.",
+        {
+            "type": "object",
+            "properties": {"unread_only": {"type": "boolean"}},
+        },
+    ),
+    ToolDefinition(
+        "get_daily_brief",
+        "Generate a short AI narrative summarizing watchlist price moves, "
+        "portfolio performance, and unread alerts. This makes a real LLM "
+        "call with a real cost — don't call it more than once per "
+        "conversation unless the user explicitly asks for a refresh.",
+        {"type": "object", "properties": {}},
+    ),
+    ToolDefinition(
+        "get_company_financials",
+        "Get a company's raw ingested financial statements (income "
+        "statement, balance sheet, cash flow) for the given number of most "
+        "recent years — the underlying numbers, not the derived ratios "
+        "get_company_analysis returns.",
+        {
+            "type": "object",
+            "properties": {
+                "ticker": {"type": "string"},
+                "years": {"type": "integer"},
+            },
+            "required": ["ticker"],
+        },
+    ),
+    ToolDefinition(
         "delete_portfolio",
         "PERMANENTLY delete one of the user's portfolios, including all its "
         "holdings. This cannot be undone. Only call this after the user has "
@@ -716,6 +768,10 @@ class ChatWithAgentUseCase:
         construct_risk_parity_portfolio: ConstructRiskParityPortfolioUseCase,
         ingest_etf: IngestEtfDataUseCase,
         suggest_theme: SuggestThemeUseCase,
+        remove_holding: RemoveHoldingUseCase,
+        get_alerts: GetAlertsUseCase,
+        generate_daily_brief: GenerateDailyBriefUseCase,
+        get_company_financials: GetCompanyFinancialsUseCase,
     ) -> None:
         self._chat_agent = chat_agent
         self._get_watchlist = get_watchlist
@@ -753,6 +809,10 @@ class ChatWithAgentUseCase:
         self._get_upcoming_earnings = get_upcoming_earnings
         self._ingest_etf = ingest_etf
         self._suggest_theme = suggest_theme
+        self._remove_holding = remove_holding
+        self._get_alerts = get_alerts
+        self._generate_daily_brief = generate_daily_brief
+        self._get_company_financials = get_company_financials
         self._construct_risk_parity_portfolio = construct_risk_parity_portfolio
         self._user_id: str = ""  # set per-request in execute()
 
@@ -1202,6 +1262,54 @@ class ChatWithAgentUseCase:
                 return {"ticker": h.ticker, "shares": h.shares, "status": "added"}
             except TickerNotIngestedError as exc:
                 return {"error": str(exc)}
+
+        if tool_name == "remove_holding":
+            err = self._own_portfolio_or_error(tool_input["portfolio_id"])
+            if err:
+                return err
+            removed = self._remove_holding.execute(tool_input["portfolio_id"], tool_input["ticker"])
+            if not removed:
+                return {"error": f"'{tool_input['ticker'].upper()}' is not a holding in this portfolio."}
+            return {"ticker": tool_input["ticker"].upper(), "status": "removed"}
+
+        if tool_name == "get_alerts":
+            alerts = self._get_alerts.execute(
+                self._user_id, unread_only=tool_input.get("unread_only", False)
+            )
+            return {
+                "alerts": [
+                    {
+                        "ticker": a.ticker, "alert_type": a.alert_type.value, "message": a.message,
+                        "change_pct": a.change_pct, "created_at": a.created_at.isoformat(),
+                        "is_read": a.is_read,
+                    }
+                    for a in alerts
+                ]
+            }
+
+        if tool_name == "get_daily_brief":
+            try:
+                brief = self._generate_daily_brief.execute(self._user_id)
+            except Exception as exc:
+                return {"error": str(exc)}
+            return {
+                "narrative": brief.narrative, "generated_at": brief.generated_at.isoformat(),
+                "unread_alert_count": brief.unread_alert_count,
+            }
+
+        if tool_name == "get_company_financials":
+            try:
+                financials = self._get_company_financials.execute(
+                    tool_input["ticker"], years=tool_input.get("years", 5)
+                )
+            except CompanyNotFoundError as exc:
+                return {"error": str(exc)}
+            return {
+                "ticker": financials.company.ticker,
+                "income_statements": [asdict(s) for s in financials.income_statements],
+                "balance_sheets": [asdict(s) for s in financials.balance_sheets],
+                "cash_flow_statements": [asdict(s) for s in financials.cash_flow_statements],
+            }
 
         if tool_name == "delete_portfolio":
             err = self._own_portfolio_or_error(tool_input["portfolio_id"])

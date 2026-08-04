@@ -36,6 +36,7 @@ from src.api.routers.watchlist import get_remove_use_case as get_remove_from_wat
 from src.api.schemas import ChatRequestSchema, ChatResponseSchema, VercelChatRequestSchema
 from src.application.interfaces.chat_agent import ChatAgentError, ChatMessage
 from src.api.routers.watchlist import get_watchlist_repository
+from src.api.routers.alerts import get_alert_repository, get_snapshot_repository
 from src.application.use_cases.chat_with_agent import ChatWithAgentUseCase
 from src.application.use_cases.manage_watchlist import (
     ListWatchlistNamesUseCase,
@@ -69,13 +70,21 @@ from src.application.use_cases.manage_option_holdings import (
     AddOptionHoldingUseCase,
     RemoveOptionHoldingUseCase,
 )
+from src.application.use_cases.manage_alerts import GetAlertsUseCase
+from src.application.use_cases.generate_daily_brief import GenerateDailyBriefUseCase
+from src.application.use_cases.get_company_financials import GetCompanyFinancialsUseCase
+from src.application.use_cases.manage_portfolio import RemoveHoldingUseCase
 from src.application.use_cases.recommend_stocks import RecommendStocksUseCase
 from src.application.use_cases.screen_stocks import ScreenStocksUseCase
 from src.application.use_cases.suggest_hedging import SuggestHedgingUseCase
 from src.application.use_cases.suggest_rebalancing import SuggestRebalancingUseCase
 from src.infrastructure.config import get_settings
 from src.infrastructure.data_providers.marketdata_app_provider import MarketDataAppProvider
+from src.infrastructure.llm_providers.anthropic_brief_generator import AnthropicBriefGenerator
 from src.infrastructure.llm_providers.anthropic_chat_agent import AnthropicChatAgent
+from src.infrastructure.persistence.financial_statement_repository_impl import (
+    SqlAlchemyFinancialStatementRepository,
+)
 from src.infrastructure.persistence.factor_score_repository_impl import (
     SqlAlchemyFactorScoreRepository,
 )
@@ -103,6 +112,14 @@ def get_options_provider() -> MarketDataAppProvider:
     return MarketDataAppProvider(settings=get_settings())
 
 
+def get_statement_repository_for_chat() -> SqlAlchemyFinancialStatementRepository:
+    return SqlAlchemyFinancialStatementRepository()
+
+
+def get_brief_generator_for_chat() -> AnthropicBriefGenerator:
+    return AnthropicBriefGenerator(settings=get_settings())
+
+
 def get_chat_use_case(
     chat_agent: AnthropicChatAgent = Depends(get_chat_agent),
     get_watchlist=Depends(get_get_watchlist_use_case),
@@ -123,6 +140,12 @@ def get_chat_use_case(
     options_provider: MarketDataAppProvider = Depends(get_options_provider),
     data_provider=Depends(get_data_provider),
     watchlist_repo=Depends(get_watchlist_repository),
+    alert_repo=Depends(get_alert_repository),
+    snapshot_repo=Depends(get_snapshot_repository),
+    statement_repo: SqlAlchemyFinancialStatementRepository = Depends(
+        get_statement_repository_for_chat
+    ),
+    brief_generator: AnthropicBriefGenerator = Depends(get_brief_generator_for_chat),
 ) -> ChatWithAgentUseCase:
     screen_stocks = ScreenStocksUseCase(compute_company_valuation, compute_analysis)
     factor_repo = SqlAlchemyFactorScoreRepository()
@@ -185,6 +208,13 @@ def get_chat_use_case(
         suggest_theme=SuggestThemeUseCase(
             data_provider, company_repo, AnthropicThemeSuggestionGenerator(get_settings())
         ),
+        remove_holding=RemoveHoldingUseCase(portfolio_repo),
+        get_alerts=GetAlertsUseCase(alert_repo),
+        generate_daily_brief=GenerateDailyBriefUseCase(
+            watchlist_repo, snapshot_repo, alert_repo, portfolio_repo, data_provider,
+            compute_valuation, compute_risk, brief_generator,
+        ),
+        get_company_financials=GetCompanyFinancialsUseCase(company_repo, statement_repo),
     )
 
 

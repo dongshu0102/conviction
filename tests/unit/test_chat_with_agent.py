@@ -27,7 +27,9 @@ from src.application.use_cases.manage_portfolio import (
     DeletePortfolioUseCase,
     GetPortfolioUseCase,
     ListPortfoliosUseCase,
+    RemoveHoldingUseCase,
 )
+
 from src.application.use_cases.compute_universe_factor_snapshot import (
     ComputeUniverseFactorSnapshotUseCase,
 )
@@ -74,7 +76,11 @@ from tests.unit.fakes import (
     FakePortfolioRepository,
     FakeResearchReportRepository,
     FakeWatchlistRepository,
+    FakeAlertRepository,
+    FakeBriefGenerator,
 )
+from src.application.use_cases.manage_alerts import GetAlertsUseCase
+from src.application.use_cases.generate_daily_brief import GenerateDailyBriefUseCase
 
 
 class FakeChatAgent(ChatAgent):
@@ -111,14 +117,17 @@ def _company_repo(*tickers: str) -> FakeCompanyRepository:
     return repo
 
 
-def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watchlist_repo=None, provider=None, options_provider=None, theme_repo=None, statement_repo=None, get_factor_scores_override=None):
+def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watchlist_repo=None, provider=None, options_provider=None, theme_repo=None, statement_repo=None, get_factor_scores_override=None, alert_repo=None):
     company_repo = company_repo or _company_repo()
     portfolio_repo = portfolio_repo or FakePortfolioRepository()
     watchlist_repo = watchlist_repo or FakeWatchlistRepository()
     statement_repo = statement_repo or FakeFinancialStatementRepository()
+    alert_repo = alert_repo or FakeAlertRepository()
     provider = provider or FakeDataProvider(company=Company(ticker="X", name="X", sector=Sector.TECHNOLOGY, industry="X", exchange="X", country="US"))
     options_provider = options_provider or FakeOptionsDataProvider()
     research_repo = FakeResearchReportRepository()
+    snapshot_repo = FakePriceSnapshotRepository()
+    brief_generator = FakeBriefGenerator()
 
     get_financials = GetCompanyFinancialsUseCase(company_repo, statement_repo)
     compute_valuation = ComputePortfolioValuationUseCase(portfolio_repo, provider)
@@ -184,6 +193,13 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
         suggest_theme=SuggestThemeUseCase(
             provider, company_repo, FakeThemeSuggestionGenerator()
         ),
+        remove_holding=RemoveHoldingUseCase(portfolio_repo),
+        get_alerts=GetAlertsUseCase(alert_repo),
+        generate_daily_brief=GenerateDailyBriefUseCase(
+            watchlist_repo, snapshot_repo, alert_repo, portfolio_repo, provider,
+            compute_valuation, compute_risk, brief_generator,
+        ),
+        get_company_financials=get_financials,
     )
     return use_case, fake_agent, portfolio_repo
 
@@ -204,6 +220,99 @@ def test_get_watchlist_returns_correct_tickers() -> None:
     assert [i["ticker"] for i in result["items"]] == ["AAPL"]
     assert result["items"][0]["list_name"] == "Default"
     assert result["items"][0]["added_price"] is None  # no provider wired in this test
+
+
+def test_remove_holding_dispatches_correctly() -> None:
+    portfolio_repo = FakePortfolioRepository()
+    company_repo = _company_repo("AAPL")
+    portfolio = CreatePortfolioUseCase(portfolio_repo).execute("alice", "Growth")
+    AddHoldingUseCase(portfolio_repo, company_repo).execute(
+        portfolio.portfolio_id, "AAPL", 10, 150.0
+    )
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("remove_holding", {"portfolio_id": portfolio.portfolio_id, "ticker": "AAPL"})],
+        portfolio_repo=portfolio_repo,
+        company_repo=company_repo,
+    )
+    use_case.execute("alice", "remove AAPL from my portfolio", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["status"] == "removed"
+    assert result["ticker"] == "AAPL"
+    stored = portfolio_repo.get_by_id(portfolio.portfolio_id)
+    assert stored.holdings == []
+
+
+def test_remove_holding_blocks_access_to_another_users_portfolio() -> None:
+    portfolio_repo = FakePortfolioRepository()
+    alice_portfolio = CreatePortfolioUseCase(portfolio_repo).execute("alice", "Alice's")
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("remove_holding", {"portfolio_id": alice_portfolio.portfolio_id, "ticker": "AAPL"})],
+        portfolio_repo=portfolio_repo,
+    )
+    use_case.execute("bob", "remove AAPL from that portfolio", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert "error" in result
+    assert "portfolio" in result["error"].lower()
+
+
+def test_get_alerts_dispatches_correctly() -> None:
+    from src.domain.entities.monitoring import Alert, AlertType
+    from datetime import datetime, timezone
+
+    alert_repo = FakeAlertRepository()
+    alert_repo.save(Alert(
+        user_id="alice", ticker="NVDA", alert_type=AlertType.PRICE_MOVE,
+        message="NVDA up 7% today", created_at=datetime.now(timezone.utc), change_pct=0.07,
+    ))
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("get_alerts", {})], alert_repo=alert_repo,
+    )
+    use_case.execute("alice", "any alerts for me?", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert len(result["alerts"]) == 1
+    assert result["alerts"][0]["ticker"] == "NVDA"
+    assert result["alerts"][0]["change_pct"] == 0.07
+
+
+def test_get_daily_brief_dispatches_correctly() -> None:
+    use_case, fake_agent, _ = _build_use_case(scripted_calls=[("get_daily_brief", {})])
+    use_case.execute("alice", "give me my daily brief", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert "narrative" in result
+    assert result["narrative"] == "Test brief narrative."  # FakeBriefGenerator's default
+    assert "unread_alert_count" in result
+
+
+def test_get_company_financials_dispatches_correctly() -> None:
+    company_repo = _company_repo("AAPL")
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("get_company_financials", {"ticker": "AAPL", "years": 3})],
+        company_repo=company_repo,
+    )
+    use_case.execute("alice", "show me AAPL's raw financials", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["ticker"] == "AAPL"
+    assert "income_statements" in result
+    assert "balance_sheets" in result
+    assert "cash_flow_statements" in result
+
+
+def test_get_company_financials_unknown_ticker_returns_error_not_crash() -> None:
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("get_company_financials", {"ticker": "ZZZZ"})],
+    )
+    use_case.execute("alice", "show me ZZZZ's financials", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert "error" in result
 
 
 def test_ownership_check_blocks_access_to_another_users_portfolio() -> None:
