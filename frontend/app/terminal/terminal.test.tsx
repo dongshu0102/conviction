@@ -67,7 +67,7 @@ describe("Watchlist Terminal — add ticker", () => {
     fireEvent.click(screen.getByText("Add"));
 
     await waitFor(() => {
-      expect(addSpy).toHaveBeenCalledWith("nvda", undefined);
+      expect(addSpy).toHaveBeenCalledWith("NVDA", undefined);
     });
   });
 
@@ -99,6 +99,23 @@ describe("Watchlist Terminal — add ticker", () => {
     await waitFor(() => {
       expect(screen.getByText("Ticker not ingested")).toBeInTheDocument();
     });
+  });
+
+  it("rejects a natural-language phrase client-side, without ever calling the API — the real reported bug: the empty-state's own suggested chat phrasing got pasted into this plain-ticker box and sent as a literal ticker", async () => {
+    mockLoads([]);
+    const addSpy = vi.spyOn(api, "addToWatchlist");
+    render(<TerminalPage />);
+
+    await waitFor(() => screen.getByPlaceholderText(/Add ticker/));
+    fireEvent.change(screen.getByPlaceholderText(/Add ticker/), {
+      target: { value: "add NVDA to my AI Watch list with a $150 entry target" },
+    });
+    fireEvent.click(screen.getByText("Add"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/doesn't look like a ticker symbol/)).toBeInTheDocument();
+    });
+    expect(addSpy).not.toHaveBeenCalled();
   });
 });
 

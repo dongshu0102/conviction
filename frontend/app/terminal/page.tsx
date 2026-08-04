@@ -106,8 +106,15 @@ export default function TerminalPage() {
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
-    const ticker = newTicker.trim();
+    const ticker = newTicker.trim().toUpperCase();
     if (!ticker) return;
+    if (!/^[A-Z]{1,6}(\.[A-Z])?$/.test(ticker)) {
+      setAddError(
+        `"${newTicker.trim()}" doesn't look like a ticker symbol — try something like NVDA or BRK.B. ` +
+        `For requests like adding with a target price or a specific list, use Chat instead.`
+      );
+      return;
+    }
     setAdding(true);
     setAddError(null);
     try {
@@ -223,8 +230,9 @@ export default function TerminalPage() {
         <section className="card">
           <p style={{ margin: 0 }}>Nothing on this watchlist yet.</p>
           <p className="num" style={{ margin: "0.5rem 0 0", color: "var(--text-soft)", fontSize: "0.85rem" }}>
-            Add a ticker above to get started — or ask the chat agent for more, e.g.
-            &quot;add NVDA to my AI Watch list with a $150 entry target&quot;.
+            Type a ticker symbol above (like NVDA) and hit Add. For anything more —
+            setting an entry target, picking a specific list, adding several at once —
+            head to the Chat page and just describe what you want instead.
           </p>
         </section>
       )}
