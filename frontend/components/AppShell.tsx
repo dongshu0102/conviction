@@ -43,7 +43,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div style={{ display: "flex", minHeight: "100vh" }}>
       <nav className="app-shell-nav">
         <Link href="/dashboard" className="app-shell-logo" style={{ textDecoration: "none", display: "block" }}>
-          <p className="eyebrow" style={{ margin: 0 }}>FinInsight</p>
+          <p className="eyebrow" style={{ margin: 0 }}>Conviction</p>
         </Link>
 
         <div className="app-shell-items">

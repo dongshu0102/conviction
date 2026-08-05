@@ -1,4 +1,4 @@
-// Thin client over the FinInsight API. Auth is deliberately simple for this
+// Thin client over the Conviction API. Auth is deliberately simple for this
 // MVP: the API key lives in localStorage, attached as X-Api-Key on every
 // request. There is no session/cookie layer — that's a real gap versus a
 // production auth system, consistent with the backend's own "unauthenticated
@@ -6,11 +6,23 @@
 // reasonable next step, not something silently pretended away here.
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://p8xpcshdn9.us-east-1.awsapprunner.com";
-const STORAGE_KEY = "fininsight_api_key";
+const STORAGE_KEY = "conviction_api_key";
+const LEGACY_STORAGE_KEY = "fininsight_api_key"; // pre-rename — migrated silently below, never forces a re-login
 
 export function getApiKey(): string | null {
   if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(STORAGE_KEY);
+  const current = window.localStorage.getItem(STORAGE_KEY);
+  if (current) return current;
+
+  // One-time silent migration: an existing session under the old key
+  // shouldn't get logged out just because the brand changed.
+  const legacy = window.localStorage.getItem(LEGACY_STORAGE_KEY);
+  if (legacy) {
+    window.localStorage.setItem(STORAGE_KEY, legacy);
+    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+    return legacy;
+  }
+  return null;
 }
 
 export function setApiKey(key: string): void {
@@ -19,6 +31,7 @@ export function setApiKey(key: string): void {
 
 export function clearApiKey(): void {
   window.localStorage.removeItem(STORAGE_KEY);
+  window.localStorage.removeItem(LEGACY_STORAGE_KEY);
 }
 
 export class ApiError extends Error {

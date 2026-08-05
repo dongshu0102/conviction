@@ -78,7 +78,7 @@ describe("Dashboard page", () => {
   it("does not render a full chat panel inline — Chat is a link, not embedded", async () => {
     mockLoads();
     render(<DashboardPage />);
-    await waitFor(() => screen.getByText("Ask FinInsight"));
+    await waitFor(() => screen.getByText("Ask Conviction"));
     // No message input on the dashboard itself — that lives at /chat now.
     expect(screen.queryByPlaceholderText(/Ask a question/)).not.toBeInTheDocument();
   });

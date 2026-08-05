@@ -1,4 +1,4 @@
-# FinInsight Web
+# Conviction Web
 
 Minimal Next.js frontend covering the "glanceable" core: Daily Brief,
 portfolio valuation with allocation chart, watchlist with live prices.

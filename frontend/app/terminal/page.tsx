@@ -158,7 +158,7 @@ export default function TerminalPage() {
     <AppShell>
     <main style={{ maxWidth: "1180px", margin: "0 auto", padding: "2rem 1.25rem 4rem" }}>
       <header style={{ marginBottom: "0.5rem" }}>
-        <p className="eyebrow">FinInsight · Watchlist</p>
+        <p className="eyebrow">Conviction · Watchlist</p>
         <h1 style={{ margin: "0.2rem 0 0" }}>Watchlist Terminal</h1>
       </header>
 

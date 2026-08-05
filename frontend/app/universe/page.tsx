@@ -11,6 +11,7 @@
 // together.
 
 import { AppShell } from "@/components/AppShell";
+import { GrowthLeaders } from "@/components/GrowthLeaders";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -294,9 +295,11 @@ export default function UniversePage() {
     <AppShell>
     <main style={{ maxWidth: "1180px", margin: "0 auto", padding: "2rem 1.25rem 4rem" }}>
       <header style={{ marginBottom: "1.5rem" }}>
-        <p className="eyebrow">FinInsight · Universe</p>
+        <p className="eyebrow">Conviction · Universe</p>
         <h1 style={{ margin: "0.2rem 0 0" }}>Investment Universe</h1>
       </header>
+
+      <GrowthLeaders />
 
       {error && (
         <section className="card" style={{ borderLeft: "3px solid var(--loss)", marginBottom: "1.5rem" }}>

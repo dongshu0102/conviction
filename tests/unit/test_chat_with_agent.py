@@ -82,6 +82,9 @@ from tests.unit.fakes import (
 from src.application.use_cases.manage_alerts import GetAlertsUseCase
 from src.application.use_cases.generate_daily_brief import GenerateDailyBriefUseCase
 from src.application.use_cases.ingest_company_data import IngestCompanyDataUseCase
+from src.application.use_cases.assess_speculative_growth import (
+    AssessSpeculativeGrowthUseCase,
+)
 
 
 class FakeChatAgent(ChatAgent):
@@ -202,6 +205,7 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
         ),
         get_company_financials=get_financials,
         ingest_company=IngestCompanyDataUseCase(provider, company_repo, statement_repo),
+        assess_speculative_growth=AssessSpeculativeGrowthUseCase(get_financials, compute_company_valuation),
     )
     return use_case, fake_agent, portfolio_repo
 
@@ -374,6 +378,46 @@ def test_ingest_company_dispatches_correctly() -> None:
     # FakeDataProvider.get_company_profile ignores its ticker argument
     # and always returns whatever was configured at construction time.
     assert company_repo.get_by_ticker("AAPL") is not None
+
+
+def test_assess_speculative_growth_dispatches_correctly() -> None:
+    from src.domain.entities.financial_statement import FiscalPeriodKey, IncomeStatement, Period
+
+    company = Company(ticker="ROCKET", name="Rocket Inc", sector=Sector.TECHNOLOGY,
+                       industry="Software", exchange="NASDAQ", country="US")
+    company_repo = FakeCompanyRepository()
+    company_repo.save(company)
+
+    statement_repo = FakeFinancialStatementRepository()
+    key_2024 = FiscalPeriodKey(ticker="ROCKET", fiscal_year=2024, period=Period.ANNUAL)
+    key_2025 = FiscalPeriodKey(ticker="ROCKET", fiscal_year=2025, period=Period.ANNUAL)
+    statement_repo.save_income_statement(IncomeStatement(
+        key=key_2024, fiscal_date_ending=date(2024, 12, 31), reported_currency="USD",
+        revenue=10_000_000, net_income=-2_000_000,
+    ))
+    statement_repo.save_income_statement(IncomeStatement(
+        key=key_2025, fiscal_date_ending=date(2025, 12, 31), reported_currency="USD",
+        revenue=20_000_000, net_income=-1_000_000,
+    ))
+
+    provider = FakeDataProvider(company=company)
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("assess_speculative_growth", {"ticker": "ROCKET"})],
+        company_repo=company_repo,
+        provider=provider,
+        statement_repo=statement_repo,
+    )
+    use_case.execute("alice", "is ROCKET a good speculative growth pick?", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["ticker"] == "ROCKET"
+    assert result["is_profitable"] is False
+    assert any("unprofitable" in f.lower() for f in result["risk_flags"])
+    # The actual differentiator being verified: never a bare score,
+    # always the honest disclaimer alongside the structured data.
+    assert "note" in result
+    assert "not a prediction" in result["note"].lower()
 
 
 def test_ownership_check_blocks_access_to_another_users_portfolio() -> None:

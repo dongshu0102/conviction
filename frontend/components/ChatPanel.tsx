@@ -55,7 +55,7 @@ export function ChatPanel({ height = 380 }: { height?: string | number } = {}) {
   return (
     <section>
       <p className="eyebrow" style={{ marginBottom: "0.75rem" }}>
-        Ask FinInsight
+        Ask Conviction
       </p>
       <div className="card" style={{ display: "flex", flexDirection: "column", height }}>
         <div style={{ flex: 1, overflowY: "auto", marginBottom: "1rem" }}>

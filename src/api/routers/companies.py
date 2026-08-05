@@ -499,3 +499,49 @@ def get_ticker_news(
         )
         for a in articles
     ]
+
+
+# --- Speculative growth assessment ("100x hunter") ---------------------------
+
+from src.api.schemas import SpeculativeGrowthAssessmentSchema
+from src.application.use_cases.assess_speculative_growth import (
+    AssessSpeculativeGrowthUseCase,
+)
+
+
+def get_speculative_growth_use_case(
+    get_financials: GetCompanyFinancialsUseCase = Depends(get_financials_use_case),
+    compute_valuation: ComputeValuationUseCase = Depends(get_valuation_use_case),
+) -> AssessSpeculativeGrowthUseCase:
+    return AssessSpeculativeGrowthUseCase(get_financials, compute_valuation)
+
+
+@router.get("/{ticker}/speculative-growth", response_model=SpeculativeGrowthAssessmentSchema)
+def get_speculative_growth_assessment(
+    ticker: str,
+    use_case: AssessSpeculativeGrowthUseCase = Depends(get_speculative_growth_use_case),
+) -> SpeculativeGrowthAssessmentSchema:
+    """A deliberately different kind of analysis than /valuation or
+    /factor-score — see AssessSpeculativeGrowthUseCase's own docstring
+    for why standard factor scoring would actively work against
+    finding genuine early-stage growth candidates. Never a single
+    confidence score — always the structured breakdown plus explicit
+    risk_flags, so nothing here can be mistaken for a recommendation."""
+    try:
+        result = use_case.execute(ticker)
+    except CompanyNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return SpeculativeGrowthAssessmentSchema(
+        ticker=result.ticker,
+        as_of=result.as_of,
+        market_cap=result.market_cap,
+        revenue_growth_latest_yoy=result.revenue_growth_latest_yoy,
+        revenue_growth_prior_yoy=result.revenue_growth_prior_yoy,
+        growth_trend=result.growth_trend,
+        is_profitable=result.is_profitable,
+        net_income_latest=result.net_income_latest,
+        cash_runway_months=result.cash_runway_months,
+        years_of_data_available=result.years_of_data_available,
+        risk_flags=result.risk_flags,
+    )

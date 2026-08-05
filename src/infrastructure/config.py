@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # -- Database --
-    database_url: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/fininsight"
+    database_url: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/conviction"
 
     # -- Financial Modeling Prep --
     fmp_api_key: str = ""
@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     # -- Email (AWS SES) --
     # Must be a verified SES identity or the send fails — see
     # ses_email_sender.py's docstring for the sandbox-mode caveat.
-    ses_sender_email: str = "noreply@fininsight.example.com"
+    ses_sender_email: str = "noreply@conviction.example.com"
     ses_aws_region: str = "us-east-1"
     # Used to build the password-reset link embedded in the email.
     frontend_base_url: str = "https://p35bdqdzmp.us-east-1.awsapprunner.com"

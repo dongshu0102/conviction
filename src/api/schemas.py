@@ -269,6 +269,20 @@ class ChangeRoleRequestSchema(BaseModel):
     role: str
 
 
+class SpeculativeGrowthAssessmentSchema(BaseModel):
+    ticker: str
+    as_of: datetime
+    market_cap: float | None
+    revenue_growth_latest_yoy: float | None
+    revenue_growth_prior_yoy: float | None
+    growth_trend: str
+    is_profitable: bool | None
+    net_income_latest: float | None
+    cash_runway_months: float | None
+    years_of_data_available: int
+    risk_flags: list[str]
+
+
 class SignUpRequestSchema(BaseModel):
     email: str
     password: str

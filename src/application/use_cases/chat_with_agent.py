@@ -59,6 +59,9 @@ from src.application.use_cases.manage_portfolio import (
 from src.application.use_cases.manage_alerts import GetAlertsUseCase
 from src.application.use_cases.generate_daily_brief import GenerateDailyBriefUseCase
 from src.application.use_cases.ingest_company_data import IngestCompanyDataUseCase
+from src.application.use_cases.assess_speculative_growth import (
+    AssessSpeculativeGrowthUseCase,
+)
 from src.application.use_cases.manage_watchlist import (
     AddToWatchlistUseCase,
     GetWatchlistUseCase,
@@ -92,7 +95,7 @@ from src.domain.repositories.research_report_repository import ResearchReportRep
 
 logger = logging.getLogger(__name__)
 
-_SYSTEM_PROMPT = """You are FinInsight's assistant, embedded in the user's own \
+_SYSTEM_PROMPT = """You are Conviction's assistant, embedded in the user's own \
 financial dashboard. You can read and act on THEIR watchlist and portfolios \
 using the tools provided — always use a tool rather than guessing or recalling \
 from general knowledge. Never state a number you didn't get from a tool result. \
@@ -506,6 +509,28 @@ _TOOLS = [
         },
     ),
     ToolDefinition(
+        "assess_speculative_growth",
+        "Assess a ticker as a speculative early-stage growth candidate — "
+        "the honest way to look for a stock with genuinely large upside "
+        "potential (a '100x' or 'multibagger' style search), NOT the same "
+        "as get_factor_scores. Standard factor scoring penalizes negative "
+        "ROE and a meaningless P/E — exactly what a real early-stage "
+        "company looks like before a growth story plays out — so this "
+        "runs a deliberately different, growth-and-risk-focused analysis "
+        "instead: revenue growth trend (accelerating vs decelerating), "
+        "profitability status, cash runway if burning cash, and an "
+        "explicit list of real risk flags. Never returns a single "
+        "confidence score, and NEVER frame the result as a prediction or "
+        "recommendation — genuine 100x outcomes are extremely rare, and "
+        "the same characteristics that produce big winners also produce "
+        "total losses. The ticker must already be ingested first.",
+        {
+            "type": "object",
+            "properties": {"ticker": {"type": "string"}},
+            "required": ["ticker"],
+        },
+    ),
+    ToolDefinition(
         "ingest_etf",
         "Ingest an ETF's profile (name, expense ratio, AUM) so it can be added "
         "to watchlists, themes, and screened/factor-scored. ETFs have no "
@@ -800,6 +825,7 @@ class ChatWithAgentUseCase:
         generate_daily_brief: GenerateDailyBriefUseCase,
         get_company_financials: GetCompanyFinancialsUseCase,
         ingest_company: IngestCompanyDataUseCase,
+        assess_speculative_growth: AssessSpeculativeGrowthUseCase,
     ) -> None:
         self._chat_agent = chat_agent
         self._get_watchlist = get_watchlist
@@ -842,6 +868,7 @@ class ChatWithAgentUseCase:
         self._generate_daily_brief = generate_daily_brief
         self._get_company_financials = get_company_financials
         self._ingest_company = ingest_company
+        self._assess_speculative_growth = assess_speculative_growth
         self._construct_risk_parity_portfolio = construct_risk_parity_portfolio
         self._user_id: str = ""  # set per-request in execute()
 
@@ -1143,6 +1170,29 @@ class ChatWithAgentUseCase:
                 "balance_sheets_ingested": result.balance_sheets_ingested,
                 "cash_flow_statements_ingested": result.cash_flow_statements_ingested,
                 "status": "ingested",
+            }
+
+        if tool_name == "assess_speculative_growth":
+            try:
+                result = self._assess_speculative_growth.execute(tool_input["ticker"])
+            except CompanyNotFoundError as exc:
+                return {"error": str(exc)}
+            return {
+                "ticker": result.ticker,
+                "market_cap": result.market_cap,
+                "revenue_growth_latest_yoy": result.revenue_growth_latest_yoy,
+                "revenue_growth_prior_yoy": result.revenue_growth_prior_yoy,
+                "growth_trend": result.growth_trend,
+                "is_profitable": result.is_profitable,
+                "net_income_latest": result.net_income_latest,
+                "cash_runway_months": result.cash_runway_months,
+                "years_of_data_available": result.years_of_data_available,
+                "risk_flags": result.risk_flags,
+                "note": (
+                    "This is a structured risk/growth breakdown, not a prediction "
+                    "or a recommendation. Genuine large-multiple outcomes are rare; "
+                    "the same traits behind big winners are behind total losses too."
+                ),
             }
 
         if tool_name == "ingest_etf":

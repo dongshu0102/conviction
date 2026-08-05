@@ -83,13 +83,13 @@ class RequestPasswordResetUseCase:
 
         reset_link = f"{self._frontend_base_url}/reset-password?token={plaintext_token}"
         body = (
-            f"A password reset was requested for your FinInsight account.\n\n"
+            f"A password reset was requested for your Conviction account.\n\n"
             f"Reset your password: {reset_link}\n\n"
             f"This link expires in 1 hour. If you didn't request this, "
             f"you can safely ignore this email."
         )
         try:
-            self._email_sender.send(user_id, "Reset your FinInsight password", body)
+            self._email_sender.send(user_id, "Reset your Conviction password", body)
         except EmailSendError:
             # Logged, never raised further — the caller must never
             # learn whether this succeeded, same reasoning as never

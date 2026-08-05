@@ -55,7 +55,7 @@ export default function PortfoliosIndexPage() {
   return (
     <AppShell>
       <main style={{ maxWidth: "900px", margin: "0 auto", padding: "2rem 1.5rem 4rem" }}>
-        <p className="eyebrow" style={{ margin: 0 }}>FinInsight · Portfolios</p>
+        <p className="eyebrow" style={{ margin: 0 }}>Conviction · Portfolios</p>
         <h1 style={{ margin: "0.3rem 0 1.75rem" }}>Your portfolios</h1>
 
         {error && (

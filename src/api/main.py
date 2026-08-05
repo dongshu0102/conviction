@@ -12,7 +12,7 @@ settings = get_settings()
 logging.basicConfig(level=settings.log_level)
 
 app = FastAPI(
-    title="FinInsight API",
+    title="Conviction API",
     description="AI Financial Intelligence Platform — Phase 1: financial data foundation",
     version="0.1.0",
 )

@@ -25,7 +25,7 @@ export default function ChatPage() {
   return (
     <AppShell>
       <main style={{ maxWidth: "760px", margin: "0 auto", padding: "2rem 1.5rem 3rem" }}>
-        <p className="eyebrow" style={{ margin: 0 }}>FinInsight · Chat</p>
+        <p className="eyebrow" style={{ margin: 0 }}>Conviction · Chat</p>
         <h1 style={{ margin: "0.3rem 0 1.5rem" }}>Ask anything</h1>
         <ChatPanel height="calc(100vh - 220px)" />
       </main>

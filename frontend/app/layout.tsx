@@ -19,7 +19,7 @@ const mono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "FinInsight",
+  title: "Conviction",
   description: "AI-native financial intelligence, grounded in real data.",
 };
 

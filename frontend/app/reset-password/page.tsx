@@ -48,7 +48,7 @@ function ResetPasswordForm() {
     return (
       <div style={{ maxWidth: 420, width: "100%" }}>
         <p className="eyebrow" style={{ marginBottom: "0.5rem" }}>
-          FinInsight
+          Conviction
         </p>
         <h1 style={{ fontSize: "2rem", marginBottom: "0.75rem" }}>Missing reset link.</h1>
         <p style={{ color: "var(--text-soft)", lineHeight: 1.6, marginBottom: "1.5rem" }}>
@@ -64,7 +64,7 @@ function ResetPasswordForm() {
   return (
     <div style={{ maxWidth: 420, width: "100%" }}>
       <p className="eyebrow" style={{ marginBottom: "0.5rem" }}>
-        FinInsight
+        Conviction
       </p>
       <h1 style={{ fontSize: "2rem", marginBottom: "0.75rem" }}>Choose a new password.</h1>
       <p style={{ color: "var(--text-soft)", marginBottom: "2rem", lineHeight: 1.6 }}>

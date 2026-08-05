@@ -69,7 +69,7 @@ export default function DashboardPage() {
   return (
     <AppShell>
       <main style={{ padding: "2rem 1.5rem 4rem", maxWidth: 780, margin: "0 auto" }}>
-        <p className="eyebrow" style={{ margin: 0 }}>FinInsight</p>
+        <p className="eyebrow" style={{ margin: 0 }}>Conviction</p>
         <h1 style={{ fontSize: "1.6rem", margin: "0.3rem 0 2rem" }}>Overview</h1>
 
         {error && (
@@ -123,7 +123,7 @@ export default function DashboardPage() {
         </div>
 
         <Link href="/chat" className="card" style={{ textDecoration: "none", color: "var(--text)", display: "block" }}>
-          <p className="eyebrow" style={{ marginBottom: "0.5rem" }}>Ask FinInsight</p>
+          <p className="eyebrow" style={{ marginBottom: "0.5rem" }}>Ask Conviction</p>
           <p style={{ margin: 0, color: "var(--text-soft)", fontSize: "0.9rem" }}>
             Factor scores, portfolio risk, theme synthesis — anything across the
             platform, grounded in real computation.
