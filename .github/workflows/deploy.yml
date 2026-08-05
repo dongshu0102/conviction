@@ -22,7 +22,7 @@ permissions:
 
 env:
   AWS_REGION: us-east-1
-  ECR_REPOSITORY: fininsight
+  ECR_REPOSITORY: conviction
 
 jobs:
   build-and-push:

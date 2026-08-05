@@ -14,7 +14,7 @@ permissions:
 
 env:
   AWS_REGION: us-east-1
-  ECR_REPOSITORY: fininsight-web
+  ECR_REPOSITORY: conviction-web
 
 jobs:
   build-and-deploy:
@@ -67,7 +67,7 @@ jobs:
                 "AccessRoleArn": "arn:aws:iam::512768499510:role/AppRunnerECRAccessRole"
               },
               "ImageRepository": {
-                "ImageIdentifier": "512768499510.dkr.ecr.us-east-1.amazonaws.com/fininsight-web:latest",
+                "ImageIdentifier": "512768499510.dkr.ecr.us-east-1.amazonaws.com/conviction-web:latest",
                 "ImageRepositoryType": "ECR",
                 "ImageConfiguration": {
                   "Port": "8000",
