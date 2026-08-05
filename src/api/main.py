@@ -78,3 +78,48 @@ def on_startup() -> None:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/health/dependencies")
+def health_dependencies():
+    """Actually verifies critical external dependencies work — not
+    just that this process is alive. Deliberately separate from
+    GET /health above: that one drives App Runner's own decision about
+    whether to keep routing traffic here, and making it depend on a
+    third party's uptime would let a temporary Anthropic hiccup cause
+    App Runner to start cycling an otherwise-healthy container.
+
+    This endpoint exists for real, external monitoring — poll it from
+    an uptime-checking tool on its own schedule, independent of
+    container lifecycle. This is the direct fix for the incident where
+    the Anthropic key went invalid and sat silently broken (chat,
+    daily briefs, theme suggestion, research all down) until someone
+    happened to manually test an unrelated new feature.
+
+    Returns 200 if every dependency is healthy, 503 if any aren't —
+    matters because most uptime tools alert on status code, not body
+    content."""
+    import anthropic
+    from fastapi.responses import JSONResponse
+
+    from src.application.use_cases.check_dependency_health import (
+        CheckDependencyHealthUseCase,
+    )
+    from src.infrastructure.persistence.database import session_scope
+
+    use_case = CheckDependencyHealthUseCase(
+        anthropic_client=anthropic.Anthropic(api_key=settings.anthropic_api_key),
+        anthropic_model=settings.anthropic_model,
+        db_session_factory=session_scope,
+    )
+    report = use_case.execute()
+
+    return JSONResponse(
+        status_code=200 if report.all_healthy else 503,
+        content={
+            "all_healthy": report.all_healthy,
+            "checks": [
+                {"name": c.name, "healthy": c.healthy, "detail": c.detail} for c in report.checks
+            ],
+        },
+    )
