@@ -190,6 +190,20 @@ export interface FactorScoreResponse {
   result: RankedFactorScore;
 }
 
+export interface SpeculativeGrowthAssessment {
+  ticker: string;
+  as_of: string;
+  market_cap: number | null;
+  revenue_growth_latest_yoy: number | null;
+  revenue_growth_prior_yoy: number | null;
+  growth_trend: "accelerating" | "decelerating" | "insufficient_data";
+  is_profitable: boolean | null;
+  net_income_latest: number | null;
+  cash_runway_months: number | null;
+  years_of_data_available: number;
+  risk_flags: string[];
+}
+
 export interface FactorRankingResponse {
   scoring_note: string;
   results: RankedFactorScore[];
@@ -392,6 +406,15 @@ export const api = {
     params.set("top_n", String(topN));
     return request<FactorRankingResponse>(`/companies/factor-rankings?${params.toString()}`);
   },
+  ingestCompany: (ticker: string, years = 5) =>
+    request<{ ticker: string; income_statements_ingested: number }>(
+      `/companies/${encodeURIComponent(ticker.toUpperCase())}/ingest?years=${years}`,
+      { method: "POST" }
+    ),
+  getSpeculativeGrowth: (ticker: string) =>
+    request<SpeculativeGrowthAssessment>(
+      `/companies/${encodeURIComponent(ticker.toUpperCase())}/speculative-growth`
+    ),
 
   // Universe themes
   listThemes: () => request<{ themes: UniverseThemeSummary[] }>("/universe/themes"),

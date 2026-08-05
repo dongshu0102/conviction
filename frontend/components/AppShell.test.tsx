@@ -25,11 +25,12 @@ beforeEach(() => {
 });
 
 describe("AppShell", () => {
-  it("renders all five nav destinations", () => {
+  it("renders all six nav destinations", () => {
     render(<AppShell><div /></AppShell>);
     expect(screen.getByText("Dashboard")).toBeInTheDocument();
     expect(screen.getByText("Watchlist")).toBeInTheDocument();
     expect(screen.getByText("Universe")).toBeInTheDocument();
+    expect(screen.getByText("Growth Hunter")).toBeInTheDocument();
     expect(screen.getByText("Portfolios")).toBeInTheDocument();
     expect(screen.getByText("Chat")).toBeInTheDocument();
   });
