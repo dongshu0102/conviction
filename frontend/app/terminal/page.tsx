@@ -61,6 +61,8 @@ export default function TerminalPage() {
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   const [removingKey, setRemovingKey] = useState<string | null>(null);
+  const [notIngestedTicker, setNotIngestedTicker] = useState<string | null>(null);
+  const [ingesting, setIngesting] = useState(false);
 
   const load = useCallback(async (listName?: string) => {
     setLoading(true);
@@ -117,14 +119,38 @@ export default function TerminalPage() {
     }
     setAdding(true);
     setAddError(null);
+    setNotIngestedTicker(null);
     try {
       await api.addToWatchlist(ticker, listFilter || undefined);
       setNewTicker("");
       await load(listFilter || undefined);
     } catch (err) {
-      setAddError(err instanceof Error ? err.message : "Couldn't add that ticker.");
+      if (err instanceof ApiError && err.status === 422 && err.message.includes("has not been ingested")) {
+        setNotIngestedTicker(ticker);
+      } else {
+        setAddError(err instanceof Error ? err.message : "Couldn't add that ticker.");
+      }
     } finally {
       setAdding(false);
+    }
+  }
+
+  async function handleIngestAndAdd() {
+    if (!notIngestedTicker) return;
+    setIngesting(true);
+    setAddError(null);
+    try {
+      await api.ingestCompany(notIngestedTicker);
+      await api.addToWatchlist(notIngestedTicker, listFilter || undefined);
+      setNotIngestedTicker(null);
+      setNewTicker("");
+      await load(listFilter || undefined);
+    } catch (err) {
+      setAddError(
+        err instanceof Error ? err.message : "Couldn't ingest that ticker — check it's a real, listed symbol."
+      );
+    } finally {
+      setIngesting(false);
     }
   }
 
@@ -185,6 +211,19 @@ export default function TerminalPage() {
       </form>
       {addError && (
         <p className="num loss" style={{ fontSize: "0.8rem", margin: "0 0 0.5rem" }}>{addError}</p>
+      )}
+      {notIngestedTicker && (
+        <div
+          className="card"
+          style={{ display: "flex", alignItems: "center", gap: "0.75rem", margin: "0 0 1rem", padding: "0.75rem 1rem" }}
+        >
+          <p style={{ margin: 0, fontSize: "0.85rem", flex: 1 }}>
+            {`"${notIngestedTicker}" hasn't been ingested yet — pull its real data first?`}
+          </p>
+          <button className="btn-primary" onClick={handleIngestAndAdd} disabled={ingesting} style={{ fontSize: "0.85rem" }}>
+            {ingesting ? "Ingesting…" : "Ingest & add"}
+          </button>
+        </div>
       )}
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center", margin: "1rem 0 1.5rem" }}>

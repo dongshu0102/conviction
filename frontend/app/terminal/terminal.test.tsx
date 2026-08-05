@@ -8,7 +8,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import TerminalPage from "./page";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 
 const pushMock = vi.fn();
 
@@ -138,5 +138,62 @@ describe("Watchlist Terminal — remove ticker", () => {
     await waitFor(() => {
       expect(removeSpy).toHaveBeenCalledWith("NVDA", "Default");
     });
+  });
+});
+
+describe("Watchlist Terminal — add a ticker that hasn't been ingested yet", () => {
+  it("offers an inline ingest option instead of just showing a dead-end error", async () => {
+    mockLoads([]);
+    vi.spyOn(api, "addToWatchlist").mockRejectedValue(
+      new ApiError(422, "'PINS' has not been ingested yet — ingest it first via POST /companies/PINS/ingest before adding to a watchlist.")
+    );
+    render(<TerminalPage />);
+
+    await waitFor(() => screen.getByPlaceholderText(/Add ticker/));
+    fireEvent.change(screen.getByPlaceholderText(/Add ticker/), { target: { value: "PINS" } });
+    fireEvent.click(screen.getByText("Add"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/hasn't been ingested yet/)).toBeInTheDocument();
+    });
+    expect(screen.getByText("Ingest & add")).toBeInTheDocument();
+  });
+
+  it("ingesting then adding actually adds the ticker", async () => {
+    mockLoads([]);
+    vi.spyOn(api, "addToWatchlist")
+      .mockRejectedValueOnce(new ApiError(422, "'PINS' has not been ingested yet"))
+      .mockResolvedValueOnce(SAMPLE_ITEM as any);
+    const ingestSpy = vi.spyOn(api, "ingestCompany").mockResolvedValue({
+      ticker: "PINS", income_statements_ingested: 5,
+    });
+    render(<TerminalPage />);
+
+    await waitFor(() => screen.getByPlaceholderText(/Add ticker/));
+    fireEvent.change(screen.getByPlaceholderText(/Add ticker/), { target: { value: "PINS" } });
+    fireEvent.click(screen.getByText("Add"));
+    await waitFor(() => screen.getByText("Ingest & add"));
+
+    fireEvent.click(screen.getByText("Ingest & add"));
+
+    await waitFor(() => {
+      expect(ingestSpy).toHaveBeenCalledWith("PINS");
+    });
+  });
+
+  it("a genuinely malformed ticker never triggers the ingest offer", async () => {
+    mockLoads([]);
+    const addSpy = vi.spyOn(api, "addToWatchlist");
+    render(<TerminalPage />);
+
+    await waitFor(() => screen.getByPlaceholderText(/Add ticker/));
+    fireEvent.change(screen.getByPlaceholderText(/Add ticker/), { target: { value: "not a ticker" } });
+    fireEvent.click(screen.getByText("Add"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/doesn't look like a ticker symbol/)).toBeInTheDocument();
+    });
+    expect(addSpy).not.toHaveBeenCalled();
+    expect(screen.queryByText("Ingest & add")).not.toBeInTheDocument();
   });
 });
