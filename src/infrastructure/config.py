@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     ses_sender_email: str = "noreply@conviction.example.com"
     ses_aws_region: str = "us-east-1"
     # Used to build the password-reset link embedded in the email.
-    frontend_base_url: str = "https://p35bdqdzmp.us-east-1.awsapprunner.com"
+    frontend_base_url: str = "https://www.firstagentteam.com"
 
     # -- Admin bootstrap --
     # Safe to leave set permanently — idempotent, only ever ensures

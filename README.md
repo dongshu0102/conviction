@@ -6,7 +6,7 @@ an LLM layer for synthesis, conversation, and action — grounded in that
 data, never guessing at numbers it should have looked up.
 
 Live at **https://p8xpcshdn9.us-east-1.awsapprunner.com** (API) and
-**https://p35bdqdzmp.us-east-1.awsapprunner.com** (web app) — see
+**https://www.firstagentteam.com** (web app) — see
 `frontend/` for the web app and `mcp_server/` for the Claude
 Desktop/claude.ai integration.
 
