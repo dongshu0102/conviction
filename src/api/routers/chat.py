@@ -56,6 +56,7 @@ from src.application.use_cases.get_factor_scores import GetFactorScoresUseCase
 from src.application.use_cases.manage_universe_theme import (
     AddTickerToThemeUseCase,
     CreateUniverseThemeUseCase,
+    DeleteUniverseThemeUseCase,
     GetThemeTickersUseCase,
     ListUniverseThemesUseCase,
     RemoveTickerFromThemeUseCase,
@@ -203,6 +204,7 @@ def get_chat_use_case(
         create_universe_theme=CreateUniverseThemeUseCase(theme_repo),
         add_ticker_to_theme=AddTickerToThemeUseCase(theme_repo, company_repo),
         remove_ticker_from_theme=RemoveTickerFromThemeUseCase(theme_repo),
+        delete_theme=DeleteUniverseThemeUseCase(theme_repo),
         list_universe_themes=ListUniverseThemesUseCase(theme_repo),
         get_theme_tickers=get_theme_tickers,
         generate_theme_synthesis=generate_theme_synthesis,

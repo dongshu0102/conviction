@@ -44,6 +44,7 @@ from src.application.use_cases.get_factor_scores import GetFactorScoresUseCase
 from src.application.use_cases.manage_universe_theme import (
     AddTickerToThemeUseCase,
     CreateUniverseThemeUseCase,
+    DeleteUniverseThemeUseCase,
     GetThemeTickersUseCase,
     ListUniverseThemesUseCase,
     RemoveTickerFromThemeUseCase,
@@ -184,6 +185,7 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
         create_universe_theme=CreateUniverseThemeUseCase(theme_repo),
         add_ticker_to_theme=AddTickerToThemeUseCase(theme_repo, company_repo),
         remove_ticker_from_theme=RemoveTickerFromThemeUseCase(theme_repo),
+        delete_theme=DeleteUniverseThemeUseCase(theme_repo),
         list_universe_themes=ListUniverseThemesUseCase(theme_repo),
         get_theme_tickers=GetThemeTickersUseCase(theme_repo),
         generate_theme_synthesis=GenerateThemeSynthesisUseCase(
@@ -1026,6 +1028,32 @@ def test_add_ticker_to_theme_error_surfaces_cleanly() -> None:
         company_repo=company_repo,
     )
     use_case.execute("alice", "tag NVDA into Nonexistent theme", [])
+    assert "error" in fake_agent.dispatch_results[0]
+
+
+def test_delete_theme_via_chat_actually_removes_it() -> None:
+    theme_repo = FakeUniverseThemeRepository()
+    company_repo = _company_repo("NVDA")
+    CreateUniverseThemeUseCase(theme_repo).execute("AI Infrastructure")
+    AddTickerToThemeUseCase(theme_repo, company_repo).execute("AI Infrastructure", "NVDA")
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("delete_theme", {"theme_name": "AI Infrastructure"})],
+        theme_repo=theme_repo,
+        company_repo=company_repo,
+    )
+    use_case.execute("alice", "delete the AI Infrastructure theme, I confirm", [])
+
+    assert fake_agent.dispatch_results[0]["status"] == "deleted"
+    assert theme_repo.get("AI Infrastructure") is None
+
+
+def test_delete_theme_unknown_name_surfaces_error_not_crash() -> None:
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("delete_theme", {"theme_name": "Nonexistent"})],
+    )
+    use_case.execute("alice", "delete the Nonexistent theme", [])
+
     assert "error" in fake_agent.dispatch_results[0]
 
 

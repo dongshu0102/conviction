@@ -80,9 +80,11 @@ from src.application.use_cases.get_factor_scores import GetFactorScoresUseCase
 from src.application.use_cases.manage_universe_theme import (
     AddTickerToThemeUseCase,
     CreateUniverseThemeUseCase,
+    DeleteUniverseThemeUseCase,
     GetThemeTickersUseCase,
     ListUniverseThemesUseCase,
     RemoveTickerFromThemeUseCase,
+    ThemeNotFoundError,
 )
 from src.application.use_cases.get_watchlist_news import GetWatchlistNewsUseCase
 from src.domain.entities.factor_scores import FactorWeights
@@ -359,6 +361,22 @@ _TOOLS = [
             "type": "object",
             "properties": {"theme_name": {"type": "string"}, "ticker": {"type": "string"}},
             "required": ["theme_name", "ticker"],
+        },
+    ),
+    ToolDefinition(
+        "delete_theme",
+        "PERMANENTLY delete an entire universe theme, including every "
+        "ticker tagged into it. This cannot be undone, and — unlike "
+        "deleting a portfolio — themes are shared across every user, so "
+        "this removes it for everyone, not just the person asking. Only "
+        "call this after the user has clearly, explicitly confirmed they "
+        "want to delete a SPECIFIC theme by name — never call this "
+        "speculatively, as a side effect of some other request, or "
+        "without explicit confirmation.",
+        {
+            "type": "object",
+            "properties": {"theme_name": {"type": "string"}},
+            "required": ["theme_name"],
         },
     ),
     ToolDefinition(
@@ -826,6 +844,7 @@ class ChatWithAgentUseCase:
         get_company_financials: GetCompanyFinancialsUseCase,
         ingest_company: IngestCompanyDataUseCase,
         assess_speculative_growth: AssessSpeculativeGrowthUseCase,
+        delete_theme: DeleteUniverseThemeUseCase,
     ) -> None:
         self._chat_agent = chat_agent
         self._get_watchlist = get_watchlist
@@ -869,6 +888,7 @@ class ChatWithAgentUseCase:
         self._get_company_financials = get_company_financials
         self._ingest_company = ingest_company
         self._assess_speculative_growth = assess_speculative_growth
+        self._delete_theme = delete_theme
         self._construct_risk_parity_portfolio = construct_risk_parity_portfolio
         self._user_id: str = ""  # set per-request in execute()
 
@@ -1073,6 +1093,13 @@ class ChatWithAgentUseCase:
                     f"'{tool_input['theme_name']}'."
                 }
             return {"status": "removed"}
+
+        if tool_name == "delete_theme":
+            try:
+                self._delete_theme.execute(tool_input["theme_name"])
+            except ThemeNotFoundError as exc:
+                return {"error": str(exc)}
+            return {"status": "deleted", "theme_name": tool_input["theme_name"]}
 
         if tool_name == "list_universe_themes":
             summaries = self._list_universe_themes.execute()

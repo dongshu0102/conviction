@@ -171,6 +171,16 @@ async def test_remove_ticker_from_theme_uses_delete_not_post():
     )
 
 
+@pytest.mark.asyncio
+async def test_delete_theme_uses_delete_and_the_bare_theme_path():
+    """Same easy mistake risk as remove_ticker_from_theme — this one
+    could accidentally hit the /tickers/{ticker} path instead of the
+    bare theme path, deleting one membership instead of the theme."""
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.delete_theme("AI Infrastructure")
+    mock_req.assert_called_once_with("DELETE", "/universe/themes/AI Infrastructure")
+
+
 # --- The 11 tools added to close the MCP gap (options, screening, --------
 # recommendations, rebalancing, watchlist extras) — none of these had any
 # test coverage until now, despite three of them sending a JSON body, the

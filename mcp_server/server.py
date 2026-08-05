@@ -1,6 +1,6 @@
-"""FinInsight MCP server.
+"""Conviction MCP server.
 
-Wraps the deployed FinInsight REST API as MCP tools, so Claude Desktop
+Wraps the deployed Conviction REST API as MCP tools, so Claude Desktop
 (or claude.ai, or any MCP client) can read and manage a user's
 watchlist, portfolios, and research directly in conversation.
 
@@ -16,8 +16,8 @@ Setup:
     3. Add to Claude Desktop's config (see README.md in this directory)
 
 Environment variables:
-    FININSIGHT_API_URL  — defaults to the production deployment
-    FININSIGHT_API_KEY  — required, no default (never hardcode a key here)
+    CONVICTION_API_URL  — defaults to the production deployment
+    CONVICTION_API_KEY  — required, no default (never hardcode a key here)
 """
 from __future__ import annotations
 
@@ -28,9 +28,9 @@ import httpx
 from mcp.server import MCPServer
 
 API_BASE_URL = os.environ.get(
-    "FININSIGHT_API_URL", "https://p8xpcshdn9.us-east-1.awsapprunner.com"
+    "CONVICTION_API_URL", "https://p8xpcshdn9.us-east-1.awsapprunner.com"
 )
-API_KEY = os.environ.get("FININSIGHT_API_KEY")
+API_KEY = os.environ.get("CONVICTION_API_KEY")
 
 # Deliberately NOT validated here — a module-level raise makes this file
 # impossible to import at all without a real key set, which breaks
@@ -41,7 +41,7 @@ API_KEY = os.environ.get("FININSIGHT_API_KEY")
 # needs a real key to do anything useful.
 
 mcp = MCPServer(
-    name="fininsight",
+    name="conviction",
     description="AI financial intelligence platform — watchlists, portfolios, "
     "company research, valuation, and risk analysis grounded in real S&P 500 data.",
 )
@@ -333,6 +333,16 @@ async def remove_ticker_from_theme(theme_name: str, ticker: str) -> str:
 
 
 @mcp.tool()
+async def delete_theme(theme_name: str) -> str:
+    """Permanently delete an entire universe theme and every ticker
+    tagged into it. This cannot be undone — confirm with the user
+    before calling this. Unlike deleting a portfolio, themes are
+    shared across every user, so this removes it for everyone, not
+    just the person asking."""
+    return await _request("DELETE", f"/universe/themes/{theme_name}")
+
+
+@mcp.tool()
 async def generate_theme_synthesis(theme_name: str) -> str:
     """Generate an AI-written narrative synthesis across an ENTIRE
     theme — common threads, notable divergences, and risks visible
@@ -511,13 +521,13 @@ async def get_stock_news(ticker: str, limit: int = 10) -> str:
 
 
 def main() -> None:
-    """Real entry point — this is where FININSIGHT_API_KEY actually
+    """Real entry point — this is where CONVICTION_API_KEY actually
     needs to exist, not at import time. Running this file directly
     (the normal way Claude Desktop launches it) still gets the exact
     same early, clear error it always did if the key is missing."""
     if not API_KEY:
         raise RuntimeError(
-            "FININSIGHT_API_KEY environment variable is required. "
+            "CONVICTION_API_KEY environment variable is required. "
             "Create one via: curl -X POST "
             f"'{API_BASE_URL}/auth/signup' -H 'Content-Type: application/json' "
             "-d '{\"email\": \"you@example.com\", \"password\": \"yourpassword\"}'"

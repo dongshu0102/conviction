@@ -1,6 +1,6 @@
-# FinInsight MCP Server
+# Conviction MCP Server
 
-Lets Claude Desktop (or any MCP client) read and manage your FinInsight
+Lets Claude Desktop (or any MCP client) read and manage your Conviction
 watchlist, portfolios, and research directly in conversation — no
 `curl`, no dashboard.
 
@@ -36,7 +36,7 @@ pip install -r requirements.txt
 
 ## 2. Get an API key
 
-If you don't already have a FinInsight account:
+If you don't already have a Conviction account:
 ```bash
 curl -X POST "https://p8xpcshdn9.us-east-1.awsapprunner.com/auth/signup" \
   -H "Content-Type: application/json" \
@@ -66,25 +66,25 @@ ABSOLUTE PATH to the venv's Python (from step 1), not a bare `python3`:
 ```json
 {
   "mcpServers": {
-    "fininsight": {
-      "command": "/absolute/path/to/fininsight/mcp_server/.venv/bin/python3",
-      "args": ["/absolute/path/to/fininsight/mcp_server/server.py"],
+    "conviction": {
+      "command": "/absolute/path/to/conviction/mcp_server/.venv/bin/python3",
+      "args": ["/absolute/path/to/conviction/mcp_server/server.py"],
       "env": {
-        "FININSIGHT_API_KEY": "fi_live_your_actual_key_here"
+        "CONVICTION_API_KEY": "fi_live_your_actual_key_here"
       }
     }
   }
 }
 ```
 
-Replace `/absolute/path/to/fininsight/` with the real path on your
+Replace `/absolute/path/to/conviction/` with the real path on your
 machine (relative paths don't work here — Claude Desktop launches this
 as a subprocess from its own working directory, not yours).
 
 If you're running against a local dev server instead of production,
 also add:
 ```json
-"FININSIGHT_API_URL": "http://localhost:8000"
+"CONVICTION_API_URL": "http://localhost:8000"
 ```
 
 ## 4. Restart Claude Desktop completely
@@ -96,14 +96,14 @@ startup.
 ## 5. Verify it connected
 
 In Claude Desktop, look for a small tools/plug icon near the message
-input — clicking it should show `fininsight` with 47 tools listed. If
+input — clicking it should show `conviction` with 48 tools listed. If
 it's not there, check Claude Desktop's logs (usually accessible from
 its settings/developer menu) for a startup error from this server.
 
 ## Try it
 
 Ask Claude something like:
-- "What's on my FinInsight watchlist?"
+- "What's on my Conviction watchlist?"
 - "Create a portfolio called Growth and add 10 shares of AAPL at $150"
 - "What's the risk profile of my Retirement portfolio?"
 - "Give me my daily brief" (note: this one costs real money — it's an LLM call)
@@ -116,11 +116,11 @@ Ask Claude something like:
 
 ```bash
 cd mcp_server
-FININSIGHT_API_KEY=test_key python3 tests/run_tests.py
+CONVICTION_API_KEY=test_key python3 tests/run_tests.py
 ```
 
 9 tests against the REAL, unmodified `server.py` — including a
-systematic sweep checking every one of the 47 tools against the exact
+systematic sweep checking every one of the 48 tools against the exact
 REST path it should hit, which self-checks that no new tool gets added
 without a corresponding entry (see `tests/test_server.py`). Since
 neither `httpx` nor `mcp` needs to be actually installed to run these
@@ -132,7 +132,7 @@ managing its own `asyncio.run()`, no special plugin needed.
 
 ## Troubleshooting
 
-**"FININSIGHT_API_KEY environment variable is required"** — the `env`
+**"CONVICTION_API_KEY environment variable is required"** — the `env`
 block in the config didn't get picked up. Double-check the JSON is
 valid (a trailing comma or missing brace will silently break the whole
 file) and that you fully restarted Claude Desktop.
@@ -149,7 +149,7 @@ process likely crashed on startup. Try running it directly to see the
 real error, same principle as running Postgres in the foreground
 earlier this session:
 ```bash
-FININSIGHT_API_KEY=your_key python3 server.py
+CONVICTION_API_KEY=your_key python3 server.py
 ```
 This should print MCP server startup messages and hang waiting for
 stdio input (that's correct — Ctrl+C to stop). If it errors instead,
