@@ -88,3 +88,12 @@ class GetThemesForTickerUseCase:
 
     def execute(self, ticker: str) -> list[str]:
         return self._theme_repo.get_themes_for_ticker(ticker)
+
+
+class DeleteUniverseThemeUseCase:
+    def __init__(self, theme_repo: UniverseThemeRepository) -> None:
+        self._theme_repo = theme_repo
+
+    def execute(self, name: str) -> None:
+        if not self._theme_repo.delete(name):
+            raise ThemeNotFoundError(name)

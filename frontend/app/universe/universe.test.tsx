@@ -110,3 +110,65 @@ describe("Universe — remove ticker from theme", () => {
     });
   });
 });
+
+describe("Universe — delete theme", () => {
+  it("does not delete on a single click — requires explicit confirmation", async () => {
+    mockBaseLoads();
+    const deleteSpy = vi.spyOn(api, "deleteTheme");
+    render(<UniversePage />);
+
+    await waitFor(() => screen.getByText("Delete theme"));
+    fireEvent.click(screen.getByText("Delete theme"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Confirm delete")).toBeInTheDocument();
+    });
+    expect(deleteSpy).not.toHaveBeenCalled();
+  });
+
+  it("clicking Confirm delete actually calls api.deleteTheme with the right name", async () => {
+    mockBaseLoads();
+    const deleteSpy = vi.spyOn(api, "deleteTheme").mockResolvedValue(undefined as any);
+    render(<UniversePage />);
+
+    await waitFor(() => screen.getByText("Delete theme"));
+    fireEvent.click(screen.getByText("Delete theme"));
+    fireEvent.click(screen.getByText("Confirm delete"));
+
+    await waitFor(() => {
+      expect(deleteSpy).toHaveBeenCalledWith("AI Infrastructure");
+    });
+  });
+
+  it("clicking Cancel backs out without deleting anything", async () => {
+    mockBaseLoads();
+    const deleteSpy = vi.spyOn(api, "deleteTheme");
+    render(<UniversePage />);
+
+    await waitFor(() => screen.getByText("Delete theme"));
+    fireEvent.click(screen.getByText("Delete theme"));
+    await waitFor(() => screen.getByText("Cancel"));
+    fireEvent.click(screen.getByText("Cancel"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Delete theme")).toBeInTheDocument();
+    });
+    expect(deleteSpy).not.toHaveBeenCalled();
+  });
+
+  it("reloads the theme list after a successful delete", async () => {
+    mockBaseLoads();
+    vi.spyOn(api, "deleteTheme").mockResolvedValue(undefined as any);
+    const listSpy = vi.spyOn(api, "listThemes").mockResolvedValue({ themes: [SAMPLE_THEME] });
+    render(<UniversePage />);
+
+    await waitFor(() => screen.getByText("Delete theme"));
+    const callsBefore = listSpy.mock.calls.length;
+    fireEvent.click(screen.getByText("Delete theme"));
+    fireEvent.click(screen.getByText("Confirm delete"));
+
+    await waitFor(() => {
+      expect(listSpy.mock.calls.length).toBeGreaterThan(callsBefore);
+    });
+  });
+});

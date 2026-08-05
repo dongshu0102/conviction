@@ -34,3 +34,10 @@ class UniverseThemeRepository(ABC):
     @abstractmethod
     def get_themes_for_ticker(self, ticker: str) -> list[str]:
         ...
+
+    @abstractmethod
+    def delete(self, name: str) -> bool:
+        """Returns True if the theme existed and was deleted. Removes
+        every membership row too — a theme with lingering orphaned
+        memberships would make list_all()'s member_count and every
+        downstream ranking silently wrong."""

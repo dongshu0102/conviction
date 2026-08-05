@@ -451,6 +451,8 @@ export const api = {
     request(`/universe/themes/${encodeURIComponent(name)}/tickers/${ticker.toUpperCase()}`, {
       method: "DELETE",
     }),
+  deleteTheme: (name: string) =>
+    request(`/universe/themes/${encodeURIComponent(name)}`, { method: "DELETE" }),
   suggestTheme: (userHint?: string) =>
     request<ThemeSuggestion>(
       `/universe/suggest-theme${userHint ? `?user_hint=${encodeURIComponent(userHint)}` : ""}`,

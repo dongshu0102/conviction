@@ -446,6 +446,14 @@ class FakeUniverseThemeRepository:
         ticker = ticker.strip().upper()
         return sorted(name for (name, t) in self._memberships if t == ticker)
 
+    def delete(self, name: str) -> bool:
+        name = name.strip()
+        if name not in self._themes:
+            return False
+        del self._themes[name]
+        self._memberships = {(t, tk) for (t, tk) in self._memberships if t != name}
+        return True
+
 
 class FakeThemeSynthesisGenerator:
     """Records exactly what tickers it was called with — same

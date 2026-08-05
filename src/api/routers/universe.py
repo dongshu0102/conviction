@@ -33,6 +33,7 @@ from src.application.use_cases.compute_universe_factor_snapshot import (
 from src.application.use_cases.manage_universe_theme import (
     AddTickerToThemeUseCase,
     CreateUniverseThemeUseCase,
+    DeleteUniverseThemeUseCase,
     GetThemeTickersUseCase,
     ListUniverseThemesUseCase,
     RemoveTickerFromThemeUseCase,
@@ -88,6 +89,12 @@ def get_remove_ticker_use_case(
     theme_repo: SqlAlchemyUniverseThemeRepository = Depends(get_theme_repository),
 ) -> RemoveTickerFromThemeUseCase:
     return RemoveTickerFromThemeUseCase(theme_repo)
+
+
+def get_delete_theme_use_case(
+    theme_repo: SqlAlchemyUniverseThemeRepository = Depends(get_theme_repository),
+) -> DeleteUniverseThemeUseCase:
+    return DeleteUniverseThemeUseCase(theme_repo)
 
 
 def get_list_use_case(
@@ -171,6 +178,24 @@ def remove_ticker(
             status_code=404, detail=f"'{ticker.upper()}' is not tagged into '{name}'."
         )
     return {"removed": True}
+
+
+@router.delete("/themes/{name}")
+def delete_theme(
+    name: str,
+    use_case: DeleteUniverseThemeUseCase = Depends(get_delete_theme_use_case),
+) -> dict[str, bool]:
+    """Deletes the theme and every one of its membership rows. Themes
+    are shared across every user, not personal — same permission
+    model as creating one or adding/removing tickers (any
+    authenticated user), so this deliberately isn't restricted beyond
+    that. There's no confirmation step at this layer; that belongs in
+    the client, since this is genuinely irreversible."""
+    try:
+        use_case.execute(name)
+    except ThemeNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"deleted": True}
 
 
 def get_theme_synthesis_use_case(

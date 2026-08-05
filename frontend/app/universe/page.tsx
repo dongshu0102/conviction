@@ -239,6 +239,8 @@ export default function UniversePage() {
 
   const [loading, setLoading] = useState(true);
   const [removingMember, setRemovingMember] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deletingTheme, setDeletingTheme] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadThemes = useCallback(async (selectAfter?: string) => {
@@ -271,6 +273,7 @@ export default function UniversePage() {
     setSynthesisError(null);
     setAllocation(null);
     setAllocationError(null);
+    setConfirmingDelete(false);
     if (!theme) {
       setMembers([]);
       setRankings([]);
@@ -317,6 +320,20 @@ export default function UniversePage() {
       setError(err instanceof Error ? err.message : `Couldn't remove ${ticker}`);
     } finally {
       setRemovingMember(null);
+    }
+  }
+
+  async function handleDeleteTheme() {
+    if (!selected) return;
+    setDeletingTheme(true);
+    try {
+      await api.deleteTheme(selected);
+      setConfirmingDelete(false);
+      await loadThemes();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Couldn't delete ${selected}`);
+    } finally {
+      setDeletingTheme(false);
     }
   }
 
@@ -414,6 +431,35 @@ export default function UniversePage() {
                   <p className="eyebrow" style={{ margin: 0 }}>
                     {selected} — {members.length} member{members.length === 1 ? "" : "s"}
                   </p>
+                  {!confirmingDelete ? (
+                    <button
+                      onClick={() => setConfirmingDelete(true)}
+                      style={{ background: "none", border: "none", color: "var(--text-soft)", fontSize: "0.78rem", cursor: "pointer" }}
+                    >
+                      Delete theme
+                    </button>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <span style={{ fontSize: "0.78rem", color: "var(--text-soft)" }}>
+                        Delete &ldquo;{selected}&rdquo; for everyone? This can&rsquo;t be undone.
+                      </span>
+                      <button
+                        onClick={handleDeleteTheme}
+                        disabled={deletingTheme}
+                        className="num loss"
+                        style={{ background: "none", border: "1px solid var(--loss)", borderRadius: "4px", fontSize: "0.78rem", padding: "0.25rem 0.6rem", cursor: "pointer" }}
+                      >
+                        {deletingTheme ? "Deleting…" : "Confirm delete"}
+                      </button>
+                      <button
+                        onClick={() => setConfirmingDelete(false)}
+                        disabled={deletingTheme}
+                        style={{ background: "none", border: "none", color: "var(--text-soft)", fontSize: "0.78rem", cursor: "pointer" }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div className="card">
                   {members.length === 0 ? (

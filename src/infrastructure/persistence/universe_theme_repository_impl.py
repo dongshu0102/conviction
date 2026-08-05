@@ -94,3 +94,18 @@ class SqlAlchemyUniverseThemeRepository(UniverseThemeRepository):
                 )
             ).scalars().all()
             return sorted(rows)
+
+    def delete(self, name: str) -> bool:
+        with session_scope() as session:
+            theme = session.get(UniverseThemeModel, name.strip())
+            if theme is None:
+                return False
+            memberships = session.execute(
+                select(UniverseThemeMembershipModel).where(
+                    UniverseThemeMembershipModel.theme_name == theme.name
+                )
+            ).scalars().all()
+            for m in memberships:
+                session.delete(m)
+            session.delete(theme)
+            return True

@@ -3,6 +3,7 @@ from __future__ import annotations
 from src.application.use_cases.manage_universe_theme import (
     AddTickerToThemeUseCase,
     CreateUniverseThemeUseCase,
+    DeleteUniverseThemeUseCase,
     GetThemeTickersUseCase,
     GetThemesForTickerUseCase,
     ListUniverseThemesUseCase,
@@ -123,3 +124,53 @@ def test_list_reports_accurate_member_counts() -> None:
 
     counts = {s.theme.name: s.member_count for s in ListUniverseThemesUseCase(theme_repo).execute()}
     assert counts == {"AI Infrastructure": 2, "China": 1}
+
+
+def test_delete_removes_the_theme() -> None:
+    theme_repo = FakeUniverseThemeRepository()
+    CreateUniverseThemeUseCase(theme_repo).execute("AI Infrastructure")
+
+    DeleteUniverseThemeUseCase(theme_repo).execute("AI Infrastructure")
+
+    assert theme_repo.get("AI Infrastructure") is None
+
+
+def test_delete_requires_the_theme_to_exist() -> None:
+    theme_repo = FakeUniverseThemeRepository()
+    try:
+        DeleteUniverseThemeUseCase(theme_repo).execute("Nonexistent")
+        raise AssertionError("expected ThemeNotFoundError")
+    except ThemeNotFoundError:
+        pass
+
+
+def test_delete_also_removes_its_memberships() -> None:
+    """The real property that matters: a deleted theme shouldn't leave
+    orphaned membership rows behind — those would silently corrupt
+    member_count and every downstream ranking for whatever OTHER
+    theme (if any) happened to reuse the same name later."""
+    theme_repo = FakeUniverseThemeRepository()
+    company_repo = _company_repo("NVDA", "AMD")
+    CreateUniverseThemeUseCase(theme_repo).execute("AI Infrastructure")
+    add = AddTickerToThemeUseCase(theme_repo, company_repo)
+    add.execute("AI Infrastructure", "NVDA")
+    add.execute("AI Infrastructure", "AMD")
+
+    DeleteUniverseThemeUseCase(theme_repo).execute("AI Infrastructure")
+
+    assert theme_repo.get_tickers("AI Infrastructure") == []
+
+
+def test_delete_does_not_affect_other_themes() -> None:
+    theme_repo = FakeUniverseThemeRepository()
+    company_repo = _company_repo("NVDA", "BABA")
+    CreateUniverseThemeUseCase(theme_repo).execute("AI Infrastructure")
+    CreateUniverseThemeUseCase(theme_repo).execute("China")
+    add = AddTickerToThemeUseCase(theme_repo, company_repo)
+    add.execute("AI Infrastructure", "NVDA")
+    add.execute("China", "BABA")
+
+    DeleteUniverseThemeUseCase(theme_repo).execute("AI Infrastructure")
+
+    assert theme_repo.get("China") is not None
+    assert theme_repo.get_tickers("China") == ["BABA"]
