@@ -62,12 +62,12 @@ describe("AppShell", () => {
   });
 
   it("logout clears the stored API key and redirects to /login", () => {
-    localStorage.setItem("fininsight_api_key", "fi_live_test123");
+    localStorage.setItem("conviction_api_key", "fi_live_test123");
     render(<AppShell><div /></AppShell>);
 
     screen.getByText("Log out").click();
 
-    expect(localStorage.getItem("fininsight_api_key")).toBeNull();
+    expect(localStorage.getItem("conviction_api_key")).toBeNull();
     expect(pushMock).toHaveBeenCalledWith("/login");
   });
 });

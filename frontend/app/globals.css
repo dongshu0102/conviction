@@ -1,17 +1,19 @@
 :root {
-  /* Refined Terminal — dark, precise, professional-desk. Deliberately
-     not pure black (too harsh for long reading) and the accent is a
-     restrained cyan, not neon — this is a serious tool, not a gaming
-     rig. Gain/loss keep the universal green/red finance convention
-     rather than deviating for novelty's sake. */
-  --bg: #161a1f;
-  --surface: #1e242b;
-  --text: #e8eaed;
-  --text-soft: #8b939c;
-  --accent: #5eb8c7;
-  --gain: #4fbf8b;
-  --loss: #e0697a;
-  --rule: #2a3138;
+  /* Conviction — warm, weighted, decisive. Redesigned from the ground
+     up: the previous palette was a cool cyan-accented dark theme.
+     "Conviction" is about confidence earned through evidence, not
+     clarity for its own sake — so the palette moved from cool
+     cyan-teal (generic fintech territory) to a warmer, more assertive
+     amber-on-warm-black. Gain/loss keep the universal green/red
+     convention, warmed to match rather than left as cool neon. */
+  --bg: #14110f;
+  --surface: #1f1a16;
+  --text: #ede7df;
+  --text-soft: #93887a;
+  --accent: #d4a24e;
+  --gain: #6a9f5e;
+  --loss: #c1584f;
+  --rule: #332b24;
 }
 
 * {
@@ -94,7 +96,7 @@ button {
 
 .btn-primary {
   background: var(--accent);
-  color: #0d1215;
+  color: #16120e;
   border: none;
   border-radius: 4px;
   padding: 0.75rem 1.5rem;

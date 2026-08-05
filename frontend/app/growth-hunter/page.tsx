@@ -134,7 +134,13 @@ export default function GrowthHunterPage() {
 
         {assessment && (
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-            <section className="card">
+            <section
+              className="card"
+              style={{
+                borderLeft: assessment.growth_trend !== "insufficient_data"
+                  ? "3px solid var(--accent)" : "3px dashed var(--rule)",
+              }}
+            >
               <p className="eyebrow" style={{ marginBottom: "0.5rem" }}>Revenue growth trend</p>
               <p style={{ margin: "0 0 0.5rem", fontSize: "1.15rem", fontWeight: 600, color: TREND_COLOR[assessment.growth_trend] }}>
                 {TREND_LABEL[assessment.growth_trend]}
@@ -147,7 +153,13 @@ export default function GrowthHunterPage() {
               </p>
             </section>
 
-            <section className="card">
+            <section
+              className="card"
+              style={{
+                borderLeft: assessment.is_profitable !== null
+                  ? "3px solid var(--accent)" : "3px dashed var(--rule)",
+              }}
+            >
               <p className="eyebrow" style={{ marginBottom: "0.5rem" }}>Profitability</p>
               <p style={{ margin: 0, fontSize: "1.05rem", fontWeight: 600 }}>
                 {assessment.is_profitable === null
@@ -163,7 +175,13 @@ export default function GrowthHunterPage() {
               )}
             </section>
 
-            <section className="card">
+            <section
+              className="card"
+              style={{
+                borderLeft: assessment.cash_runway_months !== null
+                  ? "3px solid var(--accent)" : "3px dashed var(--rule)",
+              }}
+            >
               <p className="eyebrow" style={{ marginBottom: "0.5rem" }}>Cash runway</p>
               <p style={{ margin: 0, fontSize: "1.05rem", fontWeight: 600 }}>
                 {assessment.cash_runway_months === null
@@ -172,7 +190,13 @@ export default function GrowthHunterPage() {
               </p>
             </section>
 
-            <section className="card">
+            <section
+              className="card"
+              style={{
+                borderLeft: assessment.market_cap !== null
+                  ? "3px solid var(--accent)" : "3px dashed var(--rule)",
+              }}
+            >
               <p className="eyebrow" style={{ marginBottom: "0.5rem" }}>Market cap</p>
               <p style={{ margin: 0, fontSize: "1.05rem", fontWeight: 600 }}>
                 {fmtMarketCap(assessment.market_cap)}

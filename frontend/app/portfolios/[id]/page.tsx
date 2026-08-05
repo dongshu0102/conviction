@@ -13,7 +13,7 @@ const usd = (n: number) =>
 
 const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
 
-const CHART_COLORS = ["#5EB8C7", "#4FBF8B", "#8B939C", "#E0697A", "#3A424B"];
+const CHART_COLORS = ["#d4a24e", "#6a9f5e", "#93887a", "#c1584f", "#8a5a6b"];
 
 function AddHoldingForm({ portfolioId, onAdded }: { portfolioId: string; onAdded: () => void }) {
   const [ticker, setTicker] = useState("");

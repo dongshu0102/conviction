@@ -84,7 +84,7 @@ export function ChatPanel({ height = 380 }: { height?: string | number } = {}) {
                   fontSize: "0.9rem",
                   lineHeight: 1.5,
                   background: m.role === "user" ? "var(--accent)" : "var(--surface)",
-                  color: m.role === "user" ? "#0d1215" : "var(--text)",
+                  color: m.role === "user" ? "#16120e" : "var(--text)",
                   border: m.role === "user" ? "none" : "1px solid var(--rule)",
                   textAlign: "left",
                 }}

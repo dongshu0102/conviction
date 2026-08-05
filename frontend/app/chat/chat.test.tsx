@@ -38,7 +38,7 @@ describe("Chat page", () => {
   });
 
   it("renders the page chrome and the (mocked) ChatPanel when authenticated", () => {
-    localStorage.setItem("fininsight_api_key", "fi_live_test123");
+    localStorage.setItem("conviction_api_key", "fi_live_test123");
     render(<ChatPage />);
 
     expect(pushMock).not.toHaveBeenCalled();
@@ -47,7 +47,7 @@ describe("Chat page", () => {
   });
 
   it("gives ChatPanel a full-page height, not the small embedded-card default", () => {
-    localStorage.setItem("fininsight_api_key", "fi_live_test123");
+    localStorage.setItem("conviction_api_key", "fi_live_test123");
     render(<ChatPage />);
 
     const panel = screen.getByTestId("chat-panel");

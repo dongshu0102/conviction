@@ -21,7 +21,7 @@ beforeEach(() => {
   pushMock.mockClear();
   replaceMock.mockClear();
   localStorage.clear();
-  localStorage.setItem("fininsight_api_key", "fi_live_test123");
+  localStorage.setItem("conviction_api_key", "fi_live_test123");
   vi.restoreAllMocks();
 });
 
