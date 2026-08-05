@@ -11,6 +11,10 @@ on:
       - 'Dockerfile'
       - 'entrypoint.sh'
       - '.github/workflows/deploy.yml'
+  workflow_dispatch: {}  # lets this be triggered manually from the Actions tab —
+                         # the path-filtered push trigger above means a change
+                         # elsewhere (e.g. frontend-only) never touches this at
+                         # all, which is exactly what silently stalled it once
 
 permissions:
   id-token: write   # required for OIDC — no long-lived AWS keys stored in GitHub
