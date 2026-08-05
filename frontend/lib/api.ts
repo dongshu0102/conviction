@@ -241,6 +241,22 @@ export interface UniverseThemeSummary {
   member_count: number;
 }
 
+export interface SuggestedTicker {
+  ticker: string;
+  company_name: string;
+  reasoning: string;
+  already_ingested: boolean;
+}
+
+export interface ThemeSuggestion {
+  theme_name: string;
+  rationale: string;
+  candidate_tickers: SuggestedTicker[];
+  sourced_headlines: string[];
+  generated_at: string;
+  model_used: string;
+}
+
 export interface ThemeSynthesisReport {
   theme_name: string;
   generated_at: string;
@@ -435,6 +451,11 @@ export const api = {
     request(`/universe/themes/${encodeURIComponent(name)}/tickers/${ticker.toUpperCase()}`, {
       method: "DELETE",
     }),
+  suggestTheme: (userHint?: string) =>
+    request<ThemeSuggestion>(
+      `/universe/suggest-theme${userHint ? `?user_hint=${encodeURIComponent(userHint)}` : ""}`,
+      { method: "POST" }
+    ),
   generateThemeSynthesis: (name: string) =>
     request<ThemeSynthesisReport>(`/universe/themes/${encodeURIComponent(name)}/synthesis`, {
       method: "POST",

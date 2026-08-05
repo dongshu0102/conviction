@@ -12,6 +12,7 @@
 
 import { AppShell } from "@/components/AppShell";
 import { GrowthLeaders } from "@/components/GrowthLeaders";
+import { SuggestTheme } from "@/components/SuggestTheme";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -89,37 +90,78 @@ function AddTickerForm({ theme, onAdded }: { theme: string; onAdded: () => void 
   const [ticker, setTicker] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notIngested, setNotIngested] = useState<string | null>(null);
+  const [ingesting, setIngesting] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!ticker.trim()) return;
     setLoading(true);
     setError(null);
+    setNotIngested(null);
     try {
       await api.addTickerToTheme(theme, ticker.trim());
       setTicker("");
       onAdded();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't add that ticker");
+      if (err instanceof ApiError && err.status === 422 && err.message.includes("has not been ingested")) {
+        setNotIngested(ticker.trim().toUpperCase());
+      } else {
+        setError(err instanceof Error ? err.message : "Couldn't add that ticker");
+      }
     } finally {
       setLoading(false);
     }
   }
 
+  async function handleIngestAndAdd() {
+    if (!notIngested) return;
+    setIngesting(true);
+    setError(null);
+    try {
+      await api.ingestCompany(notIngested);
+      await api.addTickerToTheme(theme, notIngested);
+      setNotIngested(null);
+      setTicker("");
+      onAdded();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't ingest that ticker — check it's a real, listed symbol.");
+    } finally {
+      setIngesting(false);
+    }
+  }
+
   return (
-    <form onSubmit={handleSubmit} style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem" }}>
-      <input
-        type="text"
-        placeholder="Add ticker"
-        value={ticker}
-        onChange={(e) => setTicker(e.target.value.toUpperCase())}
-        style={{ flex: "1 1 auto", fontSize: "0.85rem", padding: "0.45rem 0.65rem" }}
-      />
-      <button type="submit" className="btn-primary" disabled={loading} style={{ padding: "0.45rem 0.9rem", fontSize: "0.82rem" }}>
-        {loading ? "…" : "Add"}
-      </button>
-      {error && <p className="num loss" style={{ fontSize: "0.75rem", margin: 0, alignSelf: "center" }}>{error}</p>}
-    </form>
+    <div style={{ marginTop: "0.75rem" }}>
+      <form onSubmit={handleSubmit} style={{ display: "flex", gap: "0.5rem" }}>
+        <input
+          type="text"
+          placeholder="Add ticker"
+          value={ticker}
+          onChange={(e) => setTicker(e.target.value.toUpperCase())}
+          style={{ flex: "1 1 auto", fontSize: "0.85rem", padding: "0.45rem 0.65rem" }}
+        />
+        <button type="submit" className="btn-primary" disabled={loading} style={{ padding: "0.45rem 0.9rem", fontSize: "0.82rem" }}>
+          {loading ? "…" : "Add"}
+        </button>
+        {error && <p className="num loss" style={{ fontSize: "0.75rem", margin: 0, alignSelf: "center" }}>{error}</p>}
+      </form>
+      {notIngested && (
+        <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginTop: "0.5rem" }}>
+          <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--text-soft)" }}>
+            {`"${notIngested}" hasn't been ingested yet.`}
+          </p>
+          <button
+            className="btn-primary"
+            onClick={handleIngestAndAdd}
+            disabled={ingesting}
+            style={{ fontSize: "0.75rem", padding: "0.3rem 0.7rem" }}
+          >
+            {ingesting ? "Ingesting…" : "Ingest & add"}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -196,6 +238,7 @@ export default function UniversePage() {
   const [allocationError, setAllocationError] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
+  const [removingMember, setRemovingMember] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const loadThemes = useCallback(async (selectAfter?: string) => {
@@ -264,6 +307,19 @@ export default function UniversePage() {
     }
   }
 
+  async function handleRemoveMember(ticker: string) {
+    if (!selected) return;
+    setRemovingMember(ticker);
+    try {
+      await api.removeTickerFromTheme(selected, ticker);
+      await loadThemeDetail(selected);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Couldn't remove ${ticker}`);
+    } finally {
+      setRemovingMember(null);
+    }
+  }
+
   async function handleAllocate() {
     const amount = parseFloat(investAmount);
     if (!members.length || !amount || amount <= 0) {
@@ -311,6 +367,8 @@ export default function UniversePage() {
         <p className="eyebrow" style={{ marginBottom: "0.75rem" }}>Create a theme</p>
         <CreateThemeForm onCreated={(name) => loadThemes(name)} />
       </section>
+
+      <SuggestTheme onCreated={(name) => loadThemes(name)} />
 
       <section className="card" style={{ marginBottom: "1.5rem" }}>
         <p className="eyebrow" style={{ marginBottom: "0.75rem" }}>Ingest an ETF</p>
@@ -371,6 +429,7 @@ export default function UniversePage() {
                           <th style={{ padding: "0.35rem 0.5rem" }}>GROWTH</th>
                           <th style={{ padding: "0.35rem 0.5rem" }}>MOMENTUM</th>
                           <th style={{ padding: "0.35rem 0.5rem" }}>SIZE</th>
+                          <th style={{ padding: "0.35rem 0.5rem" }}></th>
                         </tr>
                       </thead>
                       <tbody>
@@ -387,6 +446,19 @@ export default function UniversePage() {
                               <td className={zClass(r?.growth_z ?? null)} style={{ padding: "0.5rem", textAlign: "right" }}>{fmtZ(r?.growth_z ?? null)}</td>
                               <td className={zClass(r?.momentum_z ?? null)} style={{ padding: "0.5rem", textAlign: "right" }}>{fmtZ(r?.momentum_z ?? null)}</td>
                               <td className={zClass(r?.size_z ?? null)} style={{ padding: "0.5rem", textAlign: "right" }}>{fmtZ(r?.size_z ?? null)}</td>
+                              <td style={{ padding: "0.5rem", textAlign: "right" }}>
+                                <button
+                                  onClick={() => handleRemoveMember(ticker)}
+                                  disabled={removingMember === ticker}
+                                  aria-label={`Remove ${ticker} from ${selected}`}
+                                  style={{
+                                    background: "none", border: "none", color: "var(--text-soft)",
+                                    cursor: "pointer", fontSize: "0.9rem", padding: "0 0.25rem",
+                                  }}
+                                >
+                                  {removingMember === ticker ? "…" : "×"}
+                                </button>
+                              </td>
                             </tr>
                           );
                         })}
