@@ -23,7 +23,7 @@ export default function ForgotPasswordPage() {
       await api.forgotPassword(email.trim());
       setSubmitted(true);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
+      setError(err instanceof ApiError ? err.message : "Couldn't reach the server. Check your connection and try again.");
     } finally {
       setLoading(false);
     }

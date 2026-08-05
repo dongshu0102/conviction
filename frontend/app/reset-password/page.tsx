@@ -38,7 +38,7 @@ function ResetPasswordForm() {
       // The backend returns the same message for "invalid token" and
       // "expired token" — deliberately, no reason to distinguish them
       // for the user beyond "this link no longer works."
-      setError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
+      setError(err instanceof ApiError ? err.message : "Couldn't reach the server. Check your connection and try again.");
     } finally {
       setLoading(false);
     }

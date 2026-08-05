@@ -83,6 +83,14 @@ describe("Dashboard page", () => {
     expect(screen.queryByPlaceholderText(/Ask a question/)).not.toBeInTheDocument();
   });
 
+  it("features Growth Hunter prominently, linking to the actual differentiator", async () => {
+    mockLoads();
+    render(<DashboardPage />);
+
+    await waitFor(() => screen.getByText("Find the case, not the hype"));
+    expect(screen.getByText("Assess a stock →").closest("a")).toHaveAttribute("href", "/growth-hunter");
+  });
+
   it("generating the daily brief calls the API and renders the narrative", async () => {
     mockLoads();
     vi.spyOn(api, "getDailyBrief").mockResolvedValue({

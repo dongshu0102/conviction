@@ -100,7 +100,7 @@ export function ChatPanel({ height = 380 }: { height?: string | number } = {}) {
           )}
           {error && (
             <p className="num loss" style={{ fontSize: "0.85rem" }}>
-              {error.message || "Something went wrong."}
+              {error.message || "Couldn't reach the server. Check your connection and try again."}
             </p>
           )}
           <div ref={bottomRef} />

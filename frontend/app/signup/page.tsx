@@ -33,7 +33,7 @@ export default function SignUpPage() {
       setApiKey(result.plaintext_key);
       router.push("/dashboard");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
+      setError(err instanceof ApiError ? err.message : "Couldn't reach the server. Check your connection and try again.");
     } finally {
       setLoading(false);
     }
@@ -53,7 +53,7 @@ export default function SignUpPage() {
         <p className="eyebrow" style={{ marginBottom: "0.5rem" }}>
           Conviction
         </p>
-        <h1 style={{ fontSize: "2rem", marginBottom: "0.75rem" }}>Create your account.</h1>
+        <h1 style={{ fontSize: "2rem", marginBottom: "0.75rem" }}>Start with the real numbers.</h1>
         <p style={{ color: "var(--text-soft)", marginBottom: "2rem", lineHeight: 1.6 }}>
           Real email and password now — this account is yours alone, and no one
           else can mint a key under your identity without knowing this password.

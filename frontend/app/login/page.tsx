@@ -25,7 +25,7 @@ export default function LoginPage() {
       // Deliberately the same message the backend gives for both a
       // wrong password and an unregistered email — never confirm
       // which one it was.
-      setError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
+      setError(err instanceof ApiError ? err.message : "Couldn't reach the server. Check your connection and try again.");
     } finally {
       setLoading(false);
     }
@@ -45,7 +45,7 @@ export default function LoginPage() {
         <p className="eyebrow" style={{ marginBottom: "0.5rem" }}>
           Conviction
         </p>
-        <h1 style={{ fontSize: "2rem", marginBottom: "0.75rem" }}>Open your ledger.</h1>
+        <h1 style={{ fontSize: "2rem", marginBottom: "0.75rem" }}>Welcome back.</h1>
         <p style={{ color: "var(--text-soft)", marginBottom: "2rem", lineHeight: 1.6 }}>
           Log in with your email and password.
         </p>

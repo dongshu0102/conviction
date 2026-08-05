@@ -81,9 +81,8 @@ export default function DashboardPage() {
           {!brief && (
             <div>
               <p style={{ color: "var(--text-soft)", marginBottom: "1rem", lineHeight: 1.6 }}>
-                Generate a short AI summary of your watchlist and portfolios. This
-                makes a real model call — worth generating once per session, not
-                on every visit.
+                A short AI summary of your watchlist and portfolios. Real model
+                call, worth generating once per session, not on every visit.
               </p>
               <button className="btn-primary" onClick={loadBrief} disabled={briefLoading}>
                 {briefLoading ? "Writing…" : "Get today's brief"}
@@ -101,6 +100,25 @@ export default function DashboardPage() {
             </div>
           )}
         </section>
+
+        <Link
+          href="/growth-hunter"
+          className="card"
+          style={{ textDecoration: "none", color: "var(--text)", display: "block", marginBottom: "1.25rem", borderLeft: "3px solid var(--accent)" }}
+        >
+          <p className="eyebrow" style={{ marginBottom: "0.5rem" }}>Growth Hunter</p>
+          <p style={{ margin: "0 0 0.5rem", fontFamily: "var(--font-display)", fontSize: "1.1rem", fontWeight: 600 }}>
+            Find the case, not the hype
+          </p>
+          <p style={{ margin: 0, color: "var(--text-soft)", fontSize: "0.9rem", lineHeight: 1.6 }}>
+            A different kind of analysis for early-stage companies — revenue
+            trajectory, real risk flags, cash runway. Never a bare score,
+            never a recommendation, always the honest breakdown.
+          </p>
+          <p style={{ margin: "0.75rem 0 0", fontSize: "0.85rem", color: "var(--accent)" }}>
+            Assess a stock →
+          </p>
+        </Link>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem", marginBottom: "1.25rem" }}>
           <Link href="/portfolios" className="card" style={{ textDecoration: "none", color: "var(--text)" }}>
@@ -125,8 +143,8 @@ export default function DashboardPage() {
         <Link href="/chat" className="card" style={{ textDecoration: "none", color: "var(--text)", display: "block" }}>
           <p className="eyebrow" style={{ marginBottom: "0.5rem" }}>Ask Conviction</p>
           <p style={{ margin: 0, color: "var(--text-soft)", fontSize: "0.9rem" }}>
-            Factor scores, portfolio risk, theme synthesis — anything across the
-            platform, grounded in real computation.
+            Factor scores, portfolio risk, theme synthesis, deleting a
+            theme — anything on the platform, grounded in real computation.
           </p>
           <p style={{ margin: "0.6rem 0 0", fontSize: "0.85rem", color: "var(--accent)" }}>
             Open chat →

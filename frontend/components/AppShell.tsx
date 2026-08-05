@@ -24,11 +24,11 @@ import { clearApiKey } from "@/lib/api";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: "◆" },
-  { href: "/terminal", label: "Watchlist", icon: "▤" },
-  { href: "/universe", label: "Universe", icon: "◈" },
   { href: "/growth-hunter", label: "Growth Hunter", icon: "◎" },
-  { href: "/portfolios", label: "Portfolios", icon: "▣" },
   { href: "/chat", label: "Chat", icon: "◐" },
+  { href: "/universe", label: "Universe", icon: "◈" },
+  { href: "/terminal", label: "Watchlist", icon: "▤" },
+  { href: "/portfolios", label: "Portfolios", icon: "▣" },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
