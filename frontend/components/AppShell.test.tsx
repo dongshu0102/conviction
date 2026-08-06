@@ -32,6 +32,7 @@ describe("AppShell", () => {
     expect(screen.getByText("Universe")).toBeInTheDocument();
     expect(screen.getByText("Growth Hunter")).toBeInTheDocument();
     expect(screen.getByText("Portfolios")).toBeInTheDocument();
+    expect(screen.getByText("Alerts")).toBeInTheDocument();
     expect(screen.getByText("Chat")).toBeInTheDocument();
   });
 

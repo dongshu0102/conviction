@@ -413,6 +413,17 @@ export interface UpcomingEarningsResponse {
   events: EarningsEvent[];
 }
 
+export interface Alert {
+  id: number;
+  user_id: string;
+  ticker: string;
+  alert_type: string;
+  message: string;
+  change_pct: number | null;
+  is_read: boolean;
+  created_at: string;
+}
+
 export const api = {
   signUp: (email: string, password: string) =>
     request<{ plaintext_key: string; user_id: string }>("/auth/signup", {
@@ -575,6 +586,11 @@ export const api = {
       "/growth-candidates/check",
       { method: "POST" }
     ),
+  getAlerts: (unreadOnly = false) =>
+    request<Alert[]>(`/alerts?unread_only=${unreadOnly}`),
+  markAlertRead: (alertId: number) =>
+    request(`/alerts/${alertId}/read`, { method: "POST" }),
+  checkAlerts: () => request<Alert[]>("/alerts/check", { method: "POST" }),
 
   // Universe themes
   listThemes: () => request<{ themes: UniverseThemeSummary[] }>("/universe/themes"),
