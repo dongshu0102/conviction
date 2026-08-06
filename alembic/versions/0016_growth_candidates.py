@@ -1,6 +1,6 @@
 """speculative growth candidates: per-user tracked tickers + last-known state
 
-Revision ID: 0016_speculative_growth_candidates
+Revision ID: 0016_growth_candidates
 Revises: 0015_user_roles
 Create Date: 2026-08-06
 
@@ -9,6 +9,15 @@ decision to track a ticker against the "is 100x possible" conditions,
 not a shared taxonomy. The last-known-state columns mirror PriceSnapshot's
 role for price monitoring: they exist purely so a later check can detect
 a genuine change instead of re-alerting on steady-state every run.
+
+NOTE on this migration's own history: the first version of this file
+used the full descriptive name "0016_speculative_growth_candidates" as
+the revision id — 34 characters, silently exceeding alembic_version's
+VARCHAR(32) column. Every deploy attempt got as far as creating the
+table, then crashed on the final "mark this revision applied" UPDATE,
+looping the container in an endless restart. Fixed by shortening the
+id; upgrade() below is also written to be safe to re-run regardless of
+whether that partial table creation already happened on this database.
 """
 from __future__ import annotations
 
@@ -16,14 +25,23 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 
-revision: str = "0016_speculative_growth_candidates"
+revision: str = "0016_growth_candidates"
 down_revision: Union[str, None] = "0015_user_roles"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    if "speculative_growth_candidates" in inspector.get_table_names():
+        # A prior failed attempt (see NOTE above) may have already
+        # created this table before crashing on the version-tracking
+        # update — nothing left to do.
+        return
+
     op.create_table(
         "speculative_growth_candidates",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),

@@ -355,7 +355,7 @@ class AlertSchema(BaseModel):
     ticker: str
     alert_type: str
     message: str
-    change_pct: float
+    change_pct: float | None
     is_read: bool
     created_at: datetime
 
