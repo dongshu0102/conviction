@@ -5,7 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import { AppShell } from "@/components/AppShell";
-import { api, getApiKey, PortfolioRiskAnalysis, PortfolioValuation } from "@/lib/api";
+import { api, getApiKey, PortfolioRiskAnalysis, PortfolioValuation, OptionPortfolioValuation } from "@/lib/api";
 import { LedgerRow } from "@/components/LedgerRow";
 
 const usd = (n: number) =>
@@ -87,6 +87,109 @@ function AddHoldingForm({ portfolioId, onAdded }: { portfolioId: string; onAdded
   );
 }
 
+function AddOptionForm({ portfolioId, onAdded }: { portfolioId: string; onAdded: () => void }) {
+  const [ticker, setTicker] = useState("");
+  const [strike, setStrike] = useState("");
+  const [expiration, setExpiration] = useState("");
+  const [optionType, setOptionType] = useState<"call" | "put">("call");
+  const [contracts, setContracts] = useState("");
+  const [costBasis, setCostBasis] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const strikeNum = parseFloat(strike);
+    const contractsNum = parseFloat(contracts);
+    const costNum = parseFloat(costBasis);
+    if (
+      !ticker.trim() || !strikeNum || strikeNum <= 0 || !expiration ||
+      !contractsNum || contractsNum <= 0 || isNaN(costNum) || costNum < 0
+    ) {
+      setError("Enter a ticker, positive strike, expiration date, positive contracts, and a cost basis.");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      await api.addOptionHolding(portfolioId, ticker.trim(), strikeNum, expiration, optionType, contractsNum, costNum);
+      setTicker("");
+      setStrike("");
+      setExpiration("");
+      setContracts("");
+      setCostBasis("");
+      onAdded();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add option holding");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} style={{ marginTop: "1rem" }}>
+      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+        <input
+          type="text"
+          placeholder="Ticker"
+          value={ticker}
+          onChange={(e) => setTicker(e.target.value.toUpperCase())}
+          style={{ flex: "1 1 80px", fontSize: "0.9rem", padding: "0.55rem 0.75rem" }}
+        />
+        <select
+          value={optionType}
+          onChange={(e) => setOptionType(e.target.value as "call" | "put")}
+          style={{ flex: "1 1 80px", fontSize: "0.9rem", padding: "0.55rem 0.75rem" }}
+        >
+          <option value="call">Call</option>
+          <option value="put">Put</option>
+        </select>
+        <input
+          type="number"
+          placeholder="Strike"
+          value={strike}
+          onChange={(e) => setStrike(e.target.value)}
+          style={{ flex: "1 1 90px", fontSize: "0.9rem", padding: "0.55rem 0.75rem" }}
+        />
+        <input
+          type="date"
+          placeholder="Expiration"
+          value={expiration}
+          onChange={(e) => setExpiration(e.target.value)}
+          style={{ flex: "1 1 140px", fontSize: "0.9rem", padding: "0.55rem 0.75rem" }}
+        />
+        <input
+          type="number"
+          placeholder="Contracts"
+          value={contracts}
+          onChange={(e) => setContracts(e.target.value)}
+          style={{ flex: "1 1 90px", fontSize: "0.9rem", padding: "0.55rem 0.75rem" }}
+        />
+        <input
+          type="number"
+          placeholder="Cost / contract"
+          value={costBasis}
+          onChange={(e) => setCostBasis(e.target.value)}
+          style={{ flex: "1 1 120px", fontSize: "0.9rem", padding: "0.55rem 0.75rem" }}
+        />
+        <button
+          type="submit"
+          className="btn-primary"
+          disabled={loading}
+          style={{ padding: "0.55rem 1.1rem", fontSize: "0.9rem", whiteSpace: "nowrap" }}
+        >
+          {loading ? "…" : "Add"}
+        </button>
+      </div>
+      {error && (
+        <p className="num loss" style={{ fontSize: "0.78rem", marginTop: "0.5rem" }}>
+          {error}
+        </p>
+      )}
+    </form>
+  );
+}
+
 export default function PortfolioDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -94,11 +197,13 @@ export default function PortfolioDetailPage() {
 
   const [valuation, setValuation] = useState<PortfolioValuation | null>(null);
   const [risk, setRisk] = useState<PortfolioRiskAnalysis | null>(null);
+  const [options, setOptions] = useState<OptionPortfolioValuation | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [removingTicker, setRemovingTicker] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [removingOption, setRemovingOption] = useState<string | null>(null);
 
   useEffect(() => {
     if (!getApiKey()) {
@@ -106,11 +211,17 @@ export default function PortfolioDetailPage() {
       return;
     }
     loadValuation();
-    // Risk is loaded separately and allowed to fail quietly — a
-    // portfolio's core valuation must never be blocked by the
-    // volatility panel not loading (e.g. too little price history).
+    // Risk and options are loaded separately and allowed to fail
+    // quietly — a portfolio's core valuation must never be blocked by
+    // either panel not loading (e.g. too little price history, or no
+    // options positions at all).
     api.getPortfolioRisk(id).then(setRisk).catch(() => setRisk(null));
+    loadOptions();
   }, [id, router]);
+
+  function loadOptions() {
+    return api.getOptionPortfolioValuation(id).then(setOptions).catch(() => setOptions(null));
+  }
 
   function loadValuation() {
     return api
@@ -129,6 +240,20 @@ export default function PortfolioDetailPage() {
       setError(err instanceof Error ? err.message : `Couldn't remove ${ticker}`);
     } finally {
       setRemovingTicker(null);
+    }
+  }
+
+  async function handleRemoveOption(position: OptionPortfolioValuation["positions"][number]) {
+    setRemovingOption(position.contract);
+    try {
+      await api.removeOptionHolding(
+        id, position.underlying_ticker, position.strike, position.expiration, position.option_type
+      );
+      await loadOptions();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Couldn't remove ${position.contract}`);
+    } finally {
+      setRemovingOption(null);
     }
   }
 
@@ -289,6 +414,48 @@ export default function PortfolioDetailPage() {
             />
           ))}
           <AddHoldingForm portfolioId={id} onAdded={loadValuation} />
+        </div>
+      </section>
+
+      <section style={{ marginTop: "2.5rem" }}>
+        <p className="eyebrow" style={{ marginBottom: "0.75rem" }}>
+          Options
+        </p>
+        <div className="card">
+          {(!options || options.positions.length === 0) && (
+            <p style={{ color: "var(--text-soft)" }}>No option holdings yet — add one below.</p>
+          )}
+          {options && options.positions.length > 0 && (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "1rem" }}>
+                <p className="eyebrow" style={{ fontSize: "0.65rem", margin: 0 }}>Total options value</p>
+                <p className={`num ${options.total_unrealized_gain >= 0 ? "gain" : "loss"}`} style={{ margin: 0, fontSize: "1.1rem" }}>
+                  {usd(options.total_market_value)}
+                  <span style={{ fontSize: "0.8rem" }}>
+                    {" "}({options.total_unrealized_gain >= 0 ? "+" : ""}
+                    {(options.total_unrealized_gain_pct * 100).toFixed(1)}%)
+                  </span>
+                </p>
+              </div>
+              {options.positions.map((p) => (
+                <LedgerRow
+                  key={p.contract}
+                  label={p.contract}
+                  sublabel={`${p.contracts_held} contract${p.contracts_held === 1 ? "" : "s"} @ ${usd(p.current_price)}`}
+                  value={usd(p.market_value)}
+                  changePct={p.unrealized_gain_pct}
+                  onRemove={() => handleRemoveOption(p)}
+                  removing={removingOption === p.contract}
+                />
+              ))}
+              {options.positions_excluded.length > 0 && (
+                <p className="num" style={{ color: "var(--text-soft)", fontSize: "0.75rem", marginTop: "0.75rem" }}>
+                  Excluded from valuation (no live pricing available): {options.positions_excluded.join(", ")}
+                </p>
+              )}
+            </>
+          )}
+          <AddOptionForm portfolioId={id} onAdded={loadOptions} />
         </div>
       </section>
 

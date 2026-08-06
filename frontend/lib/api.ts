@@ -110,6 +110,28 @@ export interface Portfolio {
   holdings: { ticker: string; shares: number; cost_basis_per_share: number }[];
 }
 
+export interface OptionPosition {
+  contract: string;
+  underlying_ticker: string;
+  strike: number;
+  expiration: string;
+  option_type: "call" | "put";
+  contracts_held: number;
+  current_price: number;
+  market_value: number;
+  unrealized_gain: number;
+  unrealized_gain_pct: number;
+}
+
+export interface OptionPortfolioValuation {
+  total_market_value: number;
+  total_cost_basis: number;
+  total_unrealized_gain: number;
+  total_unrealized_gain_pct: number;
+  positions: OptionPosition[];
+  positions_excluded: string[];
+}
+
 export interface PositionValue {
   ticker: string;
   shares: number;
@@ -392,6 +414,46 @@ export const api = {
     }),
   deletePortfolio: (portfolioId: string) =>
     request(`/portfolios/${portfolioId}`, { method: "DELETE" }),
+  addOptionHolding: (
+    portfolioId: string,
+    underlyingTicker: string,
+    strike: number,
+    expiration: string,
+    optionType: "call" | "put",
+    contractsHeld: number,
+    costBasisPerContract: number
+  ) =>
+    request(`/portfolios/${portfolioId}/options`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        underlying_ticker: underlyingTicker.toUpperCase(),
+        strike,
+        expiration,
+        option_type: optionType,
+        contracts_held: contractsHeld,
+        cost_basis_per_contract: costBasisPerContract,
+      }),
+    }),
+  removeOptionHolding: (
+    portfolioId: string,
+    underlyingTicker: string,
+    strike: number,
+    expiration: string,
+    optionType: "call" | "put"
+  ) =>
+    request(`/portfolios/${portfolioId}/options`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        underlying_ticker: underlyingTicker.toUpperCase(),
+        strike,
+        expiration,
+        option_type: optionType,
+      }),
+    }),
+  getOptionPortfolioValuation: (portfolioId: string) =>
+    request<OptionPortfolioValuation>(`/portfolios/${portfolioId}/options/valuation`),
   getDailyBrief: () => request<DailyBrief>("/brief"),
   getTriage: (listName?: string) =>
     request<TriageResponse>(

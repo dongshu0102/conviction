@@ -432,6 +432,10 @@ class PortfolioGreeksSchema(BaseModel):
 
 class OptionPositionSchema(BaseModel):
     contract: str
+    underlying_ticker: str
+    strike: float
+    expiration: date
+    option_type: str
     contracts_held: float
     current_price: float
     market_value: float

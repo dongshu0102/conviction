@@ -58,6 +58,14 @@ const SAMPLE_RISK: PortfolioRiskAnalysis = {
 function mockBaseLoads() {
   vi.spyOn(api, "getPortfolioValuation").mockResolvedValue(SAMPLE_VALUATION);
   vi.spyOn(api, "getPortfolioRisk").mockResolvedValue(SAMPLE_RISK);
+  vi.spyOn(api, "getOptionPortfolioValuation").mockResolvedValue({
+    total_market_value: 0,
+    total_cost_basis: 0,
+    total_unrealized_gain: 0,
+    total_unrealized_gain_pct: 0,
+    positions: [],
+    positions_excluded: [],
+  });
 }
 
 beforeEach(() => {
@@ -134,5 +142,63 @@ describe("Portfolio detail page", () => {
       expect(screen.getByText("Delete portfolio")).toBeInTheDocument();
     });
     expect(deleteSpy).not.toHaveBeenCalled();
+  });
+
+  it("shows the empty state when there are no option holdings", async () => {
+    mockBaseLoads();
+    render(<PortfolioDetailPage />);
+    await waitFor(() => screen.getByText("No option holdings yet — add one below."));
+  });
+
+  it("renders a real option position and its remove button calls the API with the correct fields", async () => {
+    mockBaseLoads();
+    vi.spyOn(api, "getOptionPortfolioValuation").mockResolvedValue({
+      total_market_value: 500,
+      total_cost_basis: 400,
+      total_unrealized_gain: 100,
+      total_unrealized_gain_pct: 0.25,
+      positions: [
+        {
+          contract: "NVDA 2026-09-18 CALL 500.0",
+          underlying_ticker: "NVDA",
+          strike: 500,
+          expiration: "2026-09-18",
+          option_type: "call",
+          contracts_held: 1,
+          current_price: 5,
+          market_value: 500,
+          unrealized_gain: 100,
+          unrealized_gain_pct: 0.25,
+        },
+      ],
+      positions_excluded: [],
+    });
+    const removeSpy = vi.spyOn(api, "removeOptionHolding").mockResolvedValue(undefined as any);
+    render(<PortfolioDetailPage />);
+
+    await waitFor(() => screen.getByText("NVDA 2026-09-18 CALL 500.0"));
+    fireEvent.click(screen.getByLabelText("Remove NVDA 2026-09-18 CALL 500.0"));
+
+    await waitFor(() => {
+      expect(removeSpy).toHaveBeenCalledWith("port-1", "NVDA", 500, "2026-09-18", "call");
+    });
+  });
+
+  it("submitting the add-option form calls api.addOptionHolding with the correct fields", async () => {
+    mockBaseLoads();
+    const addSpy = vi.spyOn(api, "addOptionHolding").mockResolvedValue(undefined as any);
+    render(<PortfolioDetailPage />);
+
+    await waitFor(() => screen.getAllByPlaceholderText("Ticker"));
+    fireEvent.change(screen.getAllByPlaceholderText("Ticker")[1], { target: { value: "nvda" } });
+    fireEvent.change(screen.getByPlaceholderText("Strike"), { target: { value: "500" } });
+    fireEvent.change(screen.getByPlaceholderText("Expiration"), { target: { value: "2026-09-18" } });
+    fireEvent.change(screen.getByPlaceholderText("Contracts"), { target: { value: "2" } });
+    fireEvent.change(screen.getByPlaceholderText("Cost / contract"), { target: { value: "4.50" } });
+    fireEvent.click(screen.getAllByText("Add")[1]);
+
+    await waitFor(() => {
+      expect(addSpy).toHaveBeenCalledWith("port-1", "NVDA", 500, "2026-09-18", "call", 2, 4.5);
+    });
   });
 });

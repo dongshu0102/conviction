@@ -497,7 +497,12 @@ def get_option_portfolio_valuation(
         total_unrealized_gain_pct=result.total_unrealized_gain_pct,
         positions=[
             OptionPositionSchema(
-                contract=p.contract.occ_symbol_fragment, contracts_held=p.contracts_held,
+                contract=p.contract.occ_symbol_fragment,
+                underlying_ticker=p.contract.underlying_ticker,
+                strike=p.contract.strike,
+                expiration=p.contract.expiration,
+                option_type=p.contract.option_type,
+                contracts_held=p.contracts_held,
                 current_price=p.current_price, market_value=p.market_value,
                 unrealized_gain=p.unrealized_gain, unrealized_gain_pct=p.unrealized_gain_pct,
             )
