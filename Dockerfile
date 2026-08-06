@@ -14,6 +14,7 @@ COPY src/ ./src/
 COPY alembic/ ./alembic/
 COPY alembic.ini .
 COPY entrypoint.sh .
+COPY scripts/ ./scripts/
 RUN chmod +x entrypoint.sh
 
 # Non-root user — never run a production container as root
