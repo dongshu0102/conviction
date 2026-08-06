@@ -201,4 +201,74 @@ describe("Portfolio detail page", () => {
       expect(addSpy).toHaveBeenCalledWith("port-1", "NVDA", 500, "2026-09-18", "call", 2, 4.5);
     });
   });
+
+  it("clicking Compute on Greeks calls the API and renders the real values", async () => {
+    mockBaseLoads();
+    vi.spyOn(api, "getPortfolioGreeks").mockResolvedValue({
+      total_delta: 0.65, total_gamma: 0.012, total_theta: -0.34, total_vega: 1.2,
+      positions_included: 1, positions_excluded: [],
+    });
+    render(<PortfolioDetailPage />);
+
+    await waitFor(() => screen.getByText("Portfolio Greeks"));
+    fireEvent.click(screen.getByText("Portfolio Greeks").closest("section")!.querySelector("button")!);
+
+    await waitFor(() => screen.getByText("0.65"));
+    expect(screen.getByText("-0.34")).toBeInTheDocument();
+  });
+
+  it("shows the hedging plan's note when there is nothing to hedge", async () => {
+    mockBaseLoads();
+    vi.spyOn(api, "getHedgingSuggestion").mockResolvedValue({
+      suggestions: [], positions_excluded: [],
+      note: "No underlying has meaningful net delta exposure — nothing to hedge.",
+    });
+    render(<PortfolioDetailPage />);
+
+    await waitFor(() => screen.getByText("Hedging Suggestion"));
+    fireEvent.click(screen.getByText("Hedging Suggestion").closest("section")!.querySelector("button")!);
+
+    await waitFor(() => {
+      expect(screen.getByText("No underlying has meaningful net delta exposure — nothing to hedge.")).toBeInTheDocument();
+    });
+  });
+
+  it("clicking Compute on Recommendations renders a real pick", async () => {
+    mockBaseLoads();
+    vi.spyOn(api, "getRecommendations").mockResolvedValue({
+      gap_sectors: ["Healthcare"],
+      scoring_note: "Within picks, lower value_score/quality_score/composite_score is better.",
+      picks: [
+        {
+          ticker: "UNH", gap_sector: "Healthcare", current_sector_weight: 0,
+          price: 500, price_to_earnings: 18, return_on_equity: 0.22, composite_score: 0.4,
+        },
+      ],
+      note: null,
+    });
+    render(<PortfolioDetailPage />);
+
+    await waitFor(() => screen.getByText("Recommendations"));
+    fireEvent.click(screen.getByText("Recommendations").closest("section")!.querySelector("button")!);
+
+    await waitFor(() => screen.getByText("UNH"));
+    expect(screen.getByText(/Fills Healthcare gap/)).toBeInTheDocument();
+  });
+
+  it("clicking Compute on Rebalancing renders a real trim suggestion", async () => {
+    mockBaseLoads();
+    vi.spyOn(api, "getRebalanceSuggestion").mockResolvedValue({
+      target_max_weight: 0.3,
+      suggestions: [
+        { ticker: "NVDA", current_weight: 0.5, target_weight: 0.3, shares_to_trim: 4, estimated_proceeds: 480 },
+      ],
+      note: null,
+    });
+    render(<PortfolioDetailPage />);
+
+    await waitFor(() => screen.getByText("Rebalancing Suggestion"));
+    fireEvent.click(screen.getByText("Rebalancing Suggestion").closest("section")!.querySelector("button")!);
+
+    await waitFor(() => screen.getByText("Trim 4 sh"));
+  });
 });

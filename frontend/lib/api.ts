@@ -110,6 +110,59 @@ export interface Portfolio {
   holdings: { ticker: string; shares: number; cost_basis_per_share: number }[];
 }
 
+export interface PortfolioGreeks {
+  total_delta: number;
+  total_gamma: number;
+  total_theta: number;
+  total_vega: number;
+  positions_included: number;
+  positions_excluded: string[];
+}
+
+export interface HedgingSuggestion {
+  underlying_ticker: string;
+  net_delta: number;
+  shares_to_trade: number;
+  resulting_delta: number;
+}
+
+export interface HedgingPlan {
+  suggestions: HedgingSuggestion[];
+  positions_excluded: string[];
+  note: string | null;
+}
+
+export interface RecommendationPick {
+  ticker: string;
+  gap_sector: string;
+  current_sector_weight: number;
+  price: number;
+  price_to_earnings: number | null;
+  return_on_equity: number | null;
+  composite_score: number | null;
+}
+
+export interface Recommendations {
+  gap_sectors: string[];
+  scoring_note: string | null;
+  picks: RecommendationPick[];
+  note: string | null;
+}
+
+export interface RebalanceSuggestion {
+  ticker: string;
+  current_weight: number;
+  target_weight: number;
+  shares_to_trim: number;
+  estimated_proceeds: number;
+}
+
+export interface RebalancePlan {
+  target_max_weight: number;
+  suggestions: RebalanceSuggestion[];
+  note: string | null;
+}
+
 export interface OptionPosition {
   contract: string;
   underlying_ticker: string;
@@ -454,6 +507,18 @@ export const api = {
     }),
   getOptionPortfolioValuation: (portfolioId: string) =>
     request<OptionPortfolioValuation>(`/portfolios/${portfolioId}/options/valuation`),
+  getPortfolioGreeks: (portfolioId: string) =>
+    request<PortfolioGreeks>(`/portfolios/${portfolioId}/options/greeks`),
+  getHedgingSuggestion: (portfolioId: string) =>
+    request<HedgingPlan>(`/portfolios/${portfolioId}/options/hedging-suggestion`),
+  getRecommendations: (portfolioId: string, maxRecommendations = 5) =>
+    request<Recommendations>(
+      `/portfolios/${portfolioId}/recommendations?max_recommendations=${maxRecommendations}`
+    ),
+  getRebalanceSuggestion: (portfolioId: string, targetMaxWeight = 0.3) =>
+    request<RebalancePlan>(
+      `/portfolios/${portfolioId}/rebalance-suggestion?target_max_weight=${targetMaxWeight}`
+    ),
   getDailyBrief: () => request<DailyBrief>("/brief"),
   getTriage: (listName?: string) =>
     request<TriageResponse>(

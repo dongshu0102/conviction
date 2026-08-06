@@ -5,7 +5,10 @@ import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import { AppShell } from "@/components/AppShell";
-import { api, getApiKey, PortfolioRiskAnalysis, PortfolioValuation, OptionPortfolioValuation } from "@/lib/api";
+import {
+  api, getApiKey, PortfolioRiskAnalysis, PortfolioValuation, OptionPortfolioValuation,
+  PortfolioGreeks, HedgingPlan, Recommendations, RebalancePlan,
+} from "@/lib/api";
 import { LedgerRow } from "@/components/LedgerRow";
 
 const usd = (n: number) =>
@@ -204,6 +207,18 @@ export default function PortfolioDetailPage() {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [removingOption, setRemovingOption] = useState<string | null>(null);
+  const [greeks, setGreeks] = useState<PortfolioGreeks | null>(null);
+  const [greeksLoading, setGreeksLoading] = useState(false);
+  const [greeksError, setGreeksError] = useState<string | null>(null);
+  const [hedging, setHedging] = useState<HedgingPlan | null>(null);
+  const [hedgingLoading, setHedgingLoading] = useState(false);
+  const [hedgingError, setHedgingError] = useState<string | null>(null);
+  const [recommendations, setRecommendations] = useState<Recommendations | null>(null);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+  const [recommendationsError, setRecommendationsError] = useState<string | null>(null);
+  const [rebalance, setRebalance] = useState<RebalancePlan | null>(null);
+  const [rebalanceLoading, setRebalanceLoading] = useState(false);
+  const [rebalanceError, setRebalanceError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!getApiKey()) {
@@ -254,6 +269,54 @@ export default function PortfolioDetailPage() {
       setError(err instanceof Error ? err.message : `Couldn't remove ${position.contract}`);
     } finally {
       setRemovingOption(null);
+    }
+  }
+
+  async function handleLoadGreeks() {
+    setGreeksLoading(true);
+    setGreeksError(null);
+    try {
+      setGreeks(await api.getPortfolioGreeks(id));
+    } catch (err) {
+      setGreeksError(err instanceof Error ? err.message : "Couldn't compute Greeks");
+    } finally {
+      setGreeksLoading(false);
+    }
+  }
+
+  async function handleLoadHedging() {
+    setHedgingLoading(true);
+    setHedgingError(null);
+    try {
+      setHedging(await api.getHedgingSuggestion(id));
+    } catch (err) {
+      setHedgingError(err instanceof Error ? err.message : "Couldn't compute a hedging suggestion");
+    } finally {
+      setHedgingLoading(false);
+    }
+  }
+
+  async function handleLoadRecommendations() {
+    setRecommendationsLoading(true);
+    setRecommendationsError(null);
+    try {
+      setRecommendations(await api.getRecommendations(id));
+    } catch (err) {
+      setRecommendationsError(err instanceof Error ? err.message : "Couldn't compute recommendations");
+    } finally {
+      setRecommendationsLoading(false);
+    }
+  }
+
+  async function handleLoadRebalance() {
+    setRebalanceLoading(true);
+    setRebalanceError(null);
+    try {
+      setRebalance(await api.getRebalanceSuggestion(id));
+    } catch (err) {
+      setRebalanceError(err instanceof Error ? err.message : "Couldn't compute a rebalancing plan");
+    } finally {
+      setRebalanceLoading(false);
     }
   }
 
@@ -459,6 +522,87 @@ export default function PortfolioDetailPage() {
         </div>
       </section>
 
+      <section style={{ marginTop: "2.5rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.75rem" }}>
+          <p className="eyebrow" style={{ margin: 0 }}>Portfolio Greeks</p>
+          {!greeks && (
+            <button className="btn-primary" onClick={handleLoadGreeks} disabled={greeksLoading} style={{ padding: "0.4rem 0.9rem", fontSize: "0.8rem" }}>
+              {greeksLoading ? "Computing…" : "Compute"}
+            </button>
+          )}
+        </div>
+        <div className="card">
+          {greeksError && <p className="num loss" style={{ margin: 0, fontSize: "0.85rem" }}>{greeksError}</p>}
+          {!greeks && !greeksError && (
+            <p style={{ margin: 0, color: "var(--text-soft)", fontSize: "0.9rem" }}>
+              Aggregate delta, gamma, theta, and vega across every option position.
+            </p>
+          )}
+          {greeks && (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "1.25rem" }}>
+                <div>
+                  <p className="eyebrow" style={{ fontSize: "0.65rem" }}>Delta</p>
+                  <p className="num" style={{ fontSize: "1.15rem", margin: "0.2rem 0 0" }}>{greeks.total_delta.toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="eyebrow" style={{ fontSize: "0.65rem" }}>Gamma</p>
+                  <p className="num" style={{ fontSize: "1.15rem", margin: "0.2rem 0 0" }}>{greeks.total_gamma.toFixed(4)}</p>
+                </div>
+                <div>
+                  <p className="eyebrow" style={{ fontSize: "0.65rem" }}>Theta</p>
+                  <p className="num" style={{ fontSize: "1.15rem", margin: "0.2rem 0 0" }}>{greeks.total_theta.toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="eyebrow" style={{ fontSize: "0.65rem" }}>Vega</p>
+                  <p className="num" style={{ fontSize: "1.15rem", margin: "0.2rem 0 0" }}>{greeks.total_vega.toFixed(2)}</p>
+                </div>
+              </div>
+              {greeks.positions_excluded.length > 0 && (
+                <p className="num" style={{ color: "var(--text-soft)", fontSize: "0.75rem", marginTop: "1rem", marginBottom: 0 }}>
+                  Excluded ({greeks.positions_included} position{greeks.positions_included === 1 ? "" : "s"} included): {greeks.positions_excluded.join(", ")}
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      </section>
+
+      <section style={{ marginTop: "2.5rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.75rem" }}>
+          <p className="eyebrow" style={{ margin: 0 }}>Hedging Suggestion</p>
+          {!hedging && (
+            <button className="btn-primary" onClick={handleLoadHedging} disabled={hedgingLoading} style={{ padding: "0.4rem 0.9rem", fontSize: "0.8rem" }}>
+              {hedgingLoading ? "Computing…" : "Compute"}
+            </button>
+          )}
+        </div>
+        <div className="card">
+          {hedgingError && <p className="num loss" style={{ margin: 0, fontSize: "0.85rem" }}>{hedgingError}</p>}
+          {!hedging && !hedgingError && (
+            <p style={{ margin: 0, color: "var(--text-soft)", fontSize: "0.9rem" }}>
+              Share trades that would bring each underlying's net delta exposure toward zero.
+            </p>
+          )}
+          {hedging && hedging.suggestions.length === 0 && (
+            <p style={{ margin: 0, color: "var(--text-soft)", fontSize: "0.9rem" }}>{hedging.note}</p>
+          )}
+          {hedging && hedging.suggestions.map((s) => (
+            <div key={s.underlying_ticker} className="ledger-row" style={{ padding: "0.5rem 0" }}>
+              <div>
+                <div style={{ fontWeight: 500 }}>{s.underlying_ticker}</div>
+                <div className="num" style={{ fontSize: "0.78rem", color: "var(--text-soft)" }}>
+                  Net delta {s.net_delta.toFixed(2)} → resulting {s.resulting_delta.toFixed(2)}
+                </div>
+              </div>
+              <div className="num" style={{ fontSize: "0.95rem" }}>
+                {s.shares_to_trade >= 0 ? "Buy" : "Sell"} {Math.abs(s.shares_to_trade).toFixed(0)} sh
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
       {risk && (
         <section style={{ marginTop: "2.5rem" }}>
           <p className="eyebrow" style={{ marginBottom: "0.75rem" }}>
@@ -532,6 +676,93 @@ export default function PortfolioDetailPage() {
           </div>
         </section>
       )}
+
+      <section style={{ marginTop: "2.5rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.75rem" }}>
+          <p className="eyebrow" style={{ margin: 0 }}>Recommendations</p>
+          {!recommendations && (
+            <button className="btn-primary" onClick={handleLoadRecommendations} disabled={recommendationsLoading} style={{ padding: "0.4rem 0.9rem", fontSize: "0.8rem" }}>
+              {recommendationsLoading ? "Computing…" : "Compute"}
+            </button>
+          )}
+        </div>
+        <div className="card">
+          {recommendationsError && <p className="num loss" style={{ margin: 0, fontSize: "0.85rem" }}>{recommendationsError}</p>}
+          {!recommendations && !recommendationsError && (
+            <p style={{ margin: 0, color: "var(--text-soft)", fontSize: "0.9rem" }}>
+              Picks that would fill sector gaps this portfolio doesn't already have exposure to.
+            </p>
+          )}
+          {recommendations && recommendations.picks.length === 0 && (
+            <p style={{ margin: 0, color: "var(--text-soft)", fontSize: "0.9rem" }}>{recommendations.note}</p>
+          )}
+          {recommendations && recommendations.picks.length > 0 && (
+            <>
+              {recommendations.scoring_note && (
+                <p className="num" style={{ color: "var(--text-soft)", fontSize: "0.72rem", marginBottom: "0.75rem" }}>
+                  {recommendations.scoring_note}
+                </p>
+              )}
+              {recommendations.picks.map((p) => (
+                <div key={p.ticker} className="ledger-row" style={{ padding: "0.5rem 0" }}>
+                  <div>
+                    <div style={{ fontWeight: 500 }}>{p.ticker}</div>
+                    <div className="num" style={{ fontSize: "0.78rem", color: "var(--text-soft)" }}>
+                      Fills {p.gap_sector} gap (currently {(p.current_sector_weight * 100).toFixed(1)}%)
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div className="num" style={{ fontSize: "0.95rem" }}>{usd(p.price)}</div>
+                    {p.composite_score !== null && (
+                      <div className="num" style={{ fontSize: "0.78rem", color: "var(--text-soft)" }}>
+                        score {p.composite_score.toFixed(2)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      </section>
+
+      <section style={{ marginTop: "2.5rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.75rem" }}>
+          <p className="eyebrow" style={{ margin: 0 }}>Rebalancing Suggestion</p>
+          {!rebalance && (
+            <button className="btn-primary" onClick={handleLoadRebalance} disabled={rebalanceLoading} style={{ padding: "0.4rem 0.9rem", fontSize: "0.8rem" }}>
+              {rebalanceLoading ? "Computing…" : "Compute"}
+            </button>
+          )}
+        </div>
+        <div className="card">
+          {rebalanceError && <p className="num loss" style={{ margin: 0, fontSize: "0.85rem" }}>{rebalanceError}</p>}
+          {!rebalance && !rebalanceError && (
+            <p style={{ margin: 0, color: "var(--text-soft)", fontSize: "0.9rem" }}>
+              Trims for any position over 30% of the portfolio, by default.
+            </p>
+          )}
+          {rebalance && rebalance.suggestions.length === 0 && (
+            <p style={{ margin: 0, color: "var(--text-soft)", fontSize: "0.9rem" }}>{rebalance.note}</p>
+          )}
+          {rebalance && rebalance.suggestions.map((s) => (
+            <div key={s.ticker} className="ledger-row" style={{ padding: "0.5rem 0" }}>
+              <div>
+                <div style={{ fontWeight: 500 }}>{s.ticker}</div>
+                <div className="num" style={{ fontSize: "0.78rem", color: "var(--text-soft)" }}>
+                  {(s.current_weight * 100).toFixed(1)}% → {(s.target_weight * 100).toFixed(1)}%
+                </div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div className="num" style={{ fontSize: "0.95rem" }}>Trim {s.shares_to_trim.toFixed(0)} sh</div>
+                <div className="num" style={{ fontSize: "0.78rem", color: "var(--text-soft)" }}>
+                  ~{usd(s.estimated_proceeds)}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
     </main>
     </AppShell>
   );
