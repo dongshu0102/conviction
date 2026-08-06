@@ -280,6 +280,38 @@ def test_earnings_alert_does_not_refire_within_window() -> None:
     assert len([a for a in second_run if a.alert_type == AlertType.EARNINGS_UPCOMING]) == 0
 
 
+def test_earnings_alert_recency_check_handles_a_naive_created_at_from_the_database() -> None:
+    """The real SqlAlchemyAlertRepository can return created_at as
+    timezone-naive depending on the column/driver, even though the use
+    case always writes it as UTC-aware — comparing an aware cutoff
+    against a naive value raises TypeError. This test constructs the
+    exact naive-datetime shape a real database round-trip produces,
+    which the other tests in this file never exercise since
+    FakeAlertRepository.save preserves whatever tzinfo was passed in."""
+    company_repo, watchlist_repo = _setup_with_aapl_on_watchlist()
+    snapshot_repo = FakePriceSnapshotRepository()
+    alert_repo = FakeAlertRepository()
+    soon = date.today() + timedelta(days=1)
+    provider = _EarningsMonitoringProvider(
+        company=company_repo.get_by_ticker("AAPL"),
+        quotes_by_ticker={"AAPL": _quote("AAPL", 100.0)},
+        events=[EarningsEvent(ticker="AAPL", report_date=soon, eps_estimated=None,
+                                eps_actual=None, revenue_estimated=None, revenue_actual=None)],
+    )
+    # Simulate a prior alert already in the database with a naive
+    # created_at, bypassing the use case's own (aware) construction.
+    alert_repo.save(Alert(
+        user_id="alice", ticker="AAPL", alert_type=AlertType.EARNINGS_UPCOMING,
+        message="AAPL reports earnings soon",
+        created_at=datetime.now(),  # deliberately naive — no tzinfo
+    ))
+    use_case = RunMonitoringCheckUseCase(watchlist_repo, snapshot_repo, alert_repo, provider)
+
+    alerts = use_case.execute("alice")
+
+    assert [a for a in alerts if a.alert_type == AlertType.EARNINGS_UPCOMING] == []
+
+
 def test_earnings_outside_window_does_not_fire() -> None:
     company_repo, watchlist_repo = _setup_with_aapl_on_watchlist()
     snapshot_repo = FakePriceSnapshotRepository()

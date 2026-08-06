@@ -29,6 +29,15 @@ DEFAULT_ALERT_THRESHOLD = 0.05  # 5% move since last check
 EARNINGS_ALERT_WINDOW_DAYS = 3  # alert when earnings is within this many days out
 
 
+def _as_utc(dt: datetime) -> datetime:
+    """Alerts loaded back from the database can come back timezone-naive
+    depending on the column type/driver, while freshly-computed cutoffs
+    use timezone-aware UTC — comparing the two directly raises
+    TypeError. Every created_at in this codebase is written in UTC, so
+    a naive value is safely assumed to already be UTC, not local time."""
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
 class RunMonitoringCheckUseCase:
     def __init__(
         self,
@@ -166,7 +175,8 @@ class RunMonitoringCheckUseCase:
         recency_cutoff = datetime.now(timezone.utc) - timedelta(days=EARNINGS_ALERT_WINDOW_DAYS)
         already_alerted_tickers = {
             a.ticker for a in existing_alerts
-            if a.alert_type == AlertType.EARNINGS_UPCOMING and a.created_at >= recency_cutoff
+            if a.alert_type == AlertType.EARNINGS_UPCOMING
+            and _as_utc(a.created_at) >= recency_cutoff
         }
 
         fired: list[Alert] = []
