@@ -11,7 +11,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
-import { api, getApiKey, ApiError, SpeculativeGrowthAssessment } from "@/lib/api";
+import { api, getApiKey, ApiError, SpeculativeGrowthAssessment, SpeculativeGrowthCandidate } from "@/lib/api";
 
 function fmtPct(v: number | null): string {
   if (v === null || v === undefined) return "unknown";
@@ -45,10 +45,24 @@ export default function GrowthHunterPage() {
   const [error, setError] = useState<string | null>(null);
   const [notIngested, setNotIngested] = useState(false);
   const [ingesting, setIngesting] = useState(false);
+  const [candidates, setCandidates] = useState<SpeculativeGrowthCandidate[] | null>(null);
+  const [tracking, setTracking] = useState(false);
+  const [removingTicker, setRemovingTicker] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [checkResult, setCheckResult] = useState<string | null>(null);
+  const [candidatesError, setCandidatesError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!getApiKey()) router.push("/login");
+    if (!getApiKey()) {
+      router.push("/login");
+      return;
+    }
+    loadCandidates();
   }, [router]);
+
+  function loadCandidates() {
+    return api.listGrowthCandidates().then(setCandidates).catch(() => setCandidates(null));
+  }
 
   async function runAssessment(t: string) {
     setLoading(true);
@@ -88,6 +102,52 @@ export default function GrowthHunterPage() {
       setError(err instanceof Error ? err.message : "Couldn't ingest that ticker — check it's a real, listed symbol.");
     } finally {
       setIngesting(false);
+    }
+  }
+
+  async function handleTrackCandidate() {
+    if (!assessment) return;
+    setTracking(true);
+    setCandidatesError(null);
+    try {
+      await api.addGrowthCandidate(assessment.ticker);
+      await loadCandidates();
+    } catch (err) {
+      setCandidatesError(err instanceof Error ? err.message : `Couldn't track ${assessment.ticker}`);
+    } finally {
+      setTracking(false);
+    }
+  }
+
+  async function handleRemoveCandidate(t: string) {
+    setRemovingTicker(t);
+    setCandidatesError(null);
+    try {
+      await api.removeGrowthCandidate(t);
+      await loadCandidates();
+    } catch (err) {
+      setCandidatesError(err instanceof Error ? err.message : `Couldn't remove ${t}`);
+    } finally {
+      setRemovingTicker(null);
+    }
+  }
+
+  async function handleCheckNow() {
+    setChecking(true);
+    setCandidatesError(null);
+    setCheckResult(null);
+    try {
+      const alerts = await api.checkGrowthCandidates();
+      setCheckResult(
+        alerts.length === 0
+          ? "No condition changes detected since the last check."
+          : `${alerts.length} condition change${alerts.length === 1 ? "" : "s"} detected — see your alerts.`
+      );
+      await loadCandidates();
+    } catch (err) {
+      setCandidatesError(err instanceof Error ? err.message : "Couldn't run the check");
+    } finally {
+      setChecking(false);
     }
   }
 
@@ -227,8 +287,76 @@ export default function GrowthHunterPage() {
               Genuine large-multiple outcomes are rare; the same traits behind big winners are
               behind total losses too.
             </p>
+
+            {candidates && !candidates.some((c) => c.ticker === assessment.ticker) && (
+              <button
+                className="btn-primary"
+                onClick={handleTrackCandidate}
+                disabled={tracking}
+                style={{ alignSelf: "flex-start" }}
+              >
+                {tracking ? "Tracking…" : `Track ${assessment.ticker} as a candidate`}
+              </button>
+            )}
+            {candidates && candidates.some((c) => c.ticker === assessment.ticker) && (
+              <p className="num" style={{ fontSize: "0.85rem", color: "var(--text-soft)", margin: 0 }}>
+                Already tracking {assessment.ticker} — see your candidate list below.
+              </p>
+            )}
           </div>
         )}
+
+        <section style={{ marginTop: "2.5rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.75rem" }}>
+            <p className="eyebrow" style={{ margin: 0 }}>Tracked candidates</p>
+            {candidates && candidates.length > 0 && (
+              <button
+                onClick={handleCheckNow}
+                disabled={checking}
+                style={{ background: "none", border: "none", color: "var(--accent)", fontSize: "0.8rem", cursor: "pointer" }}
+              >
+                {checking ? "Checking…" : "Check now"}
+              </button>
+            )}
+          </div>
+          <div className="card">
+            {candidatesError && (
+              <p className="num loss" style={{ margin: "0 0 0.75rem", fontSize: "0.85rem" }}>{candidatesError}</p>
+            )}
+            {checkResult && (
+              <p className="num" style={{ margin: "0 0 0.75rem", fontSize: "0.85rem", color: "var(--text-soft)" }}>
+                {checkResult}
+              </p>
+            )}
+            {(!candidates || candidates.length === 0) && (
+              <p style={{ margin: 0, color: "var(--text-soft)" }}>
+                No candidates tracked yet — assess a ticker above, then track it to get alerted
+                on real condition changes (growth trend flips, cash runway drops, market cap
+                crosses the small-cap threshold). Real scheduled checking runs periodically in
+                the background; alerts show up in your regular alerts list.
+              </p>
+            )}
+            {candidates && candidates.map((c) => (
+              <div key={c.ticker} className="ledger-row" style={{ padding: "0.55rem 0" }}>
+                <div>
+                  <div style={{ fontWeight: 500 }}>{c.ticker}</div>
+                  <div className="num" style={{ fontSize: "0.78rem", color: "var(--text-soft)" }}>
+                    {c.last_growth_trend ? TREND_LABEL[c.last_growth_trend] ?? c.last_growth_trend : "Not yet checked"}
+                    {c.last_market_cap !== null && ` · ${fmtMarketCap(c.last_market_cap)}`}
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleRemoveCandidate(c.ticker)}
+                  disabled={removingTicker === c.ticker}
+                  aria-label={`Stop tracking ${c.ticker}`}
+                  style={{ background: "none", border: "none", color: "var(--text-soft)", fontSize: "0.75rem", cursor: "pointer" }}
+                >
+                  {removingTicker === c.ticker ? "…" : "✕"}
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
       </main>
     </AppShell>
   );

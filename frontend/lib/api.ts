@@ -266,6 +266,15 @@ export interface SpeculativeGrowthAssessment {
   risk_flags: string[];
 }
 
+export interface SpeculativeGrowthCandidate {
+  ticker: string;
+  added_at: string;
+  last_growth_trend: string | null;
+  last_cash_runway_months: number | null;
+  last_market_cap: number | null;
+  last_checked_at: string | null;
+}
+
 export interface FactorRankingResponse {
   scoring_note: string;
   results: RankedFactorScore[];
@@ -550,6 +559,21 @@ export const api = {
   getSpeculativeGrowth: (ticker: string) =>
     request<SpeculativeGrowthAssessment>(
       `/companies/${encodeURIComponent(ticker.toUpperCase())}/speculative-growth`
+    ),
+  listGrowthCandidates: () => request<SpeculativeGrowthCandidate[]>("/growth-candidates"),
+  addGrowthCandidate: (ticker: string) =>
+    request<SpeculativeGrowthCandidate>(
+      `/growth-candidates/${encodeURIComponent(ticker.toUpperCase())}`,
+      { method: "POST" }
+    ),
+  removeGrowthCandidate: (ticker: string) =>
+    request(`/growth-candidates/${encodeURIComponent(ticker.toUpperCase())}`, {
+      method: "DELETE",
+    }),
+  checkGrowthCandidates: () =>
+    request<{ id: number; ticker: string; message: string; created_at: string }[]>(
+      "/growth-candidates/check",
+      { method: "POST" }
     ),
 
   // Universe themes

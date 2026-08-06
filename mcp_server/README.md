@@ -96,7 +96,7 @@ startup.
 ## 5. Verify it connected
 
 In Claude Desktop, look for a small tools/plug icon near the message
-input — clicking it should show `conviction` with 48 tools listed. If
+input — clicking it should show `conviction` with 53 tools listed. If
 it's not there, check Claude Desktop's logs (usually accessible from
 its settings/developer menu) for a startup error from this server.
 
@@ -120,7 +120,7 @@ CONVICTION_API_KEY=test_key python3 tests/run_tests.py
 ```
 
 9 tests against the REAL, unmodified `server.py` — including a
-systematic sweep checking every one of the 48 tools against the exact
+systematic sweep checking every one of the 53 tools against the exact
 REST path it should hit, which self-checks that no new tool gets added
 without a corresponding entry (see `tests/test_server.py`). Since
 neither `httpx` nor `mcp` needs to be actually installed to run these

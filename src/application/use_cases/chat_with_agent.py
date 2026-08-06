@@ -62,6 +62,14 @@ from src.application.use_cases.ingest_company_data import IngestCompanyDataUseCa
 from src.application.use_cases.assess_speculative_growth import (
     AssessSpeculativeGrowthUseCase,
 )
+from src.application.use_cases.check_speculative_growth_candidates import (
+    CheckSpeculativeGrowthCandidatesUseCase,
+)
+from src.application.use_cases.manage_speculative_growth_candidates import (
+    AddSpeculativeGrowthCandidateUseCase,
+    ListSpeculativeGrowthCandidatesUseCase,
+    RemoveSpeculativeGrowthCandidateUseCase,
+)
 from src.application.use_cases.manage_watchlist import (
     AddToWatchlistUseCase,
     GetWatchlistUseCase,
@@ -549,6 +557,48 @@ _TOOLS = [
         },
     ),
     ToolDefinition(
+        "add_growth_candidate",
+        "Start tracking a ticker as a speculative-growth candidate on "
+        "the user's watch list for this thesis. Runs assess_speculative_growth "
+        "internally to establish a baseline, but does NOT gate on whether "
+        "the assessment looks favorable — that would be exactly the "
+        "automated verdict this feature is built to avoid. Show the "
+        "user the assessment and let them decide whether to track it. "
+        "The ticker must already be ingested first.",
+        {
+            "type": "object",
+            "properties": {"ticker": {"type": "string"}},
+            "required": ["ticker"],
+        },
+    ),
+    ToolDefinition(
+        "remove_growth_candidate",
+        "Stop tracking a ticker as a speculative-growth candidate.",
+        {
+            "type": "object",
+            "properties": {"ticker": {"type": "string"}},
+            "required": ["ticker"],
+        },
+    ),
+    ToolDefinition(
+        "list_growth_candidates",
+        "List every ticker the user is currently tracking as a "
+        "speculative-growth candidate, with each one's last-known "
+        "growth trend, cash runway, and market cap.",
+        {"type": "object", "properties": {}},
+    ),
+    ToolDefinition(
+        "check_growth_candidates",
+        "Manually re-check every tracked speculative-growth candidate "
+        "right now and report any condition changes since the last "
+        "check (growth trend flipping, cash runway newly dropping "
+        "under 12 months, market cap crossing the small-cap threshold). "
+        "Real scheduled checking already runs periodically in the "
+        "background — this is for an on-demand check, not the primary "
+        "way alerts get generated.",
+        {"type": "object", "properties": {}},
+    ),
+    ToolDefinition(
         "ingest_etf",
         "Ingest an ETF's profile (name, expense ratio, AUM) so it can be added "
         "to watchlists, themes, and screened/factor-scored. ETFs have no "
@@ -845,6 +895,10 @@ class ChatWithAgentUseCase:
         ingest_company: IngestCompanyDataUseCase,
         assess_speculative_growth: AssessSpeculativeGrowthUseCase,
         delete_theme: DeleteUniverseThemeUseCase,
+        add_growth_candidate: AddSpeculativeGrowthCandidateUseCase,
+        remove_growth_candidate: RemoveSpeculativeGrowthCandidateUseCase,
+        list_growth_candidates: ListSpeculativeGrowthCandidatesUseCase,
+        check_growth_candidates: CheckSpeculativeGrowthCandidatesUseCase,
     ) -> None:
         self._chat_agent = chat_agent
         self._get_watchlist = get_watchlist
@@ -889,6 +943,10 @@ class ChatWithAgentUseCase:
         self._ingest_company = ingest_company
         self._assess_speculative_growth = assess_speculative_growth
         self._delete_theme = delete_theme
+        self._add_growth_candidate = add_growth_candidate
+        self._remove_growth_candidate = remove_growth_candidate
+        self._list_growth_candidates = list_growth_candidates
+        self._check_growth_candidates = check_growth_candidates
         self._construct_risk_parity_portfolio = construct_risk_parity_portfolio
         self._user_id: str = ""  # set per-request in execute()
 
@@ -1219,6 +1277,58 @@ class ChatWithAgentUseCase:
                     "This is a structured risk/growth breakdown, not a prediction "
                     "or a recommendation. Genuine large-multiple outcomes are rare; "
                     "the same traits behind big winners are behind total losses too."
+                ),
+            }
+
+        if tool_name == "add_growth_candidate":
+            try:
+                candidate = self._add_growth_candidate.execute(self._user_id, tool_input["ticker"])
+            except CompanyNotFoundError as exc:
+                return {"error": str(exc)}
+            return {
+                "ticker": candidate.ticker,
+                "added_at": candidate.added_at.isoformat(),
+                "baseline_growth_trend": candidate.last_growth_trend,
+                "baseline_cash_runway_months": candidate.last_cash_runway_months,
+                "baseline_market_cap": candidate.last_market_cap,
+                "status": "tracking",
+            }
+
+        if tool_name == "remove_growth_candidate":
+            removed = self._remove_growth_candidate.execute(self._user_id, tool_input["ticker"])
+            if not removed:
+                return {"error": f"'{tool_input['ticker'].upper()}' is not on your candidate list."}
+            return {"ticker": tool_input["ticker"].upper(), "status": "removed"}
+
+        if tool_name == "list_growth_candidates":
+            candidates = self._list_growth_candidates.execute(self._user_id)
+            return {
+                "candidates": [
+                    {
+                        "ticker": c.ticker,
+                        "added_at": c.added_at.isoformat(),
+                        "last_growth_trend": c.last_growth_trend,
+                        "last_cash_runway_months": c.last_cash_runway_months,
+                        "last_market_cap": c.last_market_cap,
+                        "last_checked_at": c.last_checked_at.isoformat() if c.last_checked_at else None,
+                    }
+                    for c in candidates
+                ]
+            }
+
+        if tool_name == "check_growth_candidates":
+            alerts = self._check_growth_candidates.execute(self._user_id)
+            return {
+                "alerts": [
+                    {
+                        "ticker": a.ticker, "message": a.message,
+                        "created_at": a.created_at.isoformat(),
+                    }
+                    for a in alerts
+                ],
+                "note": (
+                    "Real scheduled checking already runs in the background — "
+                    "this was an on-demand check, not the primary alert mechanism."
                 ),
             }
 

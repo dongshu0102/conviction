@@ -1,4 +1,4 @@
-"""Bulk-ingest scripts/sp500_tickers.txt into a running FinInsight API.
+"""Bulk-ingest scripts/sp500_tickers.txt into a running Conviction API.
 
 Unlike scripts/ingest_sp500.py (which talks to the database directly and
 is meant for local/CI use against a reachable DATABASE_URL), this script
@@ -10,8 +10,8 @@ Uses only the Python standard library (urllib) — no dependency install
 needed, so this runs the same way in any environment with just Python 3.
 
 Usage:
-    FININSIGHT_API_KEY=fi_live_... python3 scripts/ingest_production.py
-    FININSIGHT_API_KEY=fi_live_... python3 scripts/ingest_production.py \
+    CONVICTION_API_KEY=fi_live_... python3 scripts/ingest_production.py
+    CONVICTION_API_KEY=fi_live_... python3 scripts/ingest_production.py \
         --api-url http://localhost:8000  # to target local dev instead
 """
 from __future__ import annotations
@@ -74,9 +74,9 @@ def main() -> int:
     parser.add_argument("--years", type=int, default=5)
     args = parser.parse_args()
 
-    api_key = os.environ.get("FININSIGHT_API_KEY")
+    api_key = os.environ.get("CONVICTION_API_KEY")
     if not api_key:
-        print("ERROR: set FININSIGHT_API_KEY environment variable first.", file=sys.stderr)
+        print("ERROR: set CONVICTION_API_KEY environment variable first.", file=sys.stderr)
         return 1
 
     tickers = load_tickers(Path(args.tickers_file))

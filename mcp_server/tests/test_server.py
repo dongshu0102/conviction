@@ -181,6 +181,41 @@ async def test_delete_theme_uses_delete_and_the_bare_theme_path():
     mock_req.assert_called_once_with("DELETE", "/universe/themes/AI Infrastructure")
 
 
+@pytest.mark.asyncio
+async def test_add_growth_candidate_uses_post_and_the_ticker_path():
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.add_growth_candidate("NVDA")
+    mock_req.assert_called_once_with("POST", "/growth-candidates/NVDA")
+
+
+@pytest.mark.asyncio
+async def test_remove_growth_candidate_uses_delete_not_post():
+    """Same easy copy-paste risk as remove_ticker_from_theme — the
+    add and remove tools share the same URL shape, differing only in
+    HTTP method."""
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.remove_growth_candidate("NVDA")
+    mock_req.assert_called_once_with("DELETE", "/growth-candidates/NVDA")
+
+
+@pytest.mark.asyncio
+async def test_list_growth_candidates_simple_get():
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.list_growth_candidates()
+    mock_req.assert_called_once_with("GET", "/growth-candidates")
+
+
+@pytest.mark.asyncio
+async def test_check_growth_candidates_uses_the_dedicated_check_path():
+    """The real risk here: /growth-candidates/check could collide with
+    /growth-candidates/{ticker} if the REST route ordering were ever
+    wrong — this test only covers the MCP tool hits the right path,
+    the route-ordering fix itself lives in the REST router."""
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.check_growth_candidates()
+    mock_req.assert_called_once_with("POST", "/growth-candidates/check")
+
+
 # --- The 11 tools added to close the MCP gap (options, screening, --------
 # recommendations, rebalancing, watchlist extras) — none of these had any
 # test coverage until now, despite three of them sending a JSON body, the

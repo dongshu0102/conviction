@@ -572,3 +572,40 @@ class FakePasswordResetTokenRepository:
         existing = self._tokens.get(token_hash)
         if existing is not None:
             self._tokens[token_hash] = replace(existing, used=True)
+
+
+class FakeSpeculativeGrowthCandidateRepository:
+    def __init__(self) -> None:
+        self._candidates: dict[tuple[str, str], object] = {}
+
+    def add(self, candidate):
+        key = (candidate.user_id, candidate.ticker)
+        if key in self._candidates:
+            return self._candidates[key]
+        self._candidates[key] = candidate
+        return candidate
+
+    def remove(self, user_id: str, ticker: str) -> bool:
+        key = (user_id, ticker)
+        if key in self._candidates:
+            del self._candidates[key]
+            return True
+        return False
+
+    def list_for_user(self, user_id: str) -> list:
+        return [c for (u, t), c in self._candidates.items() if u == user_id]
+
+    def update_last_state(
+        self, user_id: str, ticker: str, growth_trend, cash_runway_months, market_cap, checked_at
+    ) -> None:
+        key = (user_id, ticker)
+        existing = self._candidates.get(key)
+        if existing is not None:
+            self._candidates[key] = replace(
+                existing,
+                last_growth_trend=growth_trend,
+                last_cash_runway_months=cash_runway_months,
+                last_market_cap=market_cap,
+                last_checked_at=checked_at,
+            )
+

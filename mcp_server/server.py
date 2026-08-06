@@ -343,6 +343,54 @@ async def delete_theme(theme_name: str) -> str:
 
 
 @mcp.tool()
+async def assess_speculative_growth(ticker: str) -> str:
+    """Assess a ticker as a speculative early-stage growth candidate —
+    the honest way to look for a stock with genuinely large upside
+    potential (a '100x' or 'multibagger' style search), NOT the same
+    as get_factor_scores. Returns a structured breakdown: revenue
+    growth trend (accelerating vs decelerating), profitability status,
+    cash runway if burning cash, and explicit risk flags. Never a
+    single confidence score, and never a prediction or recommendation
+    — genuine 100x outcomes are extremely rare. The ticker must
+    already be ingested first."""
+    return await _request("GET", f"/companies/{ticker}/speculative-growth")
+
+
+@mcp.tool()
+async def add_growth_candidate(ticker: str) -> str:
+    """Start tracking a ticker as a speculative-growth candidate.
+    Establishes a baseline assessment but does not gate on whether it
+    looks favorable — that would be exactly the automated verdict this
+    feature is built to avoid. Show the user the assessment and let
+    them decide. The ticker must already be ingested first."""
+    return await _request("POST", f"/growth-candidates/{ticker}")
+
+
+@mcp.tool()
+async def remove_growth_candidate(ticker: str) -> str:
+    """Stop tracking a ticker as a speculative-growth candidate."""
+    return await _request("DELETE", f"/growth-candidates/{ticker}")
+
+
+@mcp.tool()
+async def list_growth_candidates() -> str:
+    """List every ticker currently tracked as a speculative-growth
+    candidate, with each one's last-known growth trend, cash runway,
+    and market cap."""
+    return await _request("GET", "/growth-candidates")
+
+
+@mcp.tool()
+async def check_growth_candidates() -> str:
+    """Manually re-check every tracked speculative-growth candidate
+    right now and report any condition changes since the last check.
+    Real scheduled checking already runs periodically in the
+    background — this is for an on-demand check, not the primary way
+    alerts get generated."""
+    return await _request("POST", "/growth-candidates/check")
+
+
+@mcp.tool()
 async def generate_theme_synthesis(theme_name: str) -> str:
     """Generate an AI-written narrative synthesis across an ENTIRE
     theme — common threads, notable divergences, and risks visible

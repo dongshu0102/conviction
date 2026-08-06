@@ -79,12 +79,21 @@ from tests.unit.fakes import (
     FakeWatchlistRepository,
     FakeAlertRepository,
     FakeBriefGenerator,
+    FakeSpeculativeGrowthCandidateRepository,
 )
 from src.application.use_cases.manage_alerts import GetAlertsUseCase
 from src.application.use_cases.generate_daily_brief import GenerateDailyBriefUseCase
 from src.application.use_cases.ingest_company_data import IngestCompanyDataUseCase
 from src.application.use_cases.assess_speculative_growth import (
     AssessSpeculativeGrowthUseCase,
+)
+from src.application.use_cases.check_speculative_growth_candidates import (
+    CheckSpeculativeGrowthCandidatesUseCase,
+)
+from src.application.use_cases.manage_speculative_growth_candidates import (
+    AddSpeculativeGrowthCandidateUseCase,
+    ListSpeculativeGrowthCandidatesUseCase,
+    RemoveSpeculativeGrowthCandidateUseCase,
 )
 
 
@@ -122,12 +131,13 @@ def _company_repo(*tickers: str) -> FakeCompanyRepository:
     return repo
 
 
-def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watchlist_repo=None, provider=None, options_provider=None, theme_repo=None, statement_repo=None, get_factor_scores_override=None, alert_repo=None):
+def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watchlist_repo=None, provider=None, options_provider=None, theme_repo=None, statement_repo=None, get_factor_scores_override=None, alert_repo=None, candidate_repo=None):
     company_repo = company_repo or _company_repo()
     portfolio_repo = portfolio_repo or FakePortfolioRepository()
     watchlist_repo = watchlist_repo or FakeWatchlistRepository()
     statement_repo = statement_repo or FakeFinancialStatementRepository()
     alert_repo = alert_repo or FakeAlertRepository()
+    candidate_repo = candidate_repo or FakeSpeculativeGrowthCandidateRepository()
     provider = provider or FakeDataProvider(company=Company(ticker="X", name="X", sector=Sector.TECHNOLOGY, industry="X", exchange="X", country="US"))
     options_provider = options_provider or FakeOptionsDataProvider()
     research_repo = FakeResearchReportRepository()
@@ -208,6 +218,15 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
         get_company_financials=get_financials,
         ingest_company=IngestCompanyDataUseCase(provider, company_repo, statement_repo),
         assess_speculative_growth=AssessSpeculativeGrowthUseCase(get_financials, compute_company_valuation),
+        add_growth_candidate=AddSpeculativeGrowthCandidateUseCase(
+            candidate_repo, AssessSpeculativeGrowthUseCase(get_financials, compute_company_valuation)
+        ),
+        remove_growth_candidate=RemoveSpeculativeGrowthCandidateUseCase(candidate_repo),
+        list_growth_candidates=ListSpeculativeGrowthCandidatesUseCase(candidate_repo),
+        check_growth_candidates=CheckSpeculativeGrowthCandidatesUseCase(
+            candidate_repo, alert_repo,
+            AssessSpeculativeGrowthUseCase(get_financials, compute_company_valuation),
+        ),
     )
     return use_case, fake_agent, portfolio_repo
 
@@ -1055,6 +1074,83 @@ def test_delete_theme_unknown_name_surfaces_error_not_crash() -> None:
     use_case.execute("alice", "delete the Nonexistent theme", [])
 
     assert "error" in fake_agent.dispatch_results[0]
+
+
+def test_add_growth_candidate_via_chat_actually_tracks_it() -> None:
+    company_repo = _company_repo("NVDA")
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("add_growth_candidate", {"ticker": "NVDA"})],
+        company_repo=company_repo,
+    )
+    use_case.execute("alice", "start tracking NVDA as a growth candidate", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["ticker"] == "NVDA"
+    assert result["status"] == "tracking"
+
+
+def test_add_growth_candidate_unknown_ticker_surfaces_error_not_crash() -> None:
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("add_growth_candidate", {"ticker": "GHOST"})],
+    )
+    use_case.execute("alice", "track GHOST", [])
+
+    assert "error" in fake_agent.dispatch_results[0]
+
+
+def test_list_growth_candidates_reflects_a_real_add_via_chat() -> None:
+    company_repo = _company_repo("NVDA")
+    candidate_repo = FakeSpeculativeGrowthCandidateRepository()
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[
+            ("add_growth_candidate", {"ticker": "NVDA"}),
+            ("list_growth_candidates", {}),
+        ],
+        company_repo=company_repo,
+        candidate_repo=candidate_repo,
+    )
+    use_case.execute("alice", "track NVDA then show me my candidates", [])
+
+    listed = fake_agent.dispatch_results[1]["candidates"]
+    assert len(listed) == 1
+    assert listed[0]["ticker"] == "NVDA"
+
+
+def test_remove_growth_candidate_not_tracked_surfaces_error_not_crash() -> None:
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("remove_growth_candidate", {"ticker": "GHOST"})],
+    )
+    use_case.execute("alice", "stop tracking GHOST", [])
+
+    assert "error" in fake_agent.dispatch_results[0]
+
+
+def test_check_growth_candidates_via_chat_surfaces_a_real_alert() -> None:
+    from datetime import datetime, timezone
+    from src.domain.entities.speculative_growth_candidate import SpeculativeGrowthCandidate
+
+    candidate_repo = FakeSpeculativeGrowthCandidateRepository()
+    candidate_repo.add(SpeculativeGrowthCandidate(
+        user_id="alice", ticker="NVDA", added_at=datetime.now(timezone.utc),
+        last_growth_trend="accelerating", last_cash_runway_months=None,
+        last_market_cap=500_000_000, last_checked_at=datetime.now(timezone.utc),
+    ))
+    # NVDA is real, ingested fixture data with predictable financials —
+    # the point here is just confirming the alert plumbing works
+    # end-to-end via chat, not re-testing the change-detection math
+    # itself (already covered thoroughly in
+    # test_speculative_growth_candidates.py).
+    company_repo = _company_repo("NVDA")
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("check_growth_candidates", {})],
+        company_repo=company_repo,
+        candidate_repo=candidate_repo,
+    )
+    use_case.execute("alice", "check my growth candidates", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert "alerts" in result
+    assert "note" in result
 
 
 def test_list_universe_themes_reports_counts_via_chat() -> None:

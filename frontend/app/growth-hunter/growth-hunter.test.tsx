@@ -122,4 +122,114 @@ describe("Growth Hunter page", () => {
       expect(screen.getByText("Server error")).toBeInTheDocument();
     });
   });
+
+  it("shows the empty state when no candidates are tracked yet", async () => {
+    localStorage.setItem("conviction_api_key", "fi_live_test123");
+    vi.spyOn(api, "listGrowthCandidates").mockResolvedValue([]);
+    render(<GrowthHunterPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/No candidates tracked yet/)).toBeInTheDocument();
+    });
+  });
+
+  it("renders an existing tracked candidate with its last-known state", async () => {
+    localStorage.setItem("conviction_api_key", "fi_live_test123");
+    vi.spyOn(api, "listGrowthCandidates").mockResolvedValue([
+      {
+        ticker: "RXRX", added_at: "2026-08-01T00:00:00Z",
+        last_growth_trend: "accelerating", last_cash_runway_months: 8,
+        last_market_cap: 500_000_000, last_checked_at: "2026-08-05T00:00:00Z",
+      },
+    ]);
+    render(<GrowthHunterPage />);
+
+    await waitFor(() => screen.getByText("RXRX"));
+    expect(screen.getByText(/Accelerating/)).toBeInTheDocument();
+    expect(screen.getByText(/\$500M/)).toBeInTheDocument();
+  });
+
+  it("shows a 'Track as candidate' button after a real assessment, and it actually calls the API", async () => {
+    localStorage.setItem("conviction_api_key", "fi_live_test123");
+    vi.spyOn(api, "listGrowthCandidates").mockResolvedValue([]);
+    vi.spyOn(api, "getSpeculativeGrowth").mockResolvedValue(SAMPLE_ASSESSMENT);
+    const addSpy = vi.spyOn(api, "addGrowthCandidate").mockResolvedValue({
+      ticker: "ROCKET", added_at: "2026-08-06T00:00:00Z",
+      last_growth_trend: "accelerating", last_cash_runway_months: 8,
+      last_market_cap: 500_000_000, last_checked_at: "2026-08-06T00:00:00Z",
+    });
+    render(<GrowthHunterPage />);
+
+    fireEvent.change(screen.getByPlaceholderText(/Ticker/), { target: { value: "ROCKET" } });
+    fireEvent.click(screen.getByText("Assess"));
+    await waitFor(() => screen.getByText("Track ROCKET as a candidate"));
+
+    fireEvent.click(screen.getByText("Track ROCKET as a candidate"));
+
+    await waitFor(() => {
+      expect(addSpy).toHaveBeenCalledWith("ROCKET");
+    });
+  });
+
+  it("shows 'already tracking' instead of the track button when the assessed ticker is already a candidate", async () => {
+    localStorage.setItem("conviction_api_key", "fi_live_test123");
+    vi.spyOn(api, "listGrowthCandidates").mockResolvedValue([
+      {
+        ticker: "ROCKET", added_at: "2026-08-01T00:00:00Z",
+        last_growth_trend: "accelerating", last_cash_runway_months: 8,
+        last_market_cap: 500_000_000, last_checked_at: "2026-08-05T00:00:00Z",
+      },
+    ]);
+    vi.spyOn(api, "getSpeculativeGrowth").mockResolvedValue(SAMPLE_ASSESSMENT);
+    render(<GrowthHunterPage />);
+
+    fireEvent.change(screen.getByPlaceholderText(/Ticker/), { target: { value: "ROCKET" } });
+    fireEvent.click(screen.getByText("Assess"));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Already tracking ROCKET/)).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Track ROCKET as a candidate")).not.toBeInTheDocument();
+  });
+
+  it("clicking the remove button on a candidate calls the API with the correct ticker", async () => {
+    localStorage.setItem("conviction_api_key", "fi_live_test123");
+    vi.spyOn(api, "listGrowthCandidates").mockResolvedValue([
+      {
+        ticker: "RXRX", added_at: "2026-08-01T00:00:00Z",
+        last_growth_trend: "accelerating", last_cash_runway_months: 8,
+        last_market_cap: 500_000_000, last_checked_at: "2026-08-05T00:00:00Z",
+      },
+    ]);
+    const removeSpy = vi.spyOn(api, "removeGrowthCandidate").mockResolvedValue(undefined as any);
+    render(<GrowthHunterPage />);
+
+    await waitFor(() => screen.getByText("RXRX"));
+    fireEvent.click(screen.getByLabelText("Stop tracking RXRX"));
+
+    await waitFor(() => {
+      expect(removeSpy).toHaveBeenCalledWith("RXRX");
+    });
+  });
+
+  it("clicking Check now calls the API and shows a real result message", async () => {
+    localStorage.setItem("conviction_api_key", "fi_live_test123");
+    vi.spyOn(api, "listGrowthCandidates").mockResolvedValue([
+      {
+        ticker: "RXRX", added_at: "2026-08-01T00:00:00Z",
+        last_growth_trend: "accelerating", last_cash_runway_months: 8,
+        last_market_cap: 500_000_000, last_checked_at: "2026-08-05T00:00:00Z",
+      },
+    ]);
+    const checkSpy = vi.spyOn(api, "checkGrowthCandidates").mockResolvedValue([]);
+    render(<GrowthHunterPage />);
+
+    await waitFor(() => screen.getByText("Check now"));
+    fireEvent.click(screen.getByText("Check now"));
+
+    await waitFor(() => {
+      expect(checkSpy).toHaveBeenCalled();
+      expect(screen.getByText(/No condition changes detected/)).toBeInTheDocument();
+    });
+  });
 });

@@ -283,6 +283,15 @@ class SpeculativeGrowthAssessmentSchema(BaseModel):
     risk_flags: list[str]
 
 
+class SpeculativeGrowthCandidateSchema(BaseModel):
+    ticker: str
+    added_at: datetime
+    last_growth_trend: str | None
+    last_cash_runway_months: float | None
+    last_market_cap: float | None
+    last_checked_at: datetime | None
+
+
 class SignUpRequestSchema(BaseModel):
     email: str
     password: str

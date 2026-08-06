@@ -37,6 +37,7 @@ from src.api.schemas import ChatRequestSchema, ChatResponseSchema, VercelChatReq
 from src.application.interfaces.chat_agent import ChatAgentError, ChatMessage
 from src.api.routers.watchlist import get_watchlist_repository
 from src.api.routers.alerts import get_alert_repository, get_snapshot_repository
+from src.api.routers.growth_candidates import get_candidate_repository
 from src.application.use_cases.chat_with_agent import ChatWithAgentUseCase
 from src.application.use_cases.manage_watchlist import (
     ListWatchlistNamesUseCase,
@@ -76,6 +77,14 @@ from src.application.use_cases.generate_daily_brief import GenerateDailyBriefUse
 from src.application.use_cases.ingest_company_data import IngestCompanyDataUseCase
 from src.application.use_cases.assess_speculative_growth import (
     AssessSpeculativeGrowthUseCase,
+)
+from src.application.use_cases.check_speculative_growth_candidates import (
+    CheckSpeculativeGrowthCandidatesUseCase,
+)
+from src.application.use_cases.manage_speculative_growth_candidates import (
+    AddSpeculativeGrowthCandidateUseCase,
+    ListSpeculativeGrowthCandidatesUseCase,
+    RemoveSpeculativeGrowthCandidateUseCase,
 )
 from src.application.use_cases.get_company_financials import GetCompanyFinancialsUseCase
 from src.application.use_cases.manage_portfolio import RemoveHoldingUseCase
@@ -146,6 +155,7 @@ def get_chat_use_case(
     data_provider=Depends(get_data_provider),
     watchlist_repo=Depends(get_watchlist_repository),
     alert_repo=Depends(get_alert_repository),
+    candidate_repo=Depends(get_candidate_repository),
     snapshot_repo=Depends(get_snapshot_repository),
     statement_repo: SqlAlchemyFinancialStatementRepository = Depends(
         get_statement_repository_for_chat
@@ -224,6 +234,21 @@ def get_chat_use_case(
         ingest_company=IngestCompanyDataUseCase(data_provider, company_repo, statement_repo),
         assess_speculative_growth=AssessSpeculativeGrowthUseCase(
             GetCompanyFinancialsUseCase(company_repo, statement_repo), compute_company_valuation
+        ),
+        add_growth_candidate=AddSpeculativeGrowthCandidateUseCase(
+            candidate_repo,
+            AssessSpeculativeGrowthUseCase(
+                GetCompanyFinancialsUseCase(company_repo, statement_repo), compute_company_valuation
+            ),
+        ),
+        remove_growth_candidate=RemoveSpeculativeGrowthCandidateUseCase(candidate_repo),
+        list_growth_candidates=ListSpeculativeGrowthCandidatesUseCase(candidate_repo),
+        check_growth_candidates=CheckSpeculativeGrowthCandidatesUseCase(
+            candidate_repo,
+            alert_repo,
+            AssessSpeculativeGrowthUseCase(
+                GetCompanyFinancialsUseCase(company_repo, statement_repo), compute_company_valuation
+            ),
         ),
     )
 

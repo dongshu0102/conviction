@@ -28,7 +28,7 @@ Usage:
 
 Suggested cron entry (once daily, off-peak — the cache is good for 24h
 per GetFactorScoresUseCase's DEFAULT_MAX_STALENESS):
-    0 5 * * * cd /path/to/fininsight && .venv/bin/python scripts/refresh_factor_snapshot.py
+    0 5 * * * cd /path/to/conviction && .venv/bin/python scripts/refresh_factor_snapshot.py
 """
 from __future__ import annotations
 

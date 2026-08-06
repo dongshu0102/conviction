@@ -336,3 +336,24 @@ class UniverseThemeMembershipModel(Base):
     ticker: Mapped[str] = mapped_column(
         ForeignKey("companies.ticker"), nullable=False, index=True
     )
+
+
+class SpeculativeGrowthCandidateModel(Base):
+    __tablename__ = "speculative_growth_candidates"
+    __table_args__ = (
+        UniqueConstraint("user_id", "ticker", name="uq_growth_candidate_user_ticker"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    ticker: Mapped[str] = mapped_column(String, nullable=False)
+    added_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    # Last-known state for change detection — nullable because the
+    # domain entity itself allows null (no baseline exists before the
+    # very first check), not because the fields are ever optional at
+    # write time once a real assessment has run.
+    last_growth_trend: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_cash_runway_months: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last_market_cap: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
