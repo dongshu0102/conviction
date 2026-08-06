@@ -1,8 +1,8 @@
 // Component test for LedgerRow. Same unverified-in-this-sandbox
 // caveat as lib/api.test.ts.
 
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { LedgerRow } from "./LedgerRow";
 
 describe("LedgerRow", () => {
@@ -46,5 +46,22 @@ describe("LedgerRow", () => {
   it("renders no percentage row at all when changePct is undefined", () => {
     render(<LedgerRow label="AAPL" value="$150" />);
     expect(screen.queryByText(/%/)).not.toBeInTheDocument();
+  });
+
+  it("does not render a remove button when onRemove is not provided", () => {
+    render(<LedgerRow label="AAPL" value="$150" />);
+    expect(screen.queryByLabelText("Remove AAPL")).not.toBeInTheDocument();
+  });
+
+  it("clicking the remove button calls onRemove", () => {
+    const onRemove = vi.fn();
+    render(<LedgerRow label="AAPL" value="$150" onRemove={onRemove} />);
+    fireEvent.click(screen.getByLabelText("Remove AAPL"));
+    expect(onRemove).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables the remove button while removing", () => {
+    render(<LedgerRow label="AAPL" value="$150" onRemove={() => {}} removing />);
+    expect(screen.getByLabelText("Remove AAPL")).toBeDisabled();
   });
 });

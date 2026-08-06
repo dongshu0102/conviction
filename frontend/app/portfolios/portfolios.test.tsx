@@ -82,4 +82,55 @@ describe("Portfolios index page", () => {
       expect(screen.getByText("Network down")).toBeInTheDocument();
     });
   });
+
+  it("does not delete on a single click — requires explicit confirmation", async () => {
+    vi.spyOn(api, "listPortfolios").mockResolvedValue([
+      { portfolio_id: "abc", name: "Growth", created_at: "2026-01-01", holdings: [] },
+    ]);
+    const deleteSpy = vi.spyOn(api, "deletePortfolio");
+    render(<PortfoliosIndexPage />);
+
+    await waitFor(() => screen.getByText("Growth"));
+    fireEvent.click(screen.getByText("Delete"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Confirm")).toBeInTheDocument();
+    });
+    expect(deleteSpy).not.toHaveBeenCalled();
+  });
+
+  it("clicking Confirm calls api.deletePortfolio with the right id and reloads the list", async () => {
+    const listSpy = vi.spyOn(api, "listPortfolios").mockResolvedValue([
+      { portfolio_id: "abc", name: "Growth", created_at: "2026-01-01", holdings: [] },
+    ]);
+    const deleteSpy = vi.spyOn(api, "deletePortfolio").mockResolvedValue(undefined as any);
+    render(<PortfoliosIndexPage />);
+
+    await waitFor(() => screen.getByText("Growth"));
+    const callsBefore = listSpy.mock.calls.length;
+    fireEvent.click(screen.getByText("Delete"));
+    fireEvent.click(screen.getByText("Confirm"));
+
+    await waitFor(() => {
+      expect(deleteSpy).toHaveBeenCalledWith("abc");
+      expect(listSpy.mock.calls.length).toBeGreaterThan(callsBefore);
+    });
+  });
+
+  it("clicking Cancel backs out without deleting anything", async () => {
+    vi.spyOn(api, "listPortfolios").mockResolvedValue([
+      { portfolio_id: "abc", name: "Growth", created_at: "2026-01-01", holdings: [] },
+    ]);
+    const deleteSpy = vi.spyOn(api, "deletePortfolio");
+    render(<PortfoliosIndexPage />);
+
+    await waitFor(() => screen.getByText("Growth"));
+    fireEvent.click(screen.getByText("Delete"));
+    fireEvent.click(screen.getByText("Cancel"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Delete")).toBeInTheDocument();
+    });
+    expect(deleteSpy).not.toHaveBeenCalled();
+  });
 });

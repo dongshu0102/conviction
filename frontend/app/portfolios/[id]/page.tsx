@@ -96,6 +96,9 @@ export default function PortfolioDetailPage() {
   const [risk, setRisk] = useState<PortfolioRiskAnalysis | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [removingTicker, setRemovingTicker] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!getApiKey()) {
@@ -115,6 +118,29 @@ export default function PortfolioDetailPage() {
       .then(setValuation)
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load"))
       .finally(() => setLoading(false));
+  }
+
+  async function handleRemoveHolding(ticker: string) {
+    setRemovingTicker(ticker);
+    try {
+      await api.removeHolding(id, ticker);
+      await loadValuation();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Couldn't remove ${ticker}`);
+    } finally {
+      setRemovingTicker(null);
+    }
+  }
+
+  async function handleDeletePortfolio() {
+    setDeleting(true);
+    try {
+      await api.deletePortfolio(id);
+      router.push("/portfolios");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't delete this portfolio");
+      setDeleting(false);
+    }
   }
 
   if (loading) {
@@ -158,7 +184,38 @@ export default function PortfolioDetailPage() {
       >
         ← Portfolios
       </Link>
-      <h1 style={{ fontSize: "1.75rem", margin: "0.5rem 0 2rem" }}>{valuation.name}</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", margin: "0.5rem 0 2rem" }}>
+        <h1 style={{ margin: 0, fontSize: "1.75rem" }}>{valuation.name}</h1>
+        {!confirmingDelete ? (
+          <button
+            onClick={() => setConfirmingDelete(true)}
+            style={{ background: "none", border: "none", color: "var(--text-soft)", fontSize: "0.78rem", cursor: "pointer" }}
+          >
+            Delete portfolio
+          </button>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <span style={{ fontSize: "0.78rem", color: "var(--text-soft)" }}>
+              Delete &ldquo;{valuation.name}&rdquo; and all its holdings? This can&rsquo;t be undone.
+            </span>
+            <button
+              onClick={handleDeletePortfolio}
+              disabled={deleting}
+              className="num loss"
+              style={{ background: "none", border: "1px solid var(--loss)", borderRadius: "4px", fontSize: "0.78rem", padding: "0.25rem 0.6rem", cursor: "pointer" }}
+            >
+              {deleting ? "Deleting…" : "Confirm delete"}
+            </button>
+            <button
+              onClick={() => setConfirmingDelete(false)}
+              disabled={deleting}
+              style={{ background: "none", border: "none", color: "var(--text-soft)", fontSize: "0.78rem", cursor: "pointer" }}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+      </div>
 
       <section className="card" style={{ marginBottom: "2rem" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
@@ -227,6 +284,8 @@ export default function PortfolioDetailPage() {
               sublabel={`${p.shares} shares @ ${usd(p.current_price)}`}
               value={usd(p.market_value)}
               changePct={p.unrealized_gain_pct}
+              onRemove={() => handleRemoveHolding(p.ticker)}
+              removing={removingTicker === p.ticker}
             />
           ))}
           <AddHoldingForm portfolioId={id} onAdded={loadValuation} />

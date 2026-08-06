@@ -16,6 +16,8 @@ export default function PortfoliosIndexPage() {
   const [error, setError] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!getApiKey()) {
@@ -49,6 +51,19 @@ export default function PortfoliosIndexPage() {
       setError(err instanceof Error ? err.message : "Couldn't create portfolio");
     } finally {
       setCreating(false);
+    }
+  }
+
+  async function handleDelete(portfolioId: string) {
+    setDeletingId(portfolioId);
+    try {
+      await api.deletePortfolio(portfolioId);
+      setConfirmingDeleteId(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't delete this portfolio");
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -93,17 +108,10 @@ export default function PortfoliosIndexPage() {
         {portfolios && portfolios.length > 0 && (
           <div style={{ display: "grid", gap: "0.75rem" }}>
             {portfolios.map((p) => (
-              <Link
+              <div
                 key={p.portfolio_id}
-                href={`/portfolios/${p.portfolio_id}`}
                 className="card"
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  textDecoration: "none",
-                  color: "var(--text)",
-                }}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
               >
                 <div>
                   <p style={{ margin: 0, fontWeight: 600, fontSize: "1.05rem" }}>{p.name}</p>
@@ -111,10 +119,43 @@ export default function PortfoliosIndexPage() {
                     {p.holdings.length} holding{p.holdings.length === 1 ? "" : "s"}
                   </p>
                 </div>
-                <span className="num" style={{ color: "var(--accent)", fontSize: "0.85rem" }}>
-                  View →
-                </span>
-              </Link>
+                {confirmingDeleteId !== p.portfolio_id ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+                    <button
+                      onClick={() => setConfirmingDeleteId(p.portfolio_id)}
+                      style={{ background: "none", border: "none", color: "var(--text-soft)", fontSize: "0.78rem", cursor: "pointer" }}
+                    >
+                      Delete
+                    </button>
+                    <Link
+                      href={`/portfolios/${p.portfolio_id}`}
+                      className="num"
+                      style={{ color: "var(--accent)", fontSize: "0.85rem", textDecoration: "none" }}
+                    >
+                      View →
+                    </Link>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    <span style={{ fontSize: "0.78rem", color: "var(--text-soft)" }}>Delete it?</span>
+                    <button
+                      onClick={() => handleDelete(p.portfolio_id)}
+                      disabled={deletingId === p.portfolio_id}
+                      className="num loss"
+                      style={{ background: "none", border: "1px solid var(--loss)", borderRadius: "4px", fontSize: "0.78rem", padding: "0.25rem 0.6rem", cursor: "pointer" }}
+                    >
+                      {deletingId === p.portfolio_id ? "…" : "Confirm"}
+                    </button>
+                    <button
+                      onClick={() => setConfirmingDeleteId(null)}
+                      disabled={deletingId === p.portfolio_id}
+                      style={{ background: "none", border: "none", color: "var(--text-soft)", fontSize: "0.78rem", cursor: "pointer" }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         )}

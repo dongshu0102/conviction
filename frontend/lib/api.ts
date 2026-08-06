@@ -386,6 +386,12 @@ export const api = {
         `?shares=${shares}&cost_basis_per_share=${costBasisPerShare}`,
       { method: "POST" }
     ),
+  removeHolding: (portfolioId: string, ticker: string) =>
+    request(`/portfolios/${portfolioId}/holdings/${encodeURIComponent(ticker.toUpperCase())}`, {
+      method: "DELETE",
+    }),
+  deletePortfolio: (portfolioId: string) =>
+    request(`/portfolios/${portfolioId}`, { method: "DELETE" }),
   getDailyBrief: () => request<DailyBrief>("/brief"),
   getTriage: (listName?: string) =>
     request<TriageResponse>(
