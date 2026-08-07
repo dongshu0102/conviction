@@ -133,7 +133,21 @@ class ComputeCompsValuationUseCase:
             (balance_sheet.total_debt or 0.0) - (balance_sheet.cash_and_equivalents or 0.0)
             if balance_sheet else 0.0
         )
-        shares_outstanding = balance_sheet.shares_outstanding if balance_sheet else None
+        # Prefer market_cap / live price (exact) over the balance
+        # sheet's shares_outstanding (an unreliable proxy mapped from
+        # FMP's "commonStock" line, not an actual share count).
+        # compute_valuation is already a dependency and already fetches
+        # a live quote, so this reuses it rather than adding a new one.
+        try:
+            target_snapshot = self._compute_valuation.execute(ticker)
+            shares_outstanding = (
+                target_snapshot.market_cap / target_snapshot.price
+                if target_snapshot.price and target_snapshot.price > 0 else None
+            )
+        except Exception:
+            shares_outstanding = None
+        if shares_outstanding is None:
+            shares_outstanding = balance_sheet.shares_outstanding if balance_sheet else None
 
         result = compute_comps_valuation(
             peer_multiples=peer_multiples, target_metric=target_metric_value,

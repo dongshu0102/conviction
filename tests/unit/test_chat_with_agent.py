@@ -233,7 +233,7 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
             candidate_repo, alert_repo,
             AssessSpeculativeGrowthUseCase(get_financials, compute_company_valuation),
         ),
-        compute_dcf=ComputeDcfUseCase(get_financials),
+        compute_dcf=ComputeDcfUseCase(get_financials, provider),
         compute_reverse_dcf=ComputeReverseDcfUseCase(get_financials, provider),
         compute_irr=ComputeInvestmentIrrUseCase(provider),
         compute_comps=ComputeCompsValuationUseCase(company_repo, get_financials, compute_company_valuation),
@@ -1593,10 +1593,11 @@ def test_suggest_theme_error_surfaces_cleanly() -> None:
 
 
 def test_compute_dcf_via_chat_returns_a_real_enterprise_value() -> None:
-    from datetime import date
+    from datetime import date, datetime, timezone
     from src.domain.entities.financial_statement import (
         BalanceSheet, CashFlowStatement, FiscalPeriodKey, Period,
     )
+    from src.domain.entities.market_quote import MarketQuote
 
     company_repo = _company_repo("ROCKET")
     statement_repo = FakeFinancialStatementRepository()
@@ -1610,9 +1611,15 @@ def test_compute_dcf_via_chat_returns_a_real_enterprise_value() -> None:
         fiscal_date_ending=date(2025, 12, 31), reported_currency="USD",
         total_debt=200_000_000, cash_and_equivalents=50_000_000, shares_outstanding=10_000_000,
     ))
+    provider = FakeDataProvider(
+        company=company_repo.get_by_ticker("ROCKET"), income_statements=[], balance_sheets=[],
+        cash_flow_statements=[],
+        quote=MarketQuote(ticker="ROCKET", price=50.0, market_cap=500_000_000,
+                           as_of=datetime.now(timezone.utc)),
+    )
     use_case, fake_agent, _ = _build_use_case(
         scripted_calls=[("compute_dcf", {"ticker": "ROCKET", "growth_rate": 0.08})],
-        company_repo=company_repo, statement_repo=statement_repo,
+        company_repo=company_repo, statement_repo=statement_repo, provider=provider,
     )
     use_case.execute("alice", "run a DCF on ROCKET", [])
 

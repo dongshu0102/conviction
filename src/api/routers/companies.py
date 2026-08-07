@@ -145,8 +145,9 @@ def get_valuation_use_case(
 
 def get_dcf_use_case(
     get_financials: GetCompanyFinancialsUseCase = Depends(get_financials_use_case),
+    provider: FinancialModelingPrepProvider = Depends(get_data_provider),
 ) -> ComputeDcfUseCase:
-    return ComputeDcfUseCase(get_financials)
+    return ComputeDcfUseCase(get_financials, provider)
 
 
 def get_reverse_dcf_use_case(

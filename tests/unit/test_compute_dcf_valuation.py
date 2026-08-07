@@ -69,8 +69,8 @@ def _setup(
 
 
 def test_dcf_uses_the_most_recent_free_cash_flow_and_real_net_debt() -> None:
-    get_financials, _ = _setup(fcf=100_000_000, total_debt=200_000_000, cash=50_000_000)
-    use_case = ComputeDcfUseCase(get_financials)
+    get_financials, provider = _setup(fcf=100_000_000, total_debt=200_000_000, cash=50_000_000)
+    use_case = ComputeDcfUseCase(get_financials, provider)
 
     assessment = use_case.execute(TICKER, growth_rate=0.08, years=5)
 
@@ -97,7 +97,12 @@ def test_dcf_falls_back_to_operating_cash_flow_minus_capex_when_fcf_is_null() ->
         key=_key(2025), fiscal_date_ending=date(2025, 12, 31), reported_currency="USD",
         total_debt=0, cash_and_equivalents=0, shares_outstanding=10_000_000,
     ))
-    use_case = ComputeDcfUseCase(GetCompanyFinancialsUseCase(company_repo, statement_repo))
+    provider = FakeDataProvider(
+        company=company_repo.get_by_ticker(TICKER), income_statements=[], balance_sheets=[],
+        cash_flow_statements=[],
+        quote=MarketQuote(ticker=TICKER, price=10.0, market_cap=100_000_000, as_of=datetime.now(timezone.utc)),
+    )
+    use_case = ComputeDcfUseCase(GetCompanyFinancialsUseCase(company_repo, statement_repo), provider)
 
     assessment = use_case.execute(TICKER, growth_rate=0.05, years=3)
 
@@ -105,8 +110,8 @@ def test_dcf_falls_back_to_operating_cash_flow_minus_capex_when_fcf_is_null() ->
 
 
 def test_dcf_derives_a_default_growth_rate_from_historical_revenue_cagr() -> None:
-    get_financials, _ = _setup(revenue_by_year={2021: 100_000_000, 2025: 146_410_000})
-    use_case = ComputeDcfUseCase(get_financials)
+    get_financials, provider = _setup(revenue_by_year={2021: 100_000_000, 2025: 146_410_000})
+    use_case = ComputeDcfUseCase(get_financials, provider)
 
     assessment = use_case.execute(TICKER)  # no growth_rate supplied
 
@@ -116,8 +121,8 @@ def test_dcf_derives_a_default_growth_rate_from_historical_revenue_cagr() -> Non
 
 
 def test_dcf_raises_insufficient_data_when_no_cash_flow_statement_exists() -> None:
-    get_financials, _ = _setup(fcf=None)
-    use_case = ComputeDcfUseCase(get_financials)
+    get_financials, provider = _setup(fcf=None)
+    use_case = ComputeDcfUseCase(get_financials, provider)
     try:
         use_case.execute(TICKER, growth_rate=0.05)
         raise AssertionError("expected InsufficientDataError")
@@ -128,7 +133,10 @@ def test_dcf_raises_insufficient_data_when_no_cash_flow_statement_exists() -> No
 def test_dcf_propagates_company_not_found_for_a_non_ingested_ticker() -> None:
     company_repo = FakeCompanyRepository()
     statement_repo = FakeFinancialStatementRepository()
-    use_case = ComputeDcfUseCase(GetCompanyFinancialsUseCase(company_repo, statement_repo))
+    provider = FakeDataProvider(
+        company=None, income_statements=[], balance_sheets=[], cash_flow_statements=[],
+    )
+    use_case = ComputeDcfUseCase(GetCompanyFinancialsUseCase(company_repo, statement_repo), provider)
     try:
         use_case.execute("GHOST", growth_rate=0.05)
         raise AssertionError("expected CompanyNotFoundError")
@@ -154,3 +162,38 @@ def test_reverse_dcf_requires_real_shares_outstanding() -> None:
         raise AssertionError("expected InsufficientDataError")
     except InsufficientDataError:
         pass
+
+
+def test_dcf_derives_shares_outstanding_from_market_cap_and_price_not_the_unreliable_balance_sheet_field() -> None:
+    """Regression test for a real production bug: balance_sheet.shares_outstanding
+    is mapped from FMP's "commonStock" line (a dollar value, not a share
+    count) and was producing per-share values off by roughly 1000x.
+    market_cap / price is exact and must be preferred whenever a quote
+    is available."""
+    company_repo = FakeCompanyRepository()
+    company_repo.save(Company(ticker=TICKER, name="Rocket Inc", sector=Sector.TECHNOLOGY,
+                               industry="Software", exchange="NASDAQ", country="US"))
+    statement_repo = FakeFinancialStatementRepository()
+    statement_repo.save_cash_flow_statement(CashFlowStatement(
+        key=_key(2025), fiscal_date_ending=date(2025, 12, 31), reported_currency="USD",
+        free_cash_flow=100_000_000,
+    ))
+    # Deliberately wrong balance-sheet figure, mimicking the real bug
+    # (a dollar par value, not a share count) — must be ignored.
+    statement_repo.save_balance_sheet(BalanceSheet(
+        key=_key(2025), fiscal_date_ending=date(2025, 12, 31), reported_currency="USD",
+        total_debt=0, cash_and_equivalents=0, shares_outstanding=24_000,
+    ))
+    provider = FakeDataProvider(
+        company=company_repo.get_by_ticker(TICKER), income_statements=[], balance_sheets=[],
+        cash_flow_statements=[],
+        # Real, exact relationship: market_cap = price x true share count.
+        quote=MarketQuote(ticker=TICKER, price=180.0, market_cap=180.0 * 24_000_000_000,
+                           as_of=datetime.now(timezone.utc)),
+    )
+    use_case = ComputeDcfUseCase(GetCompanyFinancialsUseCase(company_repo, statement_repo), provider)
+
+    assessment = use_case.execute(TICKER, growth_rate=0.05, years=3)
+
+    assert abs(assessment.assumptions.shares_outstanding - 24_000_000_000) < 1
+    assert assessment.result.per_share_value < 1000  # sane, not the ~91,000 the bug produced

@@ -24,6 +24,19 @@ DEFAULT_TERMINAL_GROWTH_RATE = 0.025
 DEFAULT_YEARS = 5
 
 
+def _reliable_shares_outstanding(quote) -> float | None:
+    """balance_sheet.shares_outstanding is mapped from FMP's
+    "commonStock" line — the dollar par value of common stock, not an
+    actual share count (see ValuationSnapshot's own docstring on this
+    exact issue). market_cap / price is mathematically exact and uses
+    data already trusted elsewhere in the platform, so it's used here
+    instead of the balance-sheet field, whenever a live quote is
+    available."""
+    if quote is None or quote.price is None or quote.price <= 0 or quote.market_cap is None:
+        return None
+    return quote.market_cap / quote.price
+
+
 class InsufficientDataError(Exception):
     """Raised when a ticker exists but lacks the specific financial
     data (free cash flow, balance sheet figures) a DCF needs — a
@@ -87,8 +100,13 @@ class DcfAssessment:
 
 
 class ComputeDcfUseCase:
-    def __init__(self, get_financials: GetCompanyFinancialsUseCase) -> None:
+    def __init__(
+        self,
+        get_financials: GetCompanyFinancialsUseCase,
+        data_provider: FinancialDataProvider,
+    ) -> None:
         self._get_financials = get_financials
+        self._data_provider = data_provider
 
     def execute(
         self,
@@ -114,7 +132,19 @@ class ComputeDcfUseCase:
         total_debt = balance_sheet.total_debt if balance_sheet else None
         cash = balance_sheet.cash_and_equivalents if balance_sheet else None
         net_debt = (total_debt or 0.0) - (cash or 0.0)
-        shares_outstanding = balance_sheet.shares_outstanding if balance_sheet else None
+
+        # Prefer market_cap / live price (exact) over the balance
+        # sheet's shares_outstanding (an unreliable proxy — see
+        # _reliable_shares_outstanding's own docstring). A quote fetch
+        # failure shouldn't block the rest of the DCF, since enterprise
+        # value doesn't depend on a per-share conversion at all.
+        try:
+            quote = self._data_provider.get_quote(ticker)
+        except DataProviderError:
+            quote = None
+        shares_outstanding = _reliable_shares_outstanding(quote)
+        if shares_outstanding is None:
+            shares_outstanding = balance_sheet.shares_outstanding if balance_sheet else None
 
         growth_rate_was_default = growth_rate is None
         if growth_rate is None:
@@ -197,17 +227,23 @@ class ComputeReverseDcfUseCase:
         total_debt = balance_sheet.total_debt if balance_sheet else None
         cash = balance_sheet.cash_and_equivalents if balance_sheet else None
         net_debt = (total_debt or 0.0) - (cash or 0.0)
-        shares_outstanding = balance_sheet.shares_outstanding if balance_sheet else None
-        if shares_outstanding is None or shares_outstanding <= 0:
-            raise InsufficientDataError(
-                f"No usable shares-outstanding figure for {ticker} — "
-                f"reverse DCF needs a real per-share target price to solve against."
-            )
 
         try:
             quote = self._data_provider.get_quote(ticker)
         except DataProviderError:
             raise
+
+        # Prefer market_cap / live price (exact) over the balance
+        # sheet's shares_outstanding (an unreliable proxy — see
+        # _reliable_shares_outstanding's own docstring).
+        shares_outstanding = _reliable_shares_outstanding(quote)
+        if shares_outstanding is None:
+            shares_outstanding = balance_sheet.shares_outstanding if balance_sheet else None
+        if shares_outstanding is None or shares_outstanding <= 0:
+            raise InsufficientDataError(
+                f"No usable shares-outstanding figure for {ticker} — "
+                f"reverse DCF needs a real per-share target price to solve against."
+            )
 
         implied_growth_rate = solve_reverse_dcf(
             target_price=quote.price, base_fcf=base_fcf, discount_rate=discount_rate,

@@ -256,7 +256,7 @@ def get_chat_use_case(
                 GetCompanyFinancialsUseCase(company_repo, statement_repo), compute_company_valuation
             ),
         ),
-        compute_dcf=ComputeDcfUseCase(GetCompanyFinancialsUseCase(company_repo, statement_repo)),
+        compute_dcf=ComputeDcfUseCase(GetCompanyFinancialsUseCase(company_repo, statement_repo), data_provider),
         compute_reverse_dcf=ComputeReverseDcfUseCase(
             GetCompanyFinancialsUseCase(company_repo, statement_repo), data_provider
         ),
