@@ -29,6 +29,7 @@ const NAV_ITEMS = [
   { href: "/universe", label: "Universe", icon: "◈" },
   { href: "/terminal", label: "Watchlist", icon: "▤" },
   { href: "/portfolios", label: "Portfolios", icon: "▣" },
+  { href: "/valuation", label: "Valuation", icon: "◇" },
   { href: "/alerts", label: "Alerts", icon: "◉" },
 ];
 

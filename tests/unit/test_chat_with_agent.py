@@ -90,6 +90,12 @@ from src.application.use_cases.assess_speculative_growth import (
 from src.application.use_cases.check_speculative_growth_candidates import (
     CheckSpeculativeGrowthCandidatesUseCase,
 )
+from src.application.use_cases.compute_comps_valuation import ComputeCompsValuationUseCase
+from src.application.use_cases.compute_dcf_valuation import (
+    ComputeDcfUseCase,
+    ComputeReverseDcfUseCase,
+)
+from src.application.use_cases.compute_investment_irr import ComputeInvestmentIrrUseCase
 from src.application.use_cases.manage_speculative_growth_candidates import (
     AddSpeculativeGrowthCandidateUseCase,
     ListSpeculativeGrowthCandidatesUseCase,
@@ -227,6 +233,10 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
             candidate_repo, alert_repo,
             AssessSpeculativeGrowthUseCase(get_financials, compute_company_valuation),
         ),
+        compute_dcf=ComputeDcfUseCase(get_financials),
+        compute_reverse_dcf=ComputeReverseDcfUseCase(get_financials, provider),
+        compute_irr=ComputeInvestmentIrrUseCase(provider),
+        compute_comps=ComputeCompsValuationUseCase(company_repo, get_financials, compute_company_valuation),
     )
     return use_case, fake_agent, portfolio_repo
 
@@ -1579,4 +1589,92 @@ def test_suggest_theme_error_surfaces_cleanly() -> None:
         provider=_NoNewsProvider(company=company_repo.get_by_ticker("AAPL")),
     )
     use_case.execute("alice", "suggest a theme", [])
+    assert "error" in fake_agent.dispatch_results[0]
+
+
+def test_compute_dcf_via_chat_returns_a_real_enterprise_value() -> None:
+    from datetime import date
+    from src.domain.entities.financial_statement import (
+        BalanceSheet, CashFlowStatement, FiscalPeriodKey, Period,
+    )
+
+    company_repo = _company_repo("ROCKET")
+    statement_repo = FakeFinancialStatementRepository()
+    statement_repo.save_cash_flow_statement(CashFlowStatement(
+        key=FiscalPeriodKey(ticker="ROCKET", fiscal_year=2025, period=Period.ANNUAL),
+        fiscal_date_ending=date(2025, 12, 31), reported_currency="USD",
+        free_cash_flow=100_000_000,
+    ))
+    statement_repo.save_balance_sheet(BalanceSheet(
+        key=FiscalPeriodKey(ticker="ROCKET", fiscal_year=2025, period=Period.ANNUAL),
+        fiscal_date_ending=date(2025, 12, 31), reported_currency="USD",
+        total_debt=200_000_000, cash_and_equivalents=50_000_000, shares_outstanding=10_000_000,
+    ))
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("compute_dcf", {"ticker": "ROCKET", "growth_rate": 0.08})],
+        company_repo=company_repo, statement_repo=statement_repo,
+    )
+    use_case.execute("alice", "run a DCF on ROCKET", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["ticker"] == "ROCKET"
+    assert result["enterprise_value"] > 0
+    assert result["assumptions"]["growth_rate_was_default"] is False
+
+
+def test_compute_reverse_dcf_via_chat_returns_an_implied_growth_rate() -> None:
+    from datetime import date, datetime, timezone
+    from src.domain.entities.financial_statement import (
+        BalanceSheet, CashFlowStatement, FiscalPeriodKey, Period,
+    )
+    from src.domain.entities.market_quote import MarketQuote
+
+    company_repo = _company_repo("ROCKET")
+    statement_repo = FakeFinancialStatementRepository()
+    statement_repo.save_cash_flow_statement(CashFlowStatement(
+        key=FiscalPeriodKey(ticker="ROCKET", fiscal_year=2025, period=Period.ANNUAL),
+        fiscal_date_ending=date(2025, 12, 31), reported_currency="USD",
+        free_cash_flow=100_000_000,
+    ))
+    statement_repo.save_balance_sheet(BalanceSheet(
+        key=FiscalPeriodKey(ticker="ROCKET", fiscal_year=2025, period=Period.ANNUAL),
+        fiscal_date_ending=date(2025, 12, 31), reported_currency="USD",
+        total_debt=0, cash_and_equivalents=0, shares_outstanding=10_000_000,
+    ))
+    provider = FakeDataProvider(
+        company=company_repo.get_by_ticker("ROCKET"), income_statements=[], balance_sheets=[],
+        cash_flow_statements=[],
+        quotes_by_ticker={"ROCKET": MarketQuote(ticker="ROCKET", price=25.0, market_cap=250_000_000,
+                                                  as_of=datetime.now(timezone.utc))},
+    )
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("compute_reverse_dcf", {"ticker": "ROCKET"})],
+        company_repo=company_repo, statement_repo=statement_repo, provider=provider,
+    )
+    use_case.execute("alice", "what growth rate does ROCKET's price assume?", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["ticker"] == "ROCKET"
+    assert result["current_price"] == 25.0
+    assert result["implied_growth_rate"] is not None
+
+
+def test_compute_irr_via_chat_matches_the_hand_verified_pure_math_case() -> None:
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("compute_irr", {"entry_price": 100, "exit_price": 110, "years": 1})],
+    )
+    use_case.execute("alice", "what's my IRR buying at 100 and selling at 110 in a year?", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert abs(result["irr"] - 0.10) < 1e-6
+
+
+def test_compute_comps_via_chat_surfaces_error_with_no_peers_available() -> None:
+    company_repo = _company_repo("LONELY")
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("compute_comps", {"ticker": "LONELY"})],
+        company_repo=company_repo,
+    )
+    use_case.execute("alice", "run comps on LONELY", [])
+
     assert "error" in fake_agent.dispatch_results[0]

@@ -7,10 +7,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.api.schemas import (
     BalanceSheetSchema,
+    CompsResponseSchema,
+    DcfAssumptionsSchema,
+    DcfProjectionYearSchema,
+    DcfResponseSchema,
     EtfIngestResultSchema,
     FactorRankingResponseSchema,
     FactorRawMetricsSchema,
     FactorScoreResponseSchema,
+    IrrResponseSchema,
+    IrrScenarioSchema,
     RankedFactorScoreSchema,
     CashFlowStatementSchema,
     CompanyFinancialAnalysisSchema,
@@ -19,6 +25,8 @@ from src.api.schemas import (
     IncomeStatementSchema,
     IngestResultSchema,
     NewsArticleSchema,
+    ReverseDcfAssumptionsSchema,
+    ReverseDcfResponseSchema,
     ScreenedStockSchema,
     ScreenRequestSchema,
     ScreenResultSchema,
@@ -27,6 +35,22 @@ from src.api.schemas import (
     YearlyRatiosSchema,
 )
 from src.application.interfaces.data_provider import DataProviderError
+from src.application.use_cases.compute_comps_valuation import (
+    CompsMetric,
+    ComputeCompsValuationUseCase,
+    InsufficientPeerDataError,
+    InsufficientTargetDataError,
+)
+from src.application.use_cases.compute_dcf_valuation import (
+    ComputeDcfUseCase,
+    ComputeReverseDcfUseCase,
+    InsufficientDataError,
+)
+from src.application.use_cases.compute_investment_irr import (
+    ComputeInvestmentIrrUseCase,
+    InvalidIrrScenarioError,
+)
+from src.domain.services.valuation_math import DcfAssumptionError
 from src.application.use_cases.manage_universe_theme import GetThemeTickersUseCase
 from src.application.use_cases.screen_stocks import ScreenStocksUseCase
 from src.infrastructure.persistence.universe_theme_repository_impl import (
@@ -117,6 +141,33 @@ def get_valuation_use_case(
     provider: FinancialModelingPrepProvider = Depends(get_data_provider),
 ) -> ComputeValuationUseCase:
     return ComputeValuationUseCase(get_financials, provider)
+
+
+def get_dcf_use_case(
+    get_financials: GetCompanyFinancialsUseCase = Depends(get_financials_use_case),
+) -> ComputeDcfUseCase:
+    return ComputeDcfUseCase(get_financials)
+
+
+def get_reverse_dcf_use_case(
+    get_financials: GetCompanyFinancialsUseCase = Depends(get_financials_use_case),
+    provider: FinancialModelingPrepProvider = Depends(get_data_provider),
+) -> ComputeReverseDcfUseCase:
+    return ComputeReverseDcfUseCase(get_financials, provider)
+
+
+def get_irr_use_case(
+    provider: FinancialModelingPrepProvider = Depends(get_data_provider),
+) -> ComputeInvestmentIrrUseCase:
+    return ComputeInvestmentIrrUseCase(provider)
+
+
+def get_comps_use_case(
+    company_repo: SqlAlchemyCompanyRepository = Depends(get_company_repository),
+    get_financials: GetCompanyFinancialsUseCase = Depends(get_financials_use_case),
+    valuation: ComputeValuationUseCase = Depends(get_valuation_use_case),
+) -> ComputeCompsValuationUseCase:
+    return ComputeCompsValuationUseCase(company_repo, get_financials, valuation)
 
 
 def get_factor_score_use_case(
@@ -407,6 +458,134 @@ def get_valuation(
         price_to_book=result.price_to_book,
         price_to_free_cash_flow=result.price_to_free_cash_flow,
         ev_to_ebitda=result.ev_to_ebitda,
+    )
+
+
+@router.get("/{ticker}/dcf", response_model=DcfResponseSchema)
+def get_dcf(
+    ticker: str,
+    growth_rate: float | None = Query(default=None),
+    discount_rate: float = Query(default=0.10),
+    terminal_growth_rate: float = Query(default=0.025),
+    years: int = Query(default=5),
+    use_case: ComputeDcfUseCase = Depends(get_dcf_use_case),
+) -> DcfResponseSchema:
+    try:
+        assessment = use_case.execute(
+            ticker, growth_rate=growth_rate, discount_rate=discount_rate,
+            terminal_growth_rate=terminal_growth_rate, years=years,
+        )
+    except CompanyNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except InsufficientDataError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except DcfAssumptionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    a, r = assessment.assumptions, assessment.result
+    return DcfResponseSchema(
+        ticker=assessment.ticker, as_of=assessment.as_of,
+        assumptions=DcfAssumptionsSchema(
+            base_fcf=a.base_fcf, growth_rate=a.growth_rate,
+            growth_rate_was_default=a.growth_rate_was_default,
+            discount_rate=a.discount_rate, terminal_growth_rate=a.terminal_growth_rate,
+            years=a.years, net_debt=a.net_debt, shares_outstanding=a.shares_outstanding,
+        ),
+        enterprise_value=r.enterprise_value, equity_value=r.equity_value,
+        per_share_value=r.per_share_value, terminal_value=r.terminal_value,
+        present_value_of_terminal_value=r.present_value_of_terminal_value,
+        projections=[
+            DcfProjectionYearSchema(year=p.year, projected_fcf=p.projected_fcf, present_value=p.present_value)
+            for p in r.projections
+        ],
+    )
+
+
+@router.get("/{ticker}/reverse-dcf", response_model=ReverseDcfResponseSchema)
+def get_reverse_dcf(
+    ticker: str,
+    discount_rate: float = Query(default=0.10),
+    terminal_growth_rate: float = Query(default=0.025),
+    years: int = Query(default=5),
+    use_case: ComputeReverseDcfUseCase = Depends(get_reverse_dcf_use_case),
+) -> ReverseDcfResponseSchema:
+    try:
+        result = use_case.execute(
+            ticker, discount_rate=discount_rate,
+            terminal_growth_rate=terminal_growth_rate, years=years,
+        )
+    except CompanyNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except InsufficientDataError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except DataProviderError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    a = result.assumptions
+    return ReverseDcfResponseSchema(
+        ticker=result.ticker, as_of=result.as_of, current_price=result.current_price,
+        implied_growth_rate=result.implied_growth_rate,
+        assumptions=ReverseDcfAssumptionsSchema(
+            base_fcf=a.base_fcf, discount_rate=a.discount_rate,
+            terminal_growth_rate=a.terminal_growth_rate, years=a.years,
+            net_debt=a.net_debt, shares_outstanding=a.shares_outstanding,
+        ),
+    )
+
+
+@router.get("/{ticker}/irr", response_model=IrrResponseSchema)
+def get_irr(
+    ticker: str,
+    exit_price: float = Query(...),
+    years: int = Query(...),
+    entry_price: float | None = Query(default=None),
+    annual_dividend_per_share: float = Query(default=0.0),
+    use_case: ComputeInvestmentIrrUseCase = Depends(get_irr_use_case),
+) -> IrrResponseSchema:
+    try:
+        result = use_case.execute(
+            exit_price=exit_price, years=years, ticker=ticker,
+            entry_price=entry_price, annual_dividend_per_share=annual_dividend_per_share,
+        )
+    except InvalidIrrScenarioError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except DataProviderError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    s = result.scenario
+    return IrrResponseSchema(
+        ticker=result.ticker, as_of=result.as_of, irr=result.irr,
+        scenario=IrrScenarioSchema(
+            entry_price=s.entry_price, exit_price=s.exit_price, years=s.years,
+            annual_dividend_per_share=s.annual_dividend_per_share, cash_flows=s.cash_flows,
+        ),
+    )
+
+
+@router.get("/{ticker}/comps", response_model=CompsResponseSchema)
+def get_comps(
+    ticker: str,
+    metric: CompsMetric = Query(default=CompsMetric.PE),
+    use_case: ComputeCompsValuationUseCase = Depends(get_comps_use_case),
+) -> CompsResponseSchema:
+    try:
+        assessment = use_case.execute(ticker, metric)
+    except CompanyNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except InsufficientPeerDataError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except InsufficientTargetDataError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    r = assessment.result
+    return CompsResponseSchema(
+        ticker=assessment.ticker, as_of=assessment.as_of, metric=assessment.metric.value,
+        peers_considered=assessment.peers_considered, peers_used=assessment.peers_used,
+        peers_skipped=assessment.peers_skipped, peer_count=r.peer_count,
+        median_multiple=r.median_multiple, mean_multiple=r.mean_multiple,
+        implied_enterprise_value=r.implied_enterprise_value,
+        implied_equity_value=r.implied_equity_value,
+        implied_per_share_value=r.implied_per_share_value,
     )
 
 

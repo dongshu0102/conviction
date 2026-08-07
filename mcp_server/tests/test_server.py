@@ -216,6 +216,56 @@ async def test_check_growth_candidates_uses_the_dedicated_check_path():
     mock_req.assert_called_once_with("POST", "/growth-candidates/check")
 
 
+@pytest.mark.asyncio
+async def test_compute_dcf_omits_growth_rate_param_when_not_supplied():
+    """growth_rate=None must not become the literal string 'None' in
+    the query params — omitted entirely so the backend's own default
+    (historical revenue CAGR) applies."""
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.compute_dcf("NVDA")
+    mock_req.assert_called_once_with(
+        "GET", "/companies/NVDA/dcf",
+        params={"discount_rate": 0.10, "terminal_growth_rate": 0.025, "years": 5},
+    )
+
+
+@pytest.mark.asyncio
+async def test_compute_dcf_includes_growth_rate_param_when_explicitly_supplied():
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.compute_dcf("NVDA", growth_rate=0.15)
+    mock_req.assert_called_once_with(
+        "GET", "/companies/NVDA/dcf",
+        params={"discount_rate": 0.10, "terminal_growth_rate": 0.025, "years": 5, "growth_rate": 0.15},
+    )
+
+
+@pytest.mark.asyncio
+async def test_compute_reverse_dcf_uses_get_and_the_correct_path():
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.compute_reverse_dcf("NVDA")
+    mock_req.assert_called_once_with(
+        "GET", "/companies/NVDA/reverse-dcf",
+        params={"discount_rate": 0.10, "terminal_growth_rate": 0.025, "years": 5},
+    )
+
+
+@pytest.mark.asyncio
+async def test_compute_irr_requires_ticker_in_the_path_matching_the_real_rest_constraint():
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.compute_irr("NVDA", exit_price=150.0, years=3)
+    mock_req.assert_called_once_with(
+        "GET", "/companies/NVDA/irr",
+        params={"exit_price": 150.0, "years": 3, "annual_dividend_per_share": 0.0},
+    )
+
+
+@pytest.mark.asyncio
+async def test_compute_comps_defaults_to_pe_metric():
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.compute_comps("NVDA")
+    mock_req.assert_called_once_with("GET", "/companies/NVDA/comps", params={"metric": "pe"})
+
+
 # --- The 11 tools added to close the MCP gap (options, screening, --------
 # recommendations, rebalancing, watchlist extras) — none of these had any
 # test coverage until now, despite three of them sending a JSON body, the

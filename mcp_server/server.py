@@ -391,6 +391,93 @@ async def check_growth_candidates() -> str:
 
 
 @mcp.tool()
+async def compute_dcf(
+    ticker: str,
+    growth_rate: float | None = None,
+    discount_rate: float = 0.10,
+    terminal_growth_rate: float = 0.025,
+    years: int = 5,
+) -> str:
+    """Discounted cash flow valuation for a real, ingested ticker —
+    projects free cash flow forward at growth_rate, discounts it back
+    to present value, adds a terminal value. If growth_rate isn't
+    supplied, defaults to the company's own historical revenue CAGR
+    (never an arbitrary constant), and this is always reported back
+    explicitly rather than hidden. Every assumption is adjustable;
+    small changes in these can swing the result substantially, which
+    is a real property of DCF, not a flaw in this tool."""
+    params: dict = {
+        "discount_rate": discount_rate,
+        "terminal_growth_rate": terminal_growth_rate,
+        "years": years,
+    }
+    if growth_rate is not None:
+        params["growth_rate"] = growth_rate
+    return await _request("GET", f"/companies/{ticker}/dcf", params=params)
+
+
+@mcp.tool()
+async def compute_reverse_dcf(
+    ticker: str,
+    discount_rate: float = 0.10,
+    terminal_growth_rate: float = 0.025,
+    years: int = 5,
+) -> str:
+    """Reverse DCF — instead of assuming a growth rate to compute a
+    value, solves backward from the ticker's real, current market
+    price to find what growth rate the market is already pricing in.
+    Often more useful than a forward DCF: judging whether an implied
+    growth rate is realistic is usually easier than confidently
+    picking one from scratch. Returns null implied_growth_rate if no
+    rate between -50% and +200% annually produces the current price —
+    an honest 'no solution in any sane range,' not a forced number."""
+    return await _request(
+        "GET", f"/companies/{ticker}/reverse-dcf",
+        params={"discount_rate": discount_rate, "terminal_growth_rate": terminal_growth_rate, "years": years},
+    )
+
+
+@mcp.tool()
+async def compute_irr(
+    ticker: str,
+    exit_price: float,
+    years: int,
+    entry_price: float | None = None,
+    annual_dividend_per_share: float = 0.0,
+) -> str:
+    """Internal rate of return for a specific buy-hold-sell scenario:
+    buy at entry_price (defaults to ticker's real live quote if not
+    supplied), optionally collect an annual dividend, sell at
+    exit_price after years. Different in character from DCF — this
+    isn't assessing a company, it's a return calculator for a
+    hypothetical trade, the kind of framework used in PE/LBO
+    evaluation. exit_price and years are never defaulted, since
+    there's no way to derive an exit assumption without assuming the
+    conclusion. entry_price, if supplied, overrides the live quote."""
+    params: dict = {
+        "exit_price": exit_price, "years": years,
+        "annual_dividend_per_share": annual_dividend_per_share,
+    }
+    if entry_price is not None:
+        params["entry_price"] = entry_price
+    return await _request("GET", f"/companies/{ticker}/irr", params=params)
+
+
+@mcp.tool()
+async def compute_comps(ticker: str, metric: str = "pe") -> str:
+    """Comparable-company valuation — finds real, same-sector peers
+    already in the universe, computes each one's own valuation
+    multiple (reusing the same logic get_factor_score and get_valuation
+    already use), takes the median (not mean, so one outlier peer
+    doesn't dominate), and applies it to the target's own financials.
+    metric is one of 'pe' (price/earnings), 'ev_ebitda' (enterprise
+    value/EBITDA), 'ps' (price/sales), or 'pfcf' (price/free cash
+    flow). Reports which peers were actually usable and which were
+    skipped, never silently."""
+    return await _request("GET", f"/companies/{ticker}/comps", params={"metric": metric})
+
+
+@mcp.tool()
 async def generate_theme_synthesis(theme_name: str) -> str:
     """Generate an AI-written narrative synthesis across an ENTIRE
     theme — common threads, notable divergences, and risks visible

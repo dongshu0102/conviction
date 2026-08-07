@@ -269,6 +269,82 @@ class ChangeRoleRequestSchema(BaseModel):
     role: str
 
 
+class DcfProjectionYearSchema(BaseModel):
+    year: int
+    projected_fcf: float
+    present_value: float
+
+
+class DcfAssumptionsSchema(BaseModel):
+    base_fcf: float
+    growth_rate: float
+    growth_rate_was_default: bool
+    discount_rate: float
+    terminal_growth_rate: float
+    years: int
+    net_debt: float
+    shares_outstanding: float | None
+
+
+class DcfResponseSchema(BaseModel):
+    ticker: str
+    as_of: datetime
+    assumptions: DcfAssumptionsSchema
+    enterprise_value: float
+    equity_value: float
+    per_share_value: float | None
+    terminal_value: float
+    present_value_of_terminal_value: float
+    projections: list[DcfProjectionYearSchema]
+
+
+class ReverseDcfAssumptionsSchema(BaseModel):
+    base_fcf: float
+    discount_rate: float
+    terminal_growth_rate: float
+    years: int
+    net_debt: float
+    shares_outstanding: float
+
+
+class ReverseDcfResponseSchema(BaseModel):
+    ticker: str
+    as_of: datetime
+    current_price: float
+    implied_growth_rate: float | None
+    assumptions: ReverseDcfAssumptionsSchema
+
+
+class IrrScenarioSchema(BaseModel):
+    entry_price: float
+    exit_price: float
+    years: int
+    annual_dividend_per_share: float
+    cash_flows: list[float]
+
+
+class IrrResponseSchema(BaseModel):
+    ticker: str | None
+    as_of: datetime
+    irr: float | None
+    scenario: IrrScenarioSchema
+
+
+class CompsResponseSchema(BaseModel):
+    ticker: str
+    as_of: datetime
+    metric: str
+    peers_considered: list[str]
+    peers_used: list[str]
+    peers_skipped: list[str]
+    peer_count: int
+    median_multiple: float
+    mean_multiple: float
+    implied_enterprise_value: float | None
+    implied_equity_value: float | None
+    implied_per_share_value: float | None
+
+
 class SpeculativeGrowthAssessmentSchema(BaseModel):
     ticker: str
     as_of: datetime

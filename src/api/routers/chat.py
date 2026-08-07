@@ -81,6 +81,12 @@ from src.application.use_cases.assess_speculative_growth import (
 from src.application.use_cases.check_speculative_growth_candidates import (
     CheckSpeculativeGrowthCandidatesUseCase,
 )
+from src.application.use_cases.compute_comps_valuation import ComputeCompsValuationUseCase
+from src.application.use_cases.compute_dcf_valuation import (
+    ComputeDcfUseCase,
+    ComputeReverseDcfUseCase,
+)
+from src.application.use_cases.compute_investment_irr import ComputeInvestmentIrrUseCase
 from src.application.use_cases.manage_speculative_growth_candidates import (
     AddSpeculativeGrowthCandidateUseCase,
     ListSpeculativeGrowthCandidatesUseCase,
@@ -249,6 +255,16 @@ def get_chat_use_case(
             AssessSpeculativeGrowthUseCase(
                 GetCompanyFinancialsUseCase(company_repo, statement_repo), compute_company_valuation
             ),
+        ),
+        compute_dcf=ComputeDcfUseCase(GetCompanyFinancialsUseCase(company_repo, statement_repo)),
+        compute_reverse_dcf=ComputeReverseDcfUseCase(
+            GetCompanyFinancialsUseCase(company_repo, statement_repo), data_provider
+        ),
+        compute_irr=ComputeInvestmentIrrUseCase(data_provider),
+        compute_comps=ComputeCompsValuationUseCase(
+            company_repo,
+            GetCompanyFinancialsUseCase(company_repo, statement_repo),
+            compute_company_valuation,
         ),
     )
 

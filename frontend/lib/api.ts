@@ -424,6 +424,94 @@ export interface Alert {
   created_at: string;
 }
 
+export interface ValuationSnapshot {
+  ticker: string;
+  as_of: string;
+  price: number;
+  market_cap: number;
+  enterprise_value: number | null;
+  fundamentals_fiscal_year: number;
+  price_to_earnings: number | null;
+  price_to_sales: number | null;
+  price_to_book: number | null;
+  price_to_free_cash_flow: number | null;
+  ev_to_ebitda: number | null;
+}
+
+export interface DcfProjectionYear {
+  year: number;
+  projected_fcf: number;
+  present_value: number;
+}
+
+export interface DcfAssumptions {
+  base_fcf: number;
+  growth_rate: number;
+  growth_rate_was_default: boolean;
+  discount_rate: number;
+  terminal_growth_rate: number;
+  years: number;
+  net_debt: number;
+  shares_outstanding: number | null;
+}
+
+export interface DcfResponse {
+  ticker: string;
+  as_of: string;
+  assumptions: DcfAssumptions;
+  enterprise_value: number;
+  equity_value: number;
+  per_share_value: number | null;
+  terminal_value: number;
+  present_value_of_terminal_value: number;
+  projections: DcfProjectionYear[];
+}
+
+export interface ReverseDcfResponse {
+  ticker: string;
+  as_of: string;
+  current_price: number;
+  implied_growth_rate: number | null;
+  assumptions: {
+    base_fcf: number;
+    discount_rate: number;
+    terminal_growth_rate: number;
+    years: number;
+    net_debt: number;
+    shares_outstanding: number;
+  };
+}
+
+export interface IrrResponse {
+  ticker: string | null;
+  as_of: string;
+  irr: number | null;
+  scenario: {
+    entry_price: number;
+    exit_price: number;
+    years: number;
+    annual_dividend_per_share: number;
+    cash_flows: number[];
+  };
+}
+
+export type CompsMetric = "pe" | "ev_ebitda" | "ps" | "pfcf";
+
+export interface CompsResponse {
+  ticker: string;
+  as_of: string;
+  metric: string;
+  peers_considered: string[];
+  peers_used: string[];
+  peers_skipped: string[];
+  peer_count: number;
+  median_multiple: number;
+  mean_multiple: number;
+  implied_enterprise_value: number | null;
+  implied_equity_value: number | null;
+  implied_per_share_value: number | null;
+}
+
 export const api = {
   signUp: (email: string, password: string) =>
     request<{ plaintext_key: string; user_id: string }>("/auth/signup", {
@@ -591,6 +679,52 @@ export const api = {
   markAlertRead: (alertId: number) =>
     request(`/alerts/${alertId}/read`, { method: "POST" }),
   checkAlerts: () => request<Alert[]>("/alerts/check", { method: "POST" }),
+  getValuation: (ticker: string) =>
+    request<ValuationSnapshot>(`/companies/${encodeURIComponent(ticker.toUpperCase())}/valuation`),
+  getDcf: (
+    ticker: string,
+    opts?: { growth_rate?: number; discount_rate?: number; terminal_growth_rate?: number; years?: number }
+  ) => {
+    const params = new URLSearchParams();
+    if (opts?.growth_rate !== undefined) params.set("growth_rate", String(opts.growth_rate));
+    params.set("discount_rate", String(opts?.discount_rate ?? 0.10));
+    params.set("terminal_growth_rate", String(opts?.terminal_growth_rate ?? 0.025));
+    params.set("years", String(opts?.years ?? 5));
+    return request<DcfResponse>(
+      `/companies/${encodeURIComponent(ticker.toUpperCase())}/dcf?${params.toString()}`
+    );
+  },
+  getReverseDcf: (
+    ticker: string,
+    opts?: { discount_rate?: number; terminal_growth_rate?: number; years?: number }
+  ) => {
+    const params = new URLSearchParams();
+    params.set("discount_rate", String(opts?.discount_rate ?? 0.10));
+    params.set("terminal_growth_rate", String(opts?.terminal_growth_rate ?? 0.025));
+    params.set("years", String(opts?.years ?? 5));
+    return request<ReverseDcfResponse>(
+      `/companies/${encodeURIComponent(ticker.toUpperCase())}/reverse-dcf?${params.toString()}`
+    );
+  },
+  getIrr: (
+    ticker: string,
+    exitPrice: number,
+    years: number,
+    opts?: { entry_price?: number; annual_dividend_per_share?: number }
+  ) => {
+    const params = new URLSearchParams();
+    params.set("exit_price", String(exitPrice));
+    params.set("years", String(years));
+    if (opts?.entry_price !== undefined) params.set("entry_price", String(opts.entry_price));
+    params.set("annual_dividend_per_share", String(opts?.annual_dividend_per_share ?? 0));
+    return request<IrrResponse>(
+      `/companies/${encodeURIComponent(ticker.toUpperCase())}/irr?${params.toString()}`
+    );
+  },
+  getComps: (ticker: string, metric: CompsMetric = "pe") =>
+    request<CompsResponse>(
+      `/companies/${encodeURIComponent(ticker.toUpperCase())}/comps?metric=${metric}`
+    ),
 
   // Universe themes
   listThemes: () => request<{ themes: UniverseThemeSummary[] }>("/universe/themes"),

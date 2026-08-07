@@ -62,6 +62,22 @@ from src.application.use_cases.ingest_company_data import IngestCompanyDataUseCa
 from src.application.use_cases.assess_speculative_growth import (
     AssessSpeculativeGrowthUseCase,
 )
+from src.application.use_cases.compute_comps_valuation import (
+    CompsMetric,
+    ComputeCompsValuationUseCase,
+    InsufficientPeerDataError,
+    InsufficientTargetDataError,
+)
+from src.application.use_cases.compute_dcf_valuation import (
+    ComputeDcfUseCase,
+    ComputeReverseDcfUseCase,
+    InsufficientDataError as DcfInsufficientDataError,
+)
+from src.application.use_cases.compute_investment_irr import (
+    ComputeInvestmentIrrUseCase,
+    InvalidIrrScenarioError,
+)
+from src.domain.services.valuation_math import DcfAssumptionError
 from src.application.use_cases.check_speculative_growth_candidates import (
     CheckSpeculativeGrowthCandidatesUseCase,
 )
@@ -599,6 +615,99 @@ _TOOLS = [
         {"type": "object", "properties": {}},
     ),
     ToolDefinition(
+        "compute_dcf",
+        "Discounted cash flow valuation for a real, ingested ticker — "
+        "projects free cash flow forward at a growth rate, discounts it "
+        "back to present value, and adds a terminal value. If growth_rate "
+        "isn't supplied, defaults to the company's own historical revenue "
+        "CAGR (never an arbitrary constant), and this is reported back "
+        "explicitly so the assumption is never hidden. Every input "
+        "(growth rate, discount rate, terminal growth rate, years) is "
+        "adjustable — small changes in these can swing the result "
+        "substantially, which is a real property of DCF, not a flaw in "
+        "this tool.",
+        {
+            "type": "object",
+            "properties": {
+                "ticker": {"type": "string"},
+                "growth_rate": {"type": "number", "description": "Optional. Defaults to historical revenue CAGR."},
+                "discount_rate": {"type": "number", "description": "Optional, default 0.10."},
+                "terminal_growth_rate": {"type": "number", "description": "Optional, default 0.025."},
+                "years": {"type": "integer", "description": "Optional, default 5."},
+            },
+            "required": ["ticker"],
+        },
+    ),
+    ToolDefinition(
+        "compute_reverse_dcf",
+        "Reverse DCF — instead of assuming a growth rate to compute a "
+        "value, solves backward from the ticker's real, current market "
+        "price to find what growth rate the market is already pricing "
+        "in. Often more useful than a forward DCF: judging whether an "
+        "implied growth rate is realistic is usually easier than "
+        "confidently picking one from scratch. Returns null if no "
+        "growth rate between -50% and +200% annually produces the "
+        "current price — an honest 'no solution in any sane range,' not "
+        "a forced number.",
+        {
+            "type": "object",
+            "properties": {
+                "ticker": {"type": "string"},
+                "discount_rate": {"type": "number", "description": "Optional, default 0.10."},
+                "terminal_growth_rate": {"type": "number", "description": "Optional, default 0.025."},
+                "years": {"type": "integer", "description": "Optional, default 5."},
+            },
+            "required": ["ticker"],
+        },
+    ),
+    ToolDefinition(
+        "compute_irr",
+        "Internal rate of return for a specific buy-hold-sell scenario: "
+        "buy at entry_price (defaults to the ticker's real live quote if "
+        "not supplied), optionally collect an annual dividend, sell at "
+        "exit_price after years. Different in character from DCF — this "
+        "isn't assessing a company, it's a return calculator for a "
+        "hypothetical trade, the kind of framework used in PE/LBO "
+        "evaluation. exit_price and years are never defaulted, since "
+        "there's no way to derive an exit assumption without assuming "
+        "the conclusion.",
+        {
+            "type": "object",
+            "properties": {
+                "exit_price": {"type": "number"},
+                "years": {"type": "integer"},
+                "ticker": {"type": "string", "description": "Optional if entry_price is supplied directly."},
+                "entry_price": {"type": "number", "description": "Optional — defaults to ticker's live price."},
+                "annual_dividend_per_share": {"type": "number", "description": "Optional, default 0."},
+            },
+            "required": ["exit_price", "years"],
+        },
+    ),
+    ToolDefinition(
+        "compute_comps",
+        "Comparable-company valuation — finds real, same-sector peers "
+        "already in the universe, computes each one's own valuation "
+        "multiple (reusing the same logic get_factor_score and "
+        "get_valuation already use), takes the median (not mean, so one "
+        "outlier peer doesn't dominate), and applies it to the target's "
+        "own financials. metric is one of 'pe' (price/earnings), "
+        "'ev_ebitda' (enterprise value/EBITDA), 'ps' (price/sales), or "
+        "'pfcf' (price/free cash flow). Reports which peers were "
+        "actually usable and which were skipped, never silently.",
+        {
+            "type": "object",
+            "properties": {
+                "ticker": {"type": "string"},
+                "metric": {
+                    "type": "string",
+                    "enum": ["pe", "ev_ebitda", "ps", "pfcf"],
+                    "description": "Optional, default 'pe'.",
+                },
+            },
+            "required": ["ticker"],
+        },
+    ),
+    ToolDefinition(
         "ingest_etf",
         "Ingest an ETF's profile (name, expense ratio, AUM) so it can be added "
         "to watchlists, themes, and screened/factor-scored. ETFs have no "
@@ -899,6 +1008,10 @@ class ChatWithAgentUseCase:
         remove_growth_candidate: RemoveSpeculativeGrowthCandidateUseCase,
         list_growth_candidates: ListSpeculativeGrowthCandidatesUseCase,
         check_growth_candidates: CheckSpeculativeGrowthCandidatesUseCase,
+        compute_dcf: ComputeDcfUseCase,
+        compute_reverse_dcf: ComputeReverseDcfUseCase,
+        compute_irr: ComputeInvestmentIrrUseCase,
+        compute_comps: ComputeCompsValuationUseCase,
     ) -> None:
         self._chat_agent = chat_agent
         self._get_watchlist = get_watchlist
@@ -947,6 +1060,10 @@ class ChatWithAgentUseCase:
         self._remove_growth_candidate = remove_growth_candidate
         self._list_growth_candidates = list_growth_candidates
         self._check_growth_candidates = check_growth_candidates
+        self._compute_dcf = compute_dcf
+        self._compute_reverse_dcf = compute_reverse_dcf
+        self._compute_irr = compute_irr
+        self._compute_comps = compute_comps
         self._construct_risk_parity_portfolio = construct_risk_parity_portfolio
         self._user_id: str = ""  # set per-request in execute()
 
@@ -1330,6 +1447,100 @@ class ChatWithAgentUseCase:
                     "Real scheduled checking already runs in the background — "
                     "this was an on-demand check, not the primary alert mechanism."
                 ),
+            }
+
+        if tool_name == "compute_dcf":
+            try:
+                assessment = self._compute_dcf.execute(
+                    tool_input["ticker"],
+                    growth_rate=tool_input.get("growth_rate"),
+                    discount_rate=tool_input.get("discount_rate", 0.10),
+                    terminal_growth_rate=tool_input.get("terminal_growth_rate", 0.025),
+                    years=tool_input.get("years", 5),
+                )
+            except (CompanyNotFoundError, DcfInsufficientDataError, DcfAssumptionError) as exc:
+                return {"error": str(exc)}
+            a, r = assessment.assumptions, assessment.result
+            return {
+                "ticker": assessment.ticker,
+                "assumptions": {
+                    "base_fcf": a.base_fcf, "growth_rate": a.growth_rate,
+                    "growth_rate_was_default": a.growth_rate_was_default,
+                    "discount_rate": a.discount_rate,
+                    "terminal_growth_rate": a.terminal_growth_rate,
+                    "years": a.years, "net_debt": a.net_debt,
+                    "shares_outstanding": a.shares_outstanding,
+                },
+                "enterprise_value": r.enterprise_value, "equity_value": r.equity_value,
+                "per_share_value": r.per_share_value,
+                "terminal_value": r.terminal_value,
+            }
+
+        if tool_name == "compute_reverse_dcf":
+            try:
+                result = self._compute_reverse_dcf.execute(
+                    tool_input["ticker"],
+                    discount_rate=tool_input.get("discount_rate", 0.10),
+                    terminal_growth_rate=tool_input.get("terminal_growth_rate", 0.025),
+                    years=tool_input.get("years", 5),
+                )
+            except (CompanyNotFoundError, DcfInsufficientDataError) as exc:
+                return {"error": str(exc)}
+            return {
+                "ticker": result.ticker,
+                "current_price": result.current_price,
+                "implied_growth_rate": result.implied_growth_rate,
+                "note": (
+                    "null implied_growth_rate means no growth rate between -50% and "
+                    "+200% annually reproduces the current price — an honest 'no "
+                    "solution in a sane range,' not a computation failure."
+                    if result.implied_growth_rate is None else None
+                ),
+            }
+
+        if tool_name == "compute_irr":
+            try:
+                result = self._compute_irr.execute(
+                    exit_price=tool_input["exit_price"],
+                    years=tool_input["years"],
+                    ticker=tool_input.get("ticker"),
+                    entry_price=tool_input.get("entry_price"),
+                    annual_dividend_per_share=tool_input.get("annual_dividend_per_share", 0.0),
+                )
+            except InvalidIrrScenarioError as exc:
+                return {"error": str(exc)}
+            return {
+                "ticker": result.ticker,
+                "irr": result.irr,
+                "scenario": {
+                    "entry_price": result.scenario.entry_price,
+                    "exit_price": result.scenario.exit_price,
+                    "years": result.scenario.years,
+                    "annual_dividend_per_share": result.scenario.annual_dividend_per_share,
+                },
+                "note": (
+                    "null irr means no discount rate in a sane range zeroes the NPV "
+                    "of this cash flow sequence — check the scenario is realistic."
+                    if result.irr is None else None
+                ),
+            }
+
+        if tool_name == "compute_comps":
+            metric_str = tool_input.get("metric", "pe")
+            try:
+                metric = CompsMetric(metric_str)
+                assessment = self._compute_comps.execute(tool_input["ticker"], metric)
+            except (CompanyNotFoundError, InsufficientPeerDataError, InsufficientTargetDataError, ValueError) as exc:
+                return {"error": str(exc)}
+            r = assessment.result
+            return {
+                "ticker": assessment.ticker, "metric": assessment.metric.value,
+                "peers_used": assessment.peers_used,
+                "peers_skipped": assessment.peers_skipped,
+                "median_multiple": r.median_multiple, "mean_multiple": r.mean_multiple,
+                "implied_enterprise_value": r.implied_enterprise_value,
+                "implied_equity_value": r.implied_equity_value,
+                "implied_per_share_value": r.implied_per_share_value,
             }
 
         if tool_name == "ingest_etf":
