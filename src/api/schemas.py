@@ -345,6 +345,23 @@ class CompsResponseSchema(BaseModel):
     implied_per_share_value: float | None
 
 
+class TreasuryRatesSchema(BaseModel):
+    as_of: date
+    month1: float | None
+    month2: float | None
+    month3: float | None
+    month6: float | None
+    year1: float | None
+    year2: float | None
+    year3: float | None
+    year5: float | None
+    year7: float | None
+    year10: float | None
+    year20: float | None
+    year30: float | None
+    suggested_discount_rate: float | None
+
+
 class SpeculativeGrowthAssessmentSchema(BaseModel):
     ticker: str
     as_of: datetime

@@ -140,4 +140,45 @@ describe("Valuation page", () => {
       expect(screen.getByText(/2 peers used \(AMD, INTC\)/)).toBeInTheDocument();
     });
   });
+
+  it("loads Treasury rates automatically on mount, without needing a ticker", async () => {
+    const spy = vi.spyOn(api, "getTreasuryRates").mockResolvedValue({
+      as_of: "2026-08-06", month1: 0.038, month2: null, month3: 0.039, month6: 0.0399,
+      year1: 0.0406, year2: 0.0425, year3: null, year5: 0.044, year7: null,
+      year10: 0.0469, year20: null, year30: 0.0522,
+      suggested_discount_rate: 0.0969,
+    });
+    render(<ValuationPage />);
+
+    await waitFor(() => {
+      expect(spy).toHaveBeenCalled();
+      expect(screen.getByText("4.7%")).toBeInTheDocument(); // year10
+    });
+  });
+
+  it("shows the suggested discount rate and a working quick-fill into the DCF form", async () => {
+    vi.spyOn(api, "getTreasuryRates").mockResolvedValue({
+      as_of: "2026-08-06", month1: 0.038, month2: null, month3: 0.039, month6: 0.0399,
+      year1: 0.0406, year2: 0.0425, year3: null, year5: 0.044, year7: null,
+      year10: 0.0469, year20: null, year30: 0.0522,
+      suggested_discount_rate: 0.0969,
+    });
+    render(<ValuationPage />);
+
+    await waitFor(() => screen.getByText("Use in DCF below"));
+    fireEvent.click(screen.getByText("Use in DCF below"));
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("Discount rate")).toHaveValue(0.0969);
+    });
+  });
+
+  it("shows a real error message if Treasury rates fail to load", async () => {
+    vi.spyOn(api, "getTreasuryRates").mockRejectedValue(new Error("Server error"));
+    render(<ValuationPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Server error")).toBeInTheDocument();
+    });
+  });
 });

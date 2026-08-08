@@ -87,6 +87,7 @@ from src.application.use_cases.compute_dcf_valuation import (
     ComputeReverseDcfUseCase,
 )
 from src.application.use_cases.compute_investment_irr import ComputeInvestmentIrrUseCase
+from src.application.use_cases.get_risk_free_rate import GetRiskFreeRateUseCase
 from src.application.use_cases.manage_speculative_growth_candidates import (
     AddSpeculativeGrowthCandidateUseCase,
     ListSpeculativeGrowthCandidatesUseCase,
@@ -266,6 +267,7 @@ def get_chat_use_case(
             GetCompanyFinancialsUseCase(company_repo, statement_repo),
             compute_company_valuation,
         ),
+        get_risk_free_rate=GetRiskFreeRateUseCase(data_provider),
     )
 
 

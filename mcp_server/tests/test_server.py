@@ -266,6 +266,18 @@ async def test_compute_comps_defaults_to_pe_metric():
     mock_req.assert_called_once_with("GET", "/companies/NVDA/comps", params={"metric": "pe"})
 
 
+@pytest.mark.asyncio
+async def test_get_treasury_rates_uses_get_and_the_correct_path():
+    """The real risk here, same as sp500-constituents in the REST
+    router: this static path could be swallowed by /companies/{ticker}
+    if it were ever registered after the dynamic route — this test
+    only covers the MCP tool hits the right path, the actual
+    route-ordering fix lives in the REST router itself."""
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.get_treasury_rates()
+    mock_req.assert_called_once_with("GET", "/companies/treasury-rates")
+
+
 # --- The 11 tools added to close the MCP gap (options, screening, --------
 # recommendations, rebalancing, watchlist extras) — none of these had any
 # test coverage until now, despite three of them sending a JSON body, the

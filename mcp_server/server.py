@@ -478,6 +478,19 @@ async def compute_comps(ticker: str, metric: str = "pe") -> str:
 
 
 @mcp.tool()
+async def get_treasury_rates() -> str:
+    """The real, current US Treasury yield curve — the market's own
+    live proxy for the risk-free rate, and the most direct signal
+    this platform has of current Fed/rate conditions. Also returns
+    suggested_discount_rate (10-year yield + a standard 5% equity
+    risk premium) as a real, market-derived starting point for
+    compute_dcf's discount_rate — never forced as a default there,
+    but useful for grounding a manual choice in the actual current
+    rate environment rather than an arbitrary constant."""
+    return await _request("GET", "/companies/treasury-rates")
+
+
+@mcp.tool()
 async def generate_theme_synthesis(theme_name: str) -> str:
     """Generate an AI-written narrative synthesis across an ENTIRE
     theme — common threads, notable divergences, and risks visible

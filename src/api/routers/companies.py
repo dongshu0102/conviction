@@ -31,6 +31,7 @@ from src.api.schemas import (
     ScreenRequestSchema,
     ScreenResultSchema,
     SP500ConstituentsSchema,
+    TreasuryRatesSchema,
     ValuationSnapshotSchema,
     YearlyRatiosSchema,
 )
@@ -50,6 +51,7 @@ from src.application.use_cases.compute_investment_irr import (
     ComputeInvestmentIrrUseCase,
     InvalidIrrScenarioError,
 )
+from src.application.use_cases.get_risk_free_rate import GetRiskFreeRateUseCase
 from src.domain.services.valuation_math import DcfAssumptionError
 from src.application.use_cases.manage_universe_theme import GetThemeTickersUseCase
 from src.application.use_cases.screen_stocks import ScreenStocksUseCase
@@ -169,6 +171,12 @@ def get_comps_use_case(
     valuation: ComputeValuationUseCase = Depends(get_valuation_use_case),
 ) -> ComputeCompsValuationUseCase:
     return ComputeCompsValuationUseCase(company_repo, get_financials, valuation)
+
+
+def get_risk_free_rate_use_case(
+    provider: FinancialModelingPrepProvider = Depends(get_data_provider),
+) -> GetRiskFreeRateUseCase:
+    return GetRiskFreeRateUseCase(provider)
 
 
 def get_factor_score_use_case(
@@ -328,6 +336,26 @@ def get_sp500_constituents(
     except DataProviderError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return SP500ConstituentsSchema(tickers=tickers, count=len(tickers))
+
+
+@router.get("/treasury-rates", response_model=TreasuryRatesSchema)
+def get_treasury_rates(
+    use_case: GetRiskFreeRateUseCase = Depends(get_risk_free_rate_use_case),
+) -> TreasuryRatesSchema:
+    """The real, current Treasury yield curve — the market's own
+    proxy for the risk-free rate. Registered before /{ticker} for the
+    same routing-order reason as /sp500-constituents above."""
+    try:
+        rates = use_case.execute()
+    except (DataProviderError, NotImplementedError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    suggested_discount_rate = use_case.get_default_discount_rate()
+    return TreasuryRatesSchema(
+        as_of=rates.as_of, month1=rates.month1, month2=rates.month2, month3=rates.month3,
+        month6=rates.month6, year1=rates.year1, year2=rates.year2, year3=rates.year3,
+        year5=rates.year5, year7=rates.year7, year10=rates.year10, year20=rates.year20,
+        year30=rates.year30, suggested_discount_rate=suggested_discount_rate,
+    )
 
 
 @router.get("/{ticker}", response_model=CompanyFinancialsSchema)

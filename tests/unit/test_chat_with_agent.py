@@ -96,6 +96,7 @@ from src.application.use_cases.compute_dcf_valuation import (
     ComputeReverseDcfUseCase,
 )
 from src.application.use_cases.compute_investment_irr import ComputeInvestmentIrrUseCase
+from src.application.use_cases.get_risk_free_rate import GetRiskFreeRateUseCase
 from src.application.use_cases.manage_speculative_growth_candidates import (
     AddSpeculativeGrowthCandidateUseCase,
     ListSpeculativeGrowthCandidatesUseCase,
@@ -237,6 +238,7 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
         compute_reverse_dcf=ComputeReverseDcfUseCase(get_financials, provider),
         compute_irr=ComputeInvestmentIrrUseCase(provider),
         compute_comps=ComputeCompsValuationUseCase(company_repo, get_financials, compute_company_valuation),
+        get_risk_free_rate=GetRiskFreeRateUseCase(provider),
     )
     return use_case, fake_agent, portfolio_repo
 
@@ -1683,5 +1685,43 @@ def test_compute_comps_via_chat_surfaces_error_with_no_peers_available() -> None
         company_repo=company_repo,
     )
     use_case.execute("alice", "run comps on LONELY", [])
+
+    assert "error" in fake_agent.dispatch_results[0]
+
+
+def test_get_treasury_rates_via_chat_returns_real_yield_curve_and_suggested_discount_rate() -> None:
+    from datetime import date
+    from src.domain.entities.treasury_rates import TreasuryRates
+
+    class _TreasuryProvider(FakeDataProvider):
+        def get_treasury_rates(self) -> TreasuryRates:
+            return TreasuryRates(
+                as_of=date(2026, 8, 6), month1=0.038, month2=None, month3=0.039,
+                month6=0.0399, year1=0.0406, year2=0.0425, year3=None, year5=0.044,
+                year7=None, year10=0.0469, year20=None, year30=0.0522,
+            )
+
+    company_repo = _company_repo("AAPL")
+    provider = _TreasuryProvider(company=company_repo.get_by_ticker("AAPL"))
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("get_treasury_rates", {})],
+        company_repo=company_repo, provider=provider,
+    )
+    use_case.execute("alice", "what's the current risk-free rate?", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["year10"] == 0.0469
+    assert abs(result["suggested_discount_rate"] - (0.0469 + 0.05)) < 1e-9
+    assert "note" in result
+
+
+def test_get_treasury_rates_via_chat_surfaces_error_when_unavailable() -> None:
+    company_repo = _company_repo("AAPL")
+    provider = FakeDataProvider(company=company_repo.get_by_ticker("AAPL"))  # no override -> raises
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("get_treasury_rates", {})],
+        company_repo=company_repo, provider=provider,
+    )
+    use_case.execute("alice", "what's the current risk-free rate?", [])
 
     assert "error" in fake_agent.dispatch_results[0]

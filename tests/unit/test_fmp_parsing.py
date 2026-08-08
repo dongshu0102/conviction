@@ -186,3 +186,47 @@ def test_parse_general_news_skips_malformed_rows() -> None:
 
 def test_parse_general_news_rejects_non_list_payload() -> None:
     assert parse_general_news({"Error Message": "nope"}) == []
+
+
+from src.infrastructure.data_providers.fmp_parsing import parse_treasury_rates
+
+
+def test_parse_treasury_rates_uses_the_most_recent_row_and_converts_to_decimal() -> None:
+    # Real payload structure, confirmed directly against the live FMP
+    # endpoint before writing this parser.
+    payload = [
+        {
+            "date": "2026-08-06",
+            "month1": 3.8, "month2": 3.84, "month3": 3.9, "month6": 3.99,
+            "year1": 4.06, "year2": 4.25, "year3": 4.31, "year5": 4.4,
+            "year7": 4.53, "year10": 4.69, "year20": 5.22, "year30": 5.22,
+        },
+        {
+            "date": "2026-08-05",
+            "month1": 3.77, "month2": 3.84, "month3": 3.89, "month6": 3.98,
+            "year1": 4.03, "year2": 4.18, "year3": 4.24, "year5": 4.33,
+            "year7": 4.47, "year10": 4.63, "year20": 5.18, "year30": 5.17,
+        },
+    ]
+    result = parse_treasury_rates(payload)
+
+    assert result.as_of.isoformat() == "2026-08-06"
+    assert abs(result.year10 - 0.0469) < 1e-9
+    assert abs(result.month1 - 0.038) < 1e-9
+    # Confirms the older, second row was NOT used.
+    assert abs(result.year10 - 0.0463) > 1e-6
+
+
+def test_parse_treasury_rates_handles_a_null_maturity_gracefully() -> None:
+    payload = [{"date": "2026-08-06", "month1": 3.8, "year10": None}]
+    result = parse_treasury_rates(payload)
+    assert result.year10 is None
+    assert result.month1 == 0.038
+
+
+def test_parse_treasury_rates_raises_on_empty_payload() -> None:
+    try:
+        parse_treasury_rates([])
+        raise AssertionError("expected ValueError")
+    except ValueError:
+        pass

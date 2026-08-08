@@ -14,6 +14,7 @@ from src.domain.entities.etf import EtfProfile
 from src.domain.entities.general_news import GeneralNewsHeadline
 from src.domain.entities.market_quote import PriceBar
 from src.domain.entities.news import NewsArticle
+from src.domain.entities.treasury_rates import TreasuryRates
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +111,30 @@ def parse_earnings_calendar(payload) -> list[EarningsEvent]:
         except (KeyError, ValueError, TypeError, AttributeError) as exc:
             logger.warning("Skipping malformed earnings-calendar row %d: %s", i, exc)
     return events
+
+
+def parse_treasury_rates(payload):
+    """Parses FMP's treasury-rates payload into a TreasuryRates for
+    the most recent date — the response is a list ordered most-recent
+    first. Every maturity is converted from FMP's raw percentage
+    (4.69) to the decimal convention (0.0469) every rate elsewhere in
+    this codebase already uses (discount_rate, growth_rate, etc)."""
+    if not isinstance(payload, list) or not payload:
+        raise ValueError("Empty or malformed treasury-rates payload")
+
+    row = payload[0]
+
+    def _pct(key: str) -> float | None:
+        value = row.get(key)
+        return value / 100 if value is not None else None
+
+    return TreasuryRates(
+        as_of=datetime.strptime(row["date"], "%Y-%m-%d").date(),
+        month1=_pct("month1"), month2=_pct("month2"), month3=_pct("month3"),
+        month6=_pct("month6"), year1=_pct("year1"), year2=_pct("year2"),
+        year3=_pct("year3"), year5=_pct("year5"), year7=_pct("year7"),
+        year10=_pct("year10"), year20=_pct("year20"), year30=_pct("year30"),
+    )
 
 
 def parse_etf_info(payload, ticker: str) -> EtfProfile | None:

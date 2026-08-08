@@ -424,6 +424,23 @@ export interface Alert {
   created_at: string;
 }
 
+export interface TreasuryRates {
+  as_of: string;
+  month1: number | null;
+  month2: number | null;
+  month3: number | null;
+  month6: number | null;
+  year1: number | null;
+  year2: number | null;
+  year3: number | null;
+  year5: number | null;
+  year7: number | null;
+  year10: number | null;
+  year20: number | null;
+  year30: number | null;
+  suggested_discount_rate: number | null;
+}
+
 export interface ValuationSnapshot {
   ticker: string;
   as_of: string;
@@ -679,6 +696,7 @@ export const api = {
   markAlertRead: (alertId: number) =>
     request(`/alerts/${alertId}/read`, { method: "POST" }),
   checkAlerts: () => request<Alert[]>("/alerts/check", { method: "POST" }),
+  getTreasuryRates: () => request<TreasuryRates>("/companies/treasury-rates"),
   getValuation: (ticker: string) =>
     request<ValuationSnapshot>(`/companies/${encodeURIComponent(ticker.toUpperCase())}/valuation`),
   getDcf: (

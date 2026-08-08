@@ -14,6 +14,7 @@ import { AppShell } from "@/components/AppShell";
 import {
   api, getApiKey, ApiError,
   ValuationSnapshot, DcfResponse, ReverseDcfResponse, IrrResponse, CompsResponse, CompsMetric,
+  TreasuryRates,
 } from "@/lib/api";
 
 function usd(v: number | null): string {
@@ -35,6 +36,11 @@ export default function ValuationPage() {
   const router = useRouter();
   const [ticker, setTicker] = useState("");
   const [globalError, setGlobalError] = useState<string | null>(null);
+
+  // Treasury yields
+  const [treasury, setTreasury] = useState<TreasuryRates | null>(null);
+  const [treasuryLoading, setTreasuryLoading] = useState(false);
+  const [treasuryError, setTreasuryError] = useState<string | null>(null);
 
   // Multiples
   const [multiples, setMultiples] = useState<ValuationSnapshot | null>(null);
@@ -71,7 +77,12 @@ export default function ValuationPage() {
   const [compsError, setCompsError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!getApiKey()) router.push("/login");
+    if (!getApiKey()) {
+      router.push("/login");
+      return;
+    }
+    handleTreasury();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
   function currentTicker(): string | null {
@@ -95,6 +106,24 @@ export default function ValuationPage() {
       setMultiplesError(err instanceof Error ? err.message : "Couldn't load valuation multiples");
     } finally {
       setMultiplesLoading(false);
+    }
+  }
+
+  async function handleTreasury() {
+    setTreasuryLoading(true);
+    setTreasuryError(null);
+    try {
+      setTreasury(await api.getTreasuryRates());
+    } catch (err) {
+      setTreasuryError(err instanceof Error ? err.message : "Couldn't load Treasury rates");
+    } finally {
+      setTreasuryLoading(false);
+    }
+  }
+
+  function useAsDiscountRate() {
+    if (treasury?.suggested_discount_rate != null) {
+      setDcfDiscountRate(String(treasury.suggested_discount_rate));
     }
   }
 
@@ -237,6 +266,72 @@ export default function ValuationPage() {
                   <p className="num" style={{ fontSize: "1.05rem", margin: "0.2rem 0 0" }}>{mult(multiples.ev_to_ebitda)}</p>
                 </div>
               </div>
+            )}
+          </div>
+        </section>
+
+        <section style={{ marginTop: "2rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.75rem" }}>
+            <p className="eyebrow" style={{ margin: 0 }}>Treasury Yields</p>
+            <button className="btn-primary" onClick={handleTreasury} disabled={treasuryLoading} style={{ padding: "0.4rem 0.9rem", fontSize: "0.8rem" }}>
+              {treasuryLoading ? "…" : "Refresh"}
+            </button>
+          </div>
+          <div className="card">
+            {treasuryError && <p className="num loss" style={{ margin: 0, fontSize: "0.85rem" }}>{treasuryError}</p>}
+            {!treasury && !treasuryError && !treasuryLoading && (
+              <p style={{ margin: 0, color: "var(--text-soft)", fontSize: "0.9rem" }}>
+                The real, current Treasury yield curve — the market&apos;s own live proxy for the
+                risk-free rate, and the most direct macro signal this platform has.
+              </p>
+            )}
+            {treasury && (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(70px, 1fr))", gap: "0.85rem", marginBottom: "1rem" }}>
+                  <div>
+                    <p className="eyebrow" style={{ fontSize: "0.6rem" }}>1mo</p>
+                    <p className="num" style={{ fontSize: "0.95rem", margin: "0.15rem 0 0" }}>{pct(treasury.month1)}</p>
+                  </div>
+                  <div>
+                    <p className="eyebrow" style={{ fontSize: "0.6rem" }}>3mo</p>
+                    <p className="num" style={{ fontSize: "0.95rem", margin: "0.15rem 0 0" }}>{pct(treasury.month3)}</p>
+                  </div>
+                  <div>
+                    <p className="eyebrow" style={{ fontSize: "0.6rem" }}>1yr</p>
+                    <p className="num" style={{ fontSize: "0.95rem", margin: "0.15rem 0 0" }}>{pct(treasury.year1)}</p>
+                  </div>
+                  <div>
+                    <p className="eyebrow" style={{ fontSize: "0.6rem" }}>2yr</p>
+                    <p className="num" style={{ fontSize: "0.95rem", margin: "0.15rem 0 0" }}>{pct(treasury.year2)}</p>
+                  </div>
+                  <div>
+                    <p className="eyebrow" style={{ fontSize: "0.6rem" }}>5yr</p>
+                    <p className="num" style={{ fontSize: "0.95rem", margin: "0.15rem 0 0" }}>{pct(treasury.year5)}</p>
+                  </div>
+                  <div>
+                    <p className="eyebrow" style={{ fontSize: "0.6rem" }}>10yr</p>
+                    <p className="num" style={{ fontSize: "0.95rem", margin: "0.15rem 0 0" }}>{pct(treasury.year10)}</p>
+                  </div>
+                  <div>
+                    <p className="eyebrow" style={{ fontSize: "0.6rem" }}>30yr</p>
+                    <p className="num" style={{ fontSize: "0.95rem", margin: "0.15rem 0 0" }}>{pct(treasury.year30)}</p>
+                  </div>
+                </div>
+                {treasury.suggested_discount_rate !== null && (
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <p className="num" style={{ fontSize: "0.78rem", color: "var(--text-soft)", margin: 0 }}>
+                      Suggested DCF discount rate (10yr + 5% equity risk premium):{" "}
+                      <span style={{ color: "var(--text)" }}>{pct(treasury.suggested_discount_rate)}</span>
+                    </p>
+                    <button
+                      onClick={useAsDiscountRate}
+                      style={{ background: "none", border: "none", color: "var(--accent)", fontSize: "0.78rem", cursor: "pointer", whiteSpace: "nowrap" }}
+                    >
+                      Use in DCF below
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </section>

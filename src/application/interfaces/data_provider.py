@@ -21,6 +21,7 @@ from src.domain.entities.financial_statement import (
 )
 from src.domain.entities.market_quote import MarketQuote, PriceBar
 from src.domain.entities.news import NewsArticle
+from src.domain.entities.treasury_rates import TreasuryRates
 
 
 class FinancialDataProvider(ABC):
@@ -88,6 +89,13 @@ class FinancialDataProvider(ABC):
         market data (as opposed to periodic filed statements) this
         platform needs, specifically for valuation multiples.
         """
+
+    def get_treasury_rates(self) -> TreasuryRates:
+        """The most recent daily Treasury yield curve — the market's
+        real-time proxy for the risk-free rate. Optional, like
+        get_general_news: not every provider offers macro/economic
+        data, so this raises by default rather than being abstract."""
+        raise NotImplementedError("This data provider does not support get_treasury_rates")
 
 
 class DataProviderError(Exception):

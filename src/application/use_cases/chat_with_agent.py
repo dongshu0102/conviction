@@ -21,6 +21,7 @@ from dataclasses import asdict
 from datetime import date
 
 from src.application.interfaces.chat_agent import ChatAgent, ChatMessage, ToolDefinition
+from src.application.interfaces.data_provider import DataProviderError
 from src.application.interfaces.options_data_provider import (
     OptionsDataProvider,
     OptionsDataProviderError,
@@ -77,6 +78,7 @@ from src.application.use_cases.compute_investment_irr import (
     ComputeInvestmentIrrUseCase,
     InvalidIrrScenarioError,
 )
+from src.application.use_cases.get_risk_free_rate import GetRiskFreeRateUseCase
 from src.domain.services.valuation_math import DcfAssumptionError
 from src.application.use_cases.check_speculative_growth_candidates import (
     CheckSpeculativeGrowthCandidatesUseCase,
@@ -708,6 +710,19 @@ _TOOLS = [
         },
     ),
     ToolDefinition(
+        "get_treasury_rates",
+        "The real, current US Treasury yield curve — the market's own "
+        "live proxy for the risk-free rate, and the most direct signal "
+        "this platform has of current Fed/rate conditions. Also "
+        "returns suggested_discount_rate (10-year yield + a standard "
+        "5% equity risk premium) as a real, market-derived starting "
+        "point for compute_dcf's discount_rate — never forced as a "
+        "default there, but useful for grounding a manual choice in "
+        "the actual current rate environment rather than an arbitrary "
+        "constant.",
+        {"type": "object", "properties": {}},
+    ),
+    ToolDefinition(
         "ingest_etf",
         "Ingest an ETF's profile (name, expense ratio, AUM) so it can be added "
         "to watchlists, themes, and screened/factor-scored. ETFs have no "
@@ -1012,6 +1027,7 @@ class ChatWithAgentUseCase:
         compute_reverse_dcf: ComputeReverseDcfUseCase,
         compute_irr: ComputeInvestmentIrrUseCase,
         compute_comps: ComputeCompsValuationUseCase,
+        get_risk_free_rate: GetRiskFreeRateUseCase,
     ) -> None:
         self._chat_agent = chat_agent
         self._get_watchlist = get_watchlist
@@ -1064,6 +1080,7 @@ class ChatWithAgentUseCase:
         self._compute_reverse_dcf = compute_reverse_dcf
         self._compute_irr = compute_irr
         self._compute_comps = compute_comps
+        self._get_risk_free_rate = get_risk_free_rate
         self._construct_risk_parity_portfolio = construct_risk_parity_portfolio
         self._user_id: str = ""  # set per-request in execute()
 
@@ -1541,6 +1558,26 @@ class ChatWithAgentUseCase:
                 "implied_enterprise_value": r.implied_enterprise_value,
                 "implied_equity_value": r.implied_equity_value,
                 "implied_per_share_value": r.implied_per_share_value,
+            }
+
+        if tool_name == "get_treasury_rates":
+            try:
+                rates = self._get_risk_free_rate.execute()
+            except (DataProviderError, NotImplementedError) as exc:
+                return {"error": str(exc)}
+            suggested_discount_rate = self._get_risk_free_rate.get_default_discount_rate()
+            return {
+                "as_of": rates.as_of.isoformat(),
+                "month1": rates.month1, "month3": rates.month3, "month6": rates.month6,
+                "year1": rates.year1, "year2": rates.year2, "year5": rates.year5,
+                "year10": rates.year10, "year30": rates.year30,
+                "suggested_discount_rate": suggested_discount_rate,
+                "note": (
+                    "suggested_discount_rate = 10-year yield + a standard 5% equity "
+                    "risk premium — a real, market-derived starting point, not a "
+                    "forced default. compute_dcf's own default remains fixed unless "
+                    "you explicitly pass this value as discount_rate."
+                ),
             }
 
         if tool_name == "ingest_etf":
