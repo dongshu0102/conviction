@@ -14,7 +14,7 @@ import { AppShell } from "@/components/AppShell";
 import {
   api, getApiKey, ApiError,
   ValuationSnapshot, DcfResponse, ReverseDcfResponse, IrrResponse, CompsResponse, CompsMetric,
-  TreasuryRates,
+  TreasuryRates, MacroSnapshot,
 } from "@/lib/api";
 
 function usd(v: number | null): string {
@@ -41,6 +41,11 @@ export default function ValuationPage() {
   const [treasury, setTreasury] = useState<TreasuryRates | null>(null);
   const [treasuryLoading, setTreasuryLoading] = useState(false);
   const [treasuryError, setTreasuryError] = useState<string | null>(null);
+
+  // Macro snapshot
+  const [macro, setMacro] = useState<MacroSnapshot | null>(null);
+  const [macroLoading, setMacroLoading] = useState(false);
+  const [macroError, setMacroError] = useState<string | null>(null);
 
   // Multiples
   const [multiples, setMultiples] = useState<ValuationSnapshot | null>(null);
@@ -118,6 +123,18 @@ export default function ValuationPage() {
       setTreasuryError(err instanceof Error ? err.message : "Couldn't load Treasury rates");
     } finally {
       setTreasuryLoading(false);
+    }
+  }
+
+  async function handleMacro() {
+    setMacroLoading(true);
+    setMacroError(null);
+    try {
+      setMacro(await api.getMacroSnapshot());
+    } catch (err) {
+      setMacroError(err instanceof Error ? err.message : "Couldn't load macro snapshot");
+    } finally {
+      setMacroLoading(false);
     }
   }
 
@@ -320,7 +337,7 @@ export default function ValuationPage() {
                 {treasury.suggested_discount_rate !== null && (
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <p className="num" style={{ fontSize: "0.78rem", color: "var(--text-soft)", margin: 0 }}>
-                      Suggested DCF discount rate (10yr + 5% equity risk premium):{" "}
+                      Suggested DCF discount rate (10yr + the real current equity risk premium):{" "}
                       <span style={{ color: "var(--text)" }}>{pct(treasury.suggested_discount_rate)}</span>
                     </p>
                     <button
@@ -329,6 +346,76 @@ export default function ValuationPage() {
                     >
                       Use in DCF below
                     </button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </section>
+
+        <section style={{ marginTop: "2rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.75rem" }}>
+            <p className="eyebrow" style={{ margin: 0 }}>Macro Snapshot</p>
+            <button className="btn-primary" onClick={handleMacro} disabled={macroLoading} style={{ padding: "0.4rem 0.9rem", fontSize: "0.8rem" }}>
+              {macroLoading ? "…" : "Compute"}
+            </button>
+          </div>
+          <div className="card">
+            {macroError && <p className="num loss" style={{ margin: 0, fontSize: "0.85rem" }}>{macroError}</p>}
+            {!macro && !macroError && (
+              <p style={{ margin: 0, color: "var(--text-soft)", fontSize: "0.9rem" }}>
+                GDP, CPI, unemployment, the real current US equity risk premium, and recent macro
+                news, all in one place. The structured, quantifiable half of macro analysis — real
+                numbers and real headlines, not an attempt to model geopolitical risk, regulatory
+                change, or foreign central bank policy, none of which have a clean numeric API to
+                pull from.
+              </p>
+            )}
+            {macro && (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: "1rem", marginBottom: "1rem" }}>
+                  <div>
+                    <p className="eyebrow" style={{ fontSize: "0.65rem" }}>GDP</p>
+                    <p className="num" style={{ fontSize: "1rem", margin: "0.2rem 0 0" }}>
+                      {macro.gdp ? macro.gdp.value.toLocaleString() : "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="eyebrow" style={{ fontSize: "0.65rem" }}>CPI</p>
+                    <p className="num" style={{ fontSize: "1rem", margin: "0.2rem 0 0" }}>
+                      {macro.cpi ? macro.cpi.value.toFixed(1) : "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="eyebrow" style={{ fontSize: "0.65rem" }}>Unemployment</p>
+                    <p className="num" style={{ fontSize: "1rem", margin: "0.2rem 0 0" }}>
+                      {macro.unemployment_rate ? `${macro.unemployment_rate.value.toFixed(1)}%` : "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="eyebrow" style={{ fontSize: "0.65rem" }}>Equity Risk Premium</p>
+                    <p className="num" style={{ fontSize: "1rem", margin: "0.2rem 0 0" }}>
+                      {macro.risk_premium ? pct(macro.risk_premium.total_equity_risk_premium) : "—"}
+                    </p>
+                  </div>
+                </div>
+                {macro.recent_news.length > 0 && (
+                  <div>
+                    <p className="eyebrow" style={{ fontSize: "0.65rem", marginBottom: "0.5rem" }}>Recent Macro News</p>
+                    {macro.recent_news.map((headline, i) => (
+                      <div key={i} style={{ padding: "0.35rem 0", borderTop: i > 0 ? "1px solid var(--rule)" : "none" }}>
+                        {headline.url ? (
+                          <a href={headline.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "0.85rem", color: "var(--text)" }}>
+                            {headline.title}
+                          </a>
+                        ) : (
+                          <span style={{ fontSize: "0.85rem" }}>{headline.title}</span>
+                        )}
+                        {headline.publisher && (
+                          <span style={{ fontSize: "0.75rem", color: "var(--text-soft)" }}> — {headline.publisher}</span>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
               </>

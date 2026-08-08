@@ -5,21 +5,29 @@ from datetime import date
 
 from src.application.interfaces.data_provider import DataProviderError
 from src.application.use_cases.get_risk_free_rate import (
-    DEFAULT_EQUITY_RISK_PREMIUM,
+    FALLBACK_EQUITY_RISK_PREMIUM,
     GetRiskFreeRateUseCase,
 )
+from src.domain.entities.market_risk_premium import MarketRiskPremium
 from src.domain.entities.treasury_rates import TreasuryRates
 
 
 class _FakeProvider:
-    def __init__(self, rates=None, raises=False):
+    def __init__(self, rates=None, raises=False, risk_premium=None, risk_premium_raises=False):
         self._rates = rates
         self._raises = raises
+        self._risk_premium = risk_premium
+        self._risk_premium_raises = risk_premium_raises
 
     def get_treasury_rates(self) -> TreasuryRates:
         if self._raises:
             raise DataProviderError("simulated failure")
         return self._rates
+
+    def get_market_risk_premium(self, country: str = "United States") -> MarketRiskPremium | None:
+        if self._risk_premium_raises:
+            raise NotImplementedError("This data provider does not support get_market_risk_premium")
+        return self._risk_premium
 
 
 def _rates(year10=0.0469) -> TreasuryRates:
@@ -45,10 +53,39 @@ def test_execute_propagates_data_provider_error() -> None:
         pass
 
 
-def test_default_discount_rate_is_year10_plus_equity_risk_premium() -> None:
+def test_default_discount_rate_falls_back_to_the_constant_when_no_real_premium_is_configured() -> None:
+    """_FakeProvider's default get_market_risk_premium returns None
+    (no risk_premium configured) — the fallback constant should apply."""
     use_case = GetRiskFreeRateUseCase(_FakeProvider(rates=_rates(year10=0.0469)))
     result = use_case.get_default_discount_rate()
-    assert abs(result - (0.0469 + DEFAULT_EQUITY_RISK_PREMIUM)) < 1e-9
+    assert abs(result - (0.0469 + FALLBACK_EQUITY_RISK_PREMIUM)) < 1e-9
+
+
+def test_default_discount_rate_prefers_the_real_equity_risk_premium_when_available() -> None:
+    """The actual, real-world case this refinement exists for: a
+    genuine current reading (e.g. 4.46% for the US) should be used
+    instead of the flat fallback constant."""
+    real_premium = MarketRiskPremium(
+        country="United States", country_risk_premium=0.0023, total_equity_risk_premium=0.0446,
+    )
+    use_case = GetRiskFreeRateUseCase(
+        _FakeProvider(rates=_rates(year10=0.0469), risk_premium=real_premium)
+    )
+    result = use_case.get_default_discount_rate()
+    assert abs(result - (0.0469 + 0.0446)) < 1e-9
+    # Confirms the real premium was genuinely used, not the fallback.
+    assert abs(result - (0.0469 + FALLBACK_EQUITY_RISK_PREMIUM)) > 1e-6
+
+
+def test_default_discount_rate_falls_back_when_risk_premium_lookup_is_unsupported() -> None:
+    """A provider that supports Treasury rates but not market risk
+    premium (NotImplementedError) should still return a usable
+    default — never crash mid-computation."""
+    use_case = GetRiskFreeRateUseCase(
+        _FakeProvider(rates=_rates(year10=0.0469), risk_premium_raises=True)
+    )
+    result = use_case.get_default_discount_rate()
+    assert abs(result - (0.0469 + FALLBACK_EQUITY_RISK_PREMIUM)) < 1e-9
 
 
 def test_default_discount_rate_is_none_when_year10_is_missing() -> None:

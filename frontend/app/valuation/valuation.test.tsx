@@ -73,7 +73,7 @@ describe("Valuation page", () => {
     });
     render(<ValuationPage />);
     enterTicker();
-    fireEvent.click(screen.getAllByText("Compute")[1]);
+    fireEvent.click(screen.getAllByText("Compute")[2]);
 
     await waitFor(() => {
       expect(spy).toHaveBeenCalledWith("NVDA", {
@@ -91,7 +91,7 @@ describe("Valuation page", () => {
     });
     render(<ValuationPage />);
     enterTicker();
-    fireEvent.click(screen.getAllByText("Compute")[2]);
+    fireEvent.click(screen.getAllByText("Compute")[3]);
 
     await waitFor(() => {
       expect(screen.getByText("No solution")).toBeInTheDocument();
@@ -102,7 +102,7 @@ describe("Valuation page", () => {
     const spy = vi.spyOn(api, "getIrr");
     render(<ValuationPage />);
     enterTicker();
-    fireEvent.click(screen.getAllByText("Compute")[3]);
+    fireEvent.click(screen.getAllByText("Compute")[4]);
 
     expect(screen.getByText("Enter a positive exit price and at least 1 year.")).toBeInTheDocument();
     expect(spy).not.toHaveBeenCalled();
@@ -116,7 +116,7 @@ describe("Valuation page", () => {
     render(<ValuationPage />);
     enterTicker();
     fireEvent.change(screen.getByPlaceholderText("Exit price"), { target: { value: "110" } });
-    fireEvent.click(screen.getAllByText("Compute")[3]);
+    fireEvent.click(screen.getAllByText("Compute")[4]);
 
     await waitFor(() => {
       expect(spy).toHaveBeenCalledWith("NVDA", 110, 5, { entry_price: undefined, annual_dividend_per_share: 0 });
@@ -133,7 +133,7 @@ describe("Valuation page", () => {
     });
     render(<ValuationPage />);
     enterTicker();
-    fireEvent.click(screen.getAllByText("Compute")[4]);
+    fireEvent.click(screen.getAllByText("Compute")[5]);
 
     await waitFor(() => {
       expect(spy).toHaveBeenCalledWith("NVDA", "pe");
@@ -179,6 +179,53 @@ describe("Valuation page", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Server error")).toBeInTheDocument();
+    });
+  });
+
+  it("computing Macro Snapshot shows real GDP/CPI/unemployment/risk premium data", async () => {
+    const spy = vi.spyOn(api, "getMacroSnapshot").mockResolvedValue({
+      as_of: "2026-08-06T00:00:00Z",
+      gdp: { name: "GDP", as_of: "2025-10-01", value: 31422.526 },
+      cpi: { name: "CPI", as_of: "2025-11-01", value: 325.063 },
+      unemployment_rate: { name: "unemploymentRate", as_of: "2025-11-01", value: 4.1 },
+      risk_premium: { country: "United States", country_risk_premium: 0.0023, total_equity_risk_premium: 0.0446 },
+      recent_news: [{ title: "Fed holds rates steady", published_at: null, publisher: "Reuters", url: null, snippet: null }],
+    });
+    render(<ValuationPage />);
+    await waitFor(() => screen.getByText("Macro Snapshot"));
+    fireEvent.click(screen.getAllByText("Compute")[1]);
+
+    await waitFor(() => {
+      expect(spy).toHaveBeenCalled();
+      expect(screen.getByText("31,422.526")).toBeInTheDocument();
+      expect(screen.getByText("4.1%")).toBeInTheDocument();
+      expect(screen.getByText("4.5%")).toBeInTheDocument(); // the risk premium, pct(0.0446)
+      expect(screen.getByText("Fed holds rates steady")).toBeInTheDocument();
+    });
+  });
+
+  it("Macro Snapshot shows an em dash, not a crash, for indicators that are genuinely unavailable", async () => {
+    vi.spyOn(api, "getMacroSnapshot").mockResolvedValue({
+      as_of: "2026-08-06T00:00:00Z",
+      gdp: null, cpi: null, unemployment_rate: null, risk_premium: null, recent_news: [],
+    });
+    render(<ValuationPage />);
+    await waitFor(() => screen.getByText("Macro Snapshot"));
+    fireEvent.click(screen.getAllByText("Compute")[1]);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+    });
+  });
+
+  it("shows a real error message if the Macro Snapshot fails to load", async () => {
+    vi.spyOn(api, "getMacroSnapshot").mockRejectedValue(new Error("Server error"));
+    render(<ValuationPage />);
+    await waitFor(() => screen.getByText("Macro Snapshot"));
+    fireEvent.click(screen.getAllByText("Compute")[1]);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Server error").length).toBeGreaterThan(0);
     });
   });
 });

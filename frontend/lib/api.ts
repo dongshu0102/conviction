@@ -441,6 +441,35 @@ export interface TreasuryRates {
   suggested_discount_rate: number | null;
 }
 
+export interface EconomicIndicator {
+  name: string;
+  as_of: string;
+  value: number;
+}
+
+export interface MarketRiskPremium {
+  country: string;
+  country_risk_premium: number;
+  total_equity_risk_premium: number;
+}
+
+export interface GeneralNewsHeadline {
+  title: string;
+  published_at: string | null;
+  publisher: string | null;
+  url: string | null;
+  snippet: string | null;
+}
+
+export interface MacroSnapshot {
+  as_of: string;
+  gdp: EconomicIndicator | null;
+  cpi: EconomicIndicator | null;
+  unemployment_rate: EconomicIndicator | null;
+  risk_premium: MarketRiskPremium | null;
+  recent_news: GeneralNewsHeadline[];
+}
+
 export interface ValuationSnapshot {
   ticker: string;
   as_of: string;
@@ -697,6 +726,8 @@ export const api = {
     request(`/alerts/${alertId}/read`, { method: "POST" }),
   checkAlerts: () => request<Alert[]>("/alerts/check", { method: "POST" }),
   getTreasuryRates: () => request<TreasuryRates>("/companies/treasury-rates"),
+  getMacroSnapshot: (newsLimit: number = 5) =>
+    request<MacroSnapshot>(`/companies/macro-snapshot?news_limit=${newsLimit}`),
   getValuation: (ticker: string) =>
     request<ValuationSnapshot>(`/companies/${encodeURIComponent(ticker.toUpperCase())}/valuation`),
   getDcf: (

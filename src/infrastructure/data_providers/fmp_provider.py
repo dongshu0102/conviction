@@ -25,16 +25,20 @@ from src.domain.entities.financial_statement import (
     Period,
 )
 from src.domain.entities.earnings import EarningsEvent
+from src.domain.entities.economic_indicator import EconomicIndicatorReading
 from src.domain.entities.etf import EtfProfile
 from src.domain.entities.general_news import GeneralNewsHeadline
 from src.domain.entities.market_quote import MarketQuote, PriceBar
+from src.domain.entities.market_risk_premium import MarketRiskPremium
 from src.domain.entities.news import NewsArticle
 from src.domain.entities.treasury_rates import TreasuryRates
 from src.infrastructure.data_providers.fmp_parsing import (
     parse_earnings_calendar,
+    parse_economic_indicator,
     parse_eod_light,
     parse_etf_info,
     parse_general_news,
+    parse_market_risk_premium,
     parse_stock_news,
     parse_treasury_rates,
 )
@@ -236,6 +240,14 @@ class FinancialModelingPrepProvider(FinancialDataProvider):
             return parse_treasury_rates(payload)
         except (ValueError, KeyError) as exc:
             raise DataProviderError(f"Malformed treasury-rates payload: {exc}") from exc
+
+    def get_economic_indicator(self, name: str) -> list[EconomicIndicatorReading]:
+        payload = self._get("/economic-indicators", name=name)
+        return parse_economic_indicator(payload)
+
+    def get_market_risk_premium(self, country: str = "United States") -> MarketRiskPremium | None:
+        payload = self._get("/market-risk-premium")
+        return parse_market_risk_premium(payload, country=country)
 
     def get_stock_news(self, ticker: str, limit: int = 10) -> list[NewsArticle]:
         payload = self._get("/news/stock", symbols=ticker, limit=limit)

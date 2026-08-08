@@ -10,9 +10,11 @@ import logging
 from datetime import date, datetime
 
 from src.domain.entities.earnings import EarningsEvent
+from src.domain.entities.economic_indicator import EconomicIndicatorReading
 from src.domain.entities.etf import EtfProfile
 from src.domain.entities.general_news import GeneralNewsHeadline
 from src.domain.entities.market_quote import PriceBar
+from src.domain.entities.market_risk_premium import MarketRiskPremium
 from src.domain.entities.news import NewsArticle
 from src.domain.entities.treasury_rates import TreasuryRates
 
@@ -135,6 +137,60 @@ def parse_treasury_rates(payload):
         year3=_pct("year3"), year5=_pct("year5"), year7=_pct("year7"),
         year10=_pct("year10"), year20=_pct("year20"), year30=_pct("year30"),
     )
+
+
+def parse_economic_indicator(payload) -> list[EconomicIndicatorReading]:
+    """Parses FMP's economic-indicators payload — a list of
+    {name, date, value} readings, most recent first. Deliberately does
+    NOT divide value by 100 the way parse_treasury_rates does: GDP,
+    CPI, and unemploymentRate have genuinely different units (dollars,
+    an index number, and percentage points respectively), not a
+    single shared "rate" convention — the raw value is passed through
+    as-is, in whatever unit that specific indicator actually uses.
+    A malformed row is skipped, not fatal to the whole batch."""
+    if not isinstance(payload, list):
+        logger.warning("Unexpected economic-indicators payload shape: %s", type(payload))
+        return []
+
+    readings: list[EconomicIndicatorReading] = []
+    for i, row in enumerate(payload):
+        try:
+            readings.append(EconomicIndicatorReading(
+                name=row["name"],
+                as_of=datetime.strptime(row["date"], "%Y-%m-%d").date(),
+                value=float(row["value"]),
+            ))
+        except (KeyError, ValueError, TypeError) as exc:
+            logger.warning("Skipping malformed economic-indicator row %d: %s", i, exc)
+    return readings
+
+
+def parse_market_risk_premium(payload, country: str = "United States") -> MarketRiskPremium | None:
+    """Parses FMP's market-risk-premium payload — a flat list across
+    every country, not keyed by date the way Treasury rates is.
+    Returns None if the requested country isn't present, rather than
+    raising: a missing country is a normal, expected outcome (the
+    dataset's coverage can change), not a parse failure."""
+    if not isinstance(payload, list):
+        logger.warning("Unexpected market-risk-premium payload shape: %s", type(payload))
+        return None
+
+    for row in payload:
+        if row.get("country") == country:
+            try:
+                return MarketRiskPremium(
+                    country=row["country"],
+                    # Converted to decimal (0.0446), matching the
+                    # discount_rate/growth_rate convention used
+                    # everywhere else in this codebase — the raw FMP
+                    # value is a percentage (4.46), not already decimal.
+                    country_risk_premium=float(row["countryRiskPremium"]) / 100,
+                    total_equity_risk_premium=float(row["totalEquityRiskPremium"]) / 100,
+                )
+            except (KeyError, ValueError, TypeError) as exc:
+                logger.warning("Malformed market-risk-premium row for %s: %s", country, exc)
+                return None
+    return None
 
 
 def parse_etf_info(payload, ticker: str) -> EtfProfile | None:

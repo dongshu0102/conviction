@@ -482,12 +482,27 @@ async def get_treasury_rates() -> str:
     """The real, current US Treasury yield curve — the market's own
     live proxy for the risk-free rate, and the most direct signal
     this platform has of current Fed/rate conditions. Also returns
-    suggested_discount_rate (10-year yield + a standard 5% equity
-    risk premium) as a real, market-derived starting point for
+    suggested_discount_rate (10-year yield + the real, current US
+    equity risk premium when available, falling back to a standard 5%
+    constant otherwise) as a real, market-derived starting point for
     compute_dcf's discount_rate — never forced as a default there,
     but useful for grounding a manual choice in the actual current
     rate environment rather than an arbitrary constant."""
     return await _request("GET", "/companies/treasury-rates")
+
+
+@mcp.tool()
+async def get_macro_snapshot(news_limit: int = 5) -> str:
+    """A combined real macro picture in one call: GDP, CPI,
+    unemployment rate, the real current US equity risk premium, and
+    recent macro/market news headlines. Every piece is fetched
+    independently — a missing indicator or a down news feed returns
+    null/empty for that piece, never fails the whole snapshot. This is
+    explicitly the structured, quantifiable half of macro analysis —
+    real numbers and real headlines, not an attempt to model
+    geopolitical risk, regulatory change, or foreign central bank
+    policy, none of which have a clean numeric API to pull from."""
+    return await _request("GET", "/companies/macro-snapshot", params={"news_limit": news_limit})
 
 
 @mcp.tool()

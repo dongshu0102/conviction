@@ -78,6 +78,7 @@ from src.application.use_cases.compute_investment_irr import (
     ComputeInvestmentIrrUseCase,
     InvalidIrrScenarioError,
 )
+from src.application.use_cases.get_macro_snapshot import GetMacroSnapshotUseCase
 from src.application.use_cases.get_risk_free_rate import GetRiskFreeRateUseCase
 from src.domain.services.valuation_math import DcfAssumptionError
 from src.application.use_cases.check_speculative_growth_candidates import (
@@ -714,13 +715,33 @@ _TOOLS = [
         "The real, current US Treasury yield curve — the market's own "
         "live proxy for the risk-free rate, and the most direct signal "
         "this platform has of current Fed/rate conditions. Also "
-        "returns suggested_discount_rate (10-year yield + a standard "
-        "5% equity risk premium) as a real, market-derived starting "
-        "point for compute_dcf's discount_rate — never forced as a "
-        "default there, but useful for grounding a manual choice in "
-        "the actual current rate environment rather than an arbitrary "
-        "constant.",
+        "returns suggested_discount_rate (10-year yield + the real, "
+        "current US equity risk premium when available, falling back "
+        "to a standard 5% constant otherwise) as a real, market-derived "
+        "starting point for compute_dcf's discount_rate — never forced "
+        "as a default there, but useful for grounding a manual choice "
+        "in the actual current rate environment rather than an "
+        "arbitrary constant.",
         {"type": "object", "properties": {}},
+    ),
+    ToolDefinition(
+        "get_macro_snapshot",
+        "A combined real macro picture in one call: GDP, CPI, "
+        "unemployment rate, the real current US equity risk premium, "
+        "and recent macro/market news headlines. Every piece is "
+        "fetched independently — a missing indicator or a down news "
+        "feed returns null/empty for that piece, never fails the "
+        "whole snapshot. This is explicitly the structured, "
+        "quantifiable half of macro analysis — real numbers and real "
+        "headlines, not an attempt to model geopolitical risk, "
+        "regulatory change, or foreign central bank policy, none of "
+        "which have a clean numeric API to pull from.",
+        {
+            "type": "object",
+            "properties": {
+                "news_limit": {"type": "integer", "description": "Optional, default 5."},
+            },
+        },
     ),
     ToolDefinition(
         "ingest_etf",
@@ -1028,6 +1049,7 @@ class ChatWithAgentUseCase:
         compute_irr: ComputeInvestmentIrrUseCase,
         compute_comps: ComputeCompsValuationUseCase,
         get_risk_free_rate: GetRiskFreeRateUseCase,
+        get_macro_snapshot: GetMacroSnapshotUseCase,
     ) -> None:
         self._chat_agent = chat_agent
         self._get_watchlist = get_watchlist
@@ -1081,6 +1103,7 @@ class ChatWithAgentUseCase:
         self._compute_irr = compute_irr
         self._compute_comps = compute_comps
         self._get_risk_free_rate = get_risk_free_rate
+        self._get_macro_snapshot = get_macro_snapshot
         self._construct_risk_parity_portfolio = construct_risk_parity_portfolio
         self._user_id: str = ""  # set per-request in execute()
 
@@ -1573,10 +1596,46 @@ class ChatWithAgentUseCase:
                 "year10": rates.year10, "year30": rates.year30,
                 "suggested_discount_rate": suggested_discount_rate,
                 "note": (
-                    "suggested_discount_rate = 10-year yield + a standard 5% equity "
-                    "risk premium — a real, market-derived starting point, not a "
-                    "forced default. compute_dcf's own default remains fixed unless "
-                    "you explicitly pass this value as discount_rate."
+                    "suggested_discount_rate = 10-year yield + the real, current US "
+                    "equity risk premium when available (falling back to a standard "
+                    "5% constant otherwise) — a real, market-derived starting point, "
+                    "not a forced default. compute_dcf's own default remains fixed "
+                    "unless you explicitly pass this value as discount_rate."
+                ),
+            }
+
+        if tool_name == "get_macro_snapshot":
+            snapshot = self._get_macro_snapshot.execute(
+                news_limit=tool_input.get("news_limit", 5)
+            )
+            return {
+                "as_of": snapshot.as_of.isoformat(),
+                "gdp": (
+                    {"as_of": snapshot.gdp.as_of.isoformat(), "value": snapshot.gdp.value}
+                    if snapshot.gdp else None
+                ),
+                "cpi": (
+                    {"as_of": snapshot.cpi.as_of.isoformat(), "value": snapshot.cpi.value}
+                    if snapshot.cpi else None
+                ),
+                "unemployment_rate": (
+                    {"as_of": snapshot.unemployment_rate.as_of.isoformat(), "value": snapshot.unemployment_rate.value}
+                    if snapshot.unemployment_rate else None
+                ),
+                "equity_risk_premium": (
+                    snapshot.risk_premium.total_equity_risk_premium if snapshot.risk_premium else None
+                ),
+                "recent_news": [
+                    {"title": h.title, "publisher": h.publisher, "url": h.url}
+                    for h in snapshot.recent_news
+                ],
+                "note": (
+                    "This is the structured, quantifiable half of macro analysis — "
+                    "real numbers and real headlines. It does not attempt to model "
+                    "geopolitical risk, regulatory change, or foreign central bank "
+                    "policy, none of which have a clean numeric API to pull from. "
+                    "A null field means that specific indicator was unavailable, "
+                    "not that it was checked and found to be zero or absent."
                 ),
             }
 

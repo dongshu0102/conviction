@@ -278,6 +278,14 @@ async def test_get_treasury_rates_uses_get_and_the_correct_path():
     mock_req.assert_called_once_with("GET", "/companies/treasury-rates")
 
 
+@pytest.mark.asyncio
+async def test_get_macro_snapshot_defaults_news_limit_to_5():
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.get_macro_snapshot()
+    mock_req.assert_called_once_with("GET", "/companies/macro-snapshot", params={"news_limit": 5})
+
+
+
 # --- The 11 tools added to close the MCP gap (options, screening, --------
 # recommendations, rebalancing, watchlist extras) — none of these had any
 # test coverage until now, despite three of them sending a JSON body, the

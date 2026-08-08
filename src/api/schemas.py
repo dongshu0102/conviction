@@ -362,6 +362,35 @@ class TreasuryRatesSchema(BaseModel):
     suggested_discount_rate: float | None
 
 
+class EconomicIndicatorSchema(BaseModel):
+    name: str
+    as_of: date
+    value: float
+
+
+class MarketRiskPremiumSchema(BaseModel):
+    country: str
+    country_risk_premium: float
+    total_equity_risk_premium: float
+
+
+class GeneralNewsHeadlineSchema(BaseModel):
+    title: str
+    published_at: datetime | None
+    publisher: str | None
+    url: str | None
+    snippet: str | None
+
+
+class MacroSnapshotSchema(BaseModel):
+    as_of: datetime
+    gdp: EconomicIndicatorSchema | None
+    cpi: EconomicIndicatorSchema | None
+    unemployment_rate: EconomicIndicatorSchema | None
+    risk_premium: MarketRiskPremiumSchema | None
+    recent_news: list[GeneralNewsHeadlineSchema]
+
+
 class SpeculativeGrowthAssessmentSchema(BaseModel):
     ticker: str
     as_of: datetime

@@ -96,6 +96,7 @@ from src.application.use_cases.compute_dcf_valuation import (
     ComputeReverseDcfUseCase,
 )
 from src.application.use_cases.compute_investment_irr import ComputeInvestmentIrrUseCase
+from src.application.use_cases.get_macro_snapshot import GetMacroSnapshotUseCase
 from src.application.use_cases.get_risk_free_rate import GetRiskFreeRateUseCase
 from src.application.use_cases.manage_speculative_growth_candidates import (
     AddSpeculativeGrowthCandidateUseCase,
@@ -239,6 +240,7 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
         compute_irr=ComputeInvestmentIrrUseCase(provider),
         compute_comps=ComputeCompsValuationUseCase(company_repo, get_financials, compute_company_valuation),
         get_risk_free_rate=GetRiskFreeRateUseCase(provider),
+        get_macro_snapshot=GetMacroSnapshotUseCase(provider),
     )
     return use_case, fake_agent, portfolio_repo
 
@@ -1725,3 +1727,37 @@ def test_get_treasury_rates_via_chat_surfaces_error_when_unavailable() -> None:
     use_case.execute("alice", "what's the current risk-free rate?", [])
 
     assert "error" in fake_agent.dispatch_results[0]
+
+
+def test_get_macro_snapshot_via_chat_returns_real_data_and_degrades_gracefully() -> None:
+    from datetime import date
+    from src.domain.entities.economic_indicator import EconomicIndicatorReading
+    from src.domain.entities.general_news import GeneralNewsHeadline
+    from src.domain.entities.market_risk_premium import MarketRiskPremium
+
+    class _MacroProvider(FakeDataProvider):
+        def get_economic_indicator(self, name: str):
+            if name == "GDP":
+                return [EconomicIndicatorReading(name="GDP", as_of=date(2025, 10, 1), value=31422.526)]
+            return []  # CPI and unemploymentRate genuinely unavailable
+
+        def get_market_risk_premium(self, country: str = "United States"):
+            return MarketRiskPremium(country="United States", country_risk_premium=0.0023, total_equity_risk_premium=0.0446)
+
+        def get_general_news(self, limit: int = 20):
+            return [GeneralNewsHeadline(title="Fed holds rates steady", published_at=None, publisher="Reuters", url=None, snippet=None)]
+
+    company_repo = _company_repo("AAPL")
+    provider = _MacroProvider(company=company_repo.get_by_ticker("AAPL"))
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("get_macro_snapshot", {})],
+        company_repo=company_repo, provider=provider,
+    )
+    use_case.execute("alice", "give me a macro snapshot", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["gdp"]["value"] == 31422.526
+    assert result["cpi"] is None  # genuinely unavailable, not an error
+    assert abs(result["equity_risk_premium"] - 0.0446) < 1e-9
+    assert len(result["recent_news"]) == 1
+    assert "note" in result

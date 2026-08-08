@@ -11,6 +11,7 @@ from datetime import date
 
 from src.domain.entities.company import Company
 from src.domain.entities.earnings import EarningsEvent
+from src.domain.entities.economic_indicator import EconomicIndicatorReading
 from src.domain.entities.etf import EtfProfile
 from src.domain.entities.general_news import GeneralNewsHeadline
 from src.domain.entities.financial_statement import (
@@ -20,6 +21,7 @@ from src.domain.entities.financial_statement import (
     Period,
 )
 from src.domain.entities.market_quote import MarketQuote, PriceBar
+from src.domain.entities.market_risk_premium import MarketRiskPremium
 from src.domain.entities.news import NewsArticle
 from src.domain.entities.treasury_rates import TreasuryRates
 
@@ -96,6 +98,20 @@ class FinancialDataProvider(ABC):
         get_general_news: not every provider offers macro/economic
         data, so this raises by default rather than being abstract."""
         raise NotImplementedError("This data provider does not support get_treasury_rates")
+
+    def get_economic_indicator(self, name: str) -> list[EconomicIndicatorReading]:
+        """Historical readings for one named economic indicator (GDP,
+        CPI, unemploymentRate, etc) — most recent first. Optional,
+        same rationale as get_treasury_rates."""
+        raise NotImplementedError("This data provider does not support get_economic_indicator")
+
+    def get_market_risk_premium(self, country: str = "United States") -> MarketRiskPremium | None:
+        """One country's current equity risk premium. Returns None if
+        the country isn't found in the dataset, rather than raising —
+        a missing country is a normal, expected outcome, not a
+        provider failure. Optional, same rationale as
+        get_treasury_rates."""
+        raise NotImplementedError("This data provider does not support get_market_risk_premium")
 
 
 class DataProviderError(Exception):

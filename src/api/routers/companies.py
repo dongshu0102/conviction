@@ -11,12 +11,16 @@ from src.api.schemas import (
     DcfAssumptionsSchema,
     DcfProjectionYearSchema,
     DcfResponseSchema,
+    EconomicIndicatorSchema,
     EtfIngestResultSchema,
     FactorRankingResponseSchema,
     FactorRawMetricsSchema,
     FactorScoreResponseSchema,
+    GeneralNewsHeadlineSchema,
     IrrResponseSchema,
     IrrScenarioSchema,
+    MacroSnapshotSchema,
+    MarketRiskPremiumSchema,
     RankedFactorScoreSchema,
     CashFlowStatementSchema,
     CompanyFinancialAnalysisSchema,
@@ -51,6 +55,7 @@ from src.application.use_cases.compute_investment_irr import (
     ComputeInvestmentIrrUseCase,
     InvalidIrrScenarioError,
 )
+from src.application.use_cases.get_macro_snapshot import GetMacroSnapshotUseCase
 from src.application.use_cases.get_risk_free_rate import GetRiskFreeRateUseCase
 from src.domain.services.valuation_math import DcfAssumptionError
 from src.application.use_cases.manage_universe_theme import GetThemeTickersUseCase
@@ -177,6 +182,12 @@ def get_risk_free_rate_use_case(
     provider: FinancialModelingPrepProvider = Depends(get_data_provider),
 ) -> GetRiskFreeRateUseCase:
     return GetRiskFreeRateUseCase(provider)
+
+
+def get_macro_snapshot_use_case(
+    provider: FinancialModelingPrepProvider = Depends(get_data_provider),
+) -> GetMacroSnapshotUseCase:
+    return GetMacroSnapshotUseCase(provider)
 
 
 def get_factor_score_use_case(
@@ -355,6 +366,43 @@ def get_treasury_rates(
         month6=rates.month6, year1=rates.year1, year2=rates.year2, year3=rates.year3,
         year5=rates.year5, year7=rates.year7, year10=rates.year10, year20=rates.year20,
         year30=rates.year30, suggested_discount_rate=suggested_discount_rate,
+    )
+
+
+@router.get("/macro-snapshot", response_model=MacroSnapshotSchema)
+def get_macro_snapshot(
+    news_limit: int = Query(default=5),
+    use_case: GetMacroSnapshotUseCase = Depends(get_macro_snapshot_use_case),
+) -> MacroSnapshotSchema:
+    """A combined macro picture — GDP, CPI, unemployment, the real US
+    equity risk premium, and recent macro news, in one call. Every
+    piece is fetched independently; a missing indicator or a down
+    news feed returns null/empty for that piece rather than failing
+    the whole request. Registered before /{ticker} for the same
+    routing-order reason as /sp500-constituents above."""
+    snapshot = use_case.execute(news_limit=news_limit)
+    return MacroSnapshotSchema(
+        as_of=snapshot.as_of,
+        gdp=EconomicIndicatorSchema(name=snapshot.gdp.name, as_of=snapshot.gdp.as_of, value=snapshot.gdp.value) if snapshot.gdp else None,
+        cpi=EconomicIndicatorSchema(name=snapshot.cpi.name, as_of=snapshot.cpi.as_of, value=snapshot.cpi.value) if snapshot.cpi else None,
+        unemployment_rate=(
+            EconomicIndicatorSchema(name=snapshot.unemployment_rate.name, as_of=snapshot.unemployment_rate.as_of, value=snapshot.unemployment_rate.value)
+            if snapshot.unemployment_rate else None
+        ),
+        risk_premium=(
+            MarketRiskPremiumSchema(
+                country=snapshot.risk_premium.country,
+                country_risk_premium=snapshot.risk_premium.country_risk_premium,
+                total_equity_risk_premium=snapshot.risk_premium.total_equity_risk_premium,
+            ) if snapshot.risk_premium else None
+        ),
+        recent_news=[
+            GeneralNewsHeadlineSchema(
+                title=h.title, published_at=h.published_at, publisher=h.publisher,
+                url=h.url, snippet=h.snippet,
+            )
+            for h in snapshot.recent_news
+        ],
     )
 
 

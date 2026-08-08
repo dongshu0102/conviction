@@ -230,3 +230,67 @@ def test_parse_treasury_rates_raises_on_empty_payload() -> None:
         raise AssertionError("expected ValueError")
     except ValueError:
         pass
+
+
+from src.infrastructure.data_providers.fmp_parsing import (
+    parse_economic_indicator,
+    parse_market_risk_premium,
+)
+
+
+def test_parse_economic_indicator_gdp_passes_raw_value_through_unchanged() -> None:
+    # Real payload structure, confirmed directly against the live FMP
+    # endpoint before writing this parser. GDP is dollar-scale, not a
+    # rate — no /100 conversion should ever be applied to it.
+    payload = [{"name": "GDP", "date": "2025-10-01", "value": 31422.526}]
+    readings = parse_economic_indicator(payload)
+    assert len(readings) == 1
+    assert readings[0].name == "GDP"
+    assert readings[0].as_of.isoformat() == "2025-10-01"
+    assert readings[0].value == 31422.526
+
+
+def test_parse_economic_indicator_cpi_preserves_most_recent_first_ordering() -> None:
+    payload = [
+        {"name": "CPI", "date": "2025-11-01", "value": 325.063},
+        {"name": "CPI", "date": "2025-09-01", "value": 324.245},
+    ]
+    readings = parse_economic_indicator(payload)
+    assert len(readings) == 2
+    assert readings[0].as_of.isoformat() == "2025-11-01"
+    assert readings[1].as_of.isoformat() == "2025-09-01"
+
+
+def test_parse_economic_indicator_skips_malformed_rows() -> None:
+    payload = [{"name": "CPI"}, {"name": "CPI", "date": "2025-09-01", "value": 324.245}]
+    readings = parse_economic_indicator(payload)
+    assert len(readings) == 1
+
+
+def test_parse_economic_indicator_rejects_non_list_payload() -> None:
+    assert parse_economic_indicator({"Error Message": "nope"}) == []
+
+
+def test_parse_market_risk_premium_finds_the_requested_country() -> None:
+    # Real payload structure, confirmed directly against the live FMP
+    # endpoint — a flat cross-country list, not keyed by date.
+    payload = [
+        {"country": "Zimbabwe", "continent": "Africa", "countryRiskPremium": 11.66, "totalEquityRiskPremium": 15.89},
+        {"country": "United States", "continent": "North America", "countryRiskPremium": 0.23, "totalEquityRiskPremium": 4.46},
+    ]
+    result = parse_market_risk_premium(payload)
+    assert result is not None
+    assert result.country == "United States"
+    # Converted to decimal (0.0023, 0.0446), matching the
+    # discount_rate/growth_rate convention — not the raw FMP percentage.
+    assert abs(result.country_risk_premium - 0.0023) < 1e-9
+    assert abs(result.total_equity_risk_premium - 0.0446) < 1e-9
+
+
+def test_parse_market_risk_premium_returns_none_for_a_missing_country() -> None:
+    payload = [{"country": "Zimbabwe", "countryRiskPremium": 11.66, "totalEquityRiskPremium": 15.89}]
+    assert parse_market_risk_premium(payload, country="Atlantis") is None
+
+
+def test_parse_market_risk_premium_rejects_non_list_payload() -> None:
+    assert parse_market_risk_premium({"Error Message": "nope"}) is None
