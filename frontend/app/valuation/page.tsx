@@ -48,6 +48,7 @@ export default function ValuationPage() {
   const router = useRouter();
   const [ticker, setTicker] = useState("");
   const [globalError, setGlobalError] = useState<string | null>(null);
+  const [runAllLoading, setRunAllLoading] = useState(false);
 
   // Treasury yields
   const [treasury, setTreasury] = useState<TreasuryRates | null>(null);
@@ -244,6 +245,25 @@ export default function ValuationPage() {
       setCompsError(err instanceof Error ? err.message : "Couldn't compute comps");
     } finally {
       setCompsLoading(false);
+    }
+  }
+
+  async function handleRunAll() {
+    const t = currentTicker();
+    if (!t) return;
+    setRunAllLoading(true);
+    try {
+      const tasks = [handleMultiples(), handleDcf(), handleReverseDcf(), handleComps()];
+      // IRR's exit price is deliberately never defaulted — there's no
+      // way to derive an exit assumption without assuming the
+      // conclusion — so Run All only includes it if the user has
+      // already specified a real scenario themselves.
+      if (irrExitPrice.trim() !== "") {
+        tasks.push(handleIrr());
+      }
+      await Promise.all(tasks);
+    } finally {
+      setRunAllLoading(false);
     }
   }
 
@@ -495,6 +515,12 @@ export default function ValuationPage() {
             className="num"
             style={{ flex: 1, padding: "0.6rem 0.9rem", fontSize: "0.95rem", textTransform: "uppercase" }}
           />
+          <button
+            className="btn-primary" onClick={handleRunAll} disabled={runAllLoading}
+            style={{ padding: "0.6rem 1.1rem", fontSize: "0.9rem", whiteSpace: "nowrap" }}
+          >
+            {runAllLoading ? "Running…" : "Run All"}
+          </button>
         </div>
         {globalError && (
           <p className="num loss" style={{ fontSize: "0.85rem", marginBottom: "1rem" }}>{globalError}</p>

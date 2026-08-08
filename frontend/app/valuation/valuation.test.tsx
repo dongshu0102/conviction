@@ -298,4 +298,86 @@ describe("Valuation page", () => {
       expect(screen.getAllByText("Server error").length).toBeGreaterThan(0);
     });
   });
+
+  it("Run All shows an error and calls nothing when clicked with no ticker", () => {
+    const spy = vi.spyOn(api, "getValuation");
+    render(<ValuationPage />);
+    fireEvent.click(screen.getByText("Run All"));
+    expect(screen.getByText("Enter a ticker first.")).toBeInTheDocument();
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("Run All computes Multiples, DCF, Reverse DCF, and Comps, but skips IRR when no exit price is set", async () => {
+    const valuationSpy = vi.spyOn(api, "getValuation").mockResolvedValue({
+      ticker: "NVDA", as_of: "2026-08-06T00:00:00Z", price: 180, market_cap: 5_000_000_000_000,
+      enterprise_value: 4_900_000_000_000, fundamentals_fiscal_year: 2025,
+      price_to_earnings: 45.2, price_to_sales: 25.1, price_to_book: 50.3,
+      price_to_free_cash_flow: 60.0, ev_to_ebitda: 35.0,
+    });
+    const dcfSpy = vi.spyOn(api, "getDcf").mockResolvedValue({
+      ticker: "NVDA", as_of: "2026-08-06T00:00:00Z",
+      assumptions: { base_fcf: 1000, growth_rate: 0.10, growth_rate_was_default: true, discount_rate: 0.10, terminal_growth_rate: 0.025, years: 5, net_debt: 0, shares_outstanding: 100 },
+      enterprise_value: 5000, equity_value: 5000, per_share_value: 50, terminal_value: 4000, present_value_of_terminal_value: 3500, projections: [],
+    });
+    const reverseDcfSpy = vi.spyOn(api, "getReverseDcf").mockResolvedValue({
+      ticker: "NVDA", as_of: "2026-08-06T00:00:00Z", current_price: 180, implied_growth_rate: 0.08,
+      assumptions: { base_fcf: 1000, discount_rate: 0.10, terminal_growth_rate: 0.025, years: 5, net_debt: 0, shares_outstanding: 100 },
+    });
+    const compsSpy = vi.spyOn(api, "getComps").mockResolvedValue({
+      ticker: "NVDA", as_of: "2026-08-06T00:00:00Z", metric: "pe", peer_match_level: "industry",
+      peers_considered: ["AMD"], peers_used: ["AMD"], peers_skipped: [],
+      peer_count: 1, median_multiple: 20.0, mean_multiple: 20.0,
+      implied_enterprise_value: null, implied_equity_value: 2000, implied_per_share_value: 20,
+    });
+    const irrSpy = vi.spyOn(api, "getIrr");
+
+    render(<ValuationPage />);
+    enterTicker();
+    fireEvent.click(screen.getByText("Run All"));
+
+    await waitFor(() => {
+      expect(valuationSpy).toHaveBeenCalledWith("NVDA");
+      expect(dcfSpy).toHaveBeenCalled();
+      expect(reverseDcfSpy).toHaveBeenCalled();
+      expect(compsSpy).toHaveBeenCalled();
+    });
+    expect(irrSpy).not.toHaveBeenCalled();
+  });
+
+  it("Run All includes IRR when the user has already specified an exit price", async () => {
+    vi.spyOn(api, "getValuation").mockResolvedValue({
+      ticker: "NVDA", as_of: "2026-08-06T00:00:00Z", price: 180, market_cap: 5_000_000_000_000,
+      enterprise_value: 4_900_000_000_000, fundamentals_fiscal_year: 2025,
+      price_to_earnings: 45.2, price_to_sales: 25.1, price_to_book: 50.3,
+      price_to_free_cash_flow: 60.0, ev_to_ebitda: 35.0,
+    });
+    vi.spyOn(api, "getDcf").mockResolvedValue({
+      ticker: "NVDA", as_of: "2026-08-06T00:00:00Z",
+      assumptions: { base_fcf: 1000, growth_rate: 0.10, growth_rate_was_default: true, discount_rate: 0.10, terminal_growth_rate: 0.025, years: 5, net_debt: 0, shares_outstanding: 100 },
+      enterprise_value: 5000, equity_value: 5000, per_share_value: 50, terminal_value: 4000, present_value_of_terminal_value: 3500, projections: [],
+    });
+    vi.spyOn(api, "getReverseDcf").mockResolvedValue({
+      ticker: "NVDA", as_of: "2026-08-06T00:00:00Z", current_price: 180, implied_growth_rate: 0.08,
+      assumptions: { base_fcf: 1000, discount_rate: 0.10, terminal_growth_rate: 0.025, years: 5, net_debt: 0, shares_outstanding: 100 },
+    });
+    vi.spyOn(api, "getComps").mockResolvedValue({
+      ticker: "NVDA", as_of: "2026-08-06T00:00:00Z", metric: "pe", peer_match_level: "industry",
+      peers_considered: ["AMD"], peers_used: ["AMD"], peers_skipped: [],
+      peer_count: 1, median_multiple: 20.0, mean_multiple: 20.0,
+      implied_enterprise_value: null, implied_equity_value: 2000, implied_per_share_value: 20,
+    });
+    const irrSpy = vi.spyOn(api, "getIrr").mockResolvedValue({
+      ticker: "NVDA", as_of: "2026-08-06T00:00:00Z", irr: 0.10,
+      scenario: { entry_price: 100, exit_price: 110, years: 1, annual_dividend_per_share: 0, cash_flows: [-100, 110] },
+    });
+
+    render(<ValuationPage />);
+    enterTicker();
+    fireEvent.change(screen.getByPlaceholderText("Exit price"), { target: { value: "110" } });
+    fireEvent.click(screen.getByText("Run All"));
+
+    await waitFor(() => {
+      expect(irrSpy).toHaveBeenCalled();
+    });
+  });
 });
