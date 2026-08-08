@@ -689,15 +689,21 @@ _TOOLS = [
     ),
     ToolDefinition(
         "compute_comps",
-        "Comparable-company valuation — finds real, same-sector peers "
-        "already in the universe, computes each one's own valuation "
-        "multiple (reusing the same logic get_factor_score and "
-        "get_valuation already use), takes the median (not mean, so one "
-        "outlier peer doesn't dominate), and applies it to the target's "
-        "own financials. metric is one of 'pe' (price/earnings), "
-        "'ev_ebitda' (enterprise value/EBITDA), 'ps' (price/sales), or "
-        "'pfcf' (price/free cash flow). Reports which peers were "
-        "actually usable and which were skipped, never silently.",
+        "Comparable-company valuation — prefers real same-industry "
+        "peers already in the universe (e.g. 'Semiconductors'), only "
+        "falling back to the broader same-sector match (e.g. "
+        "'Technology', which can mix in software companies with very "
+        "different multiple profiles) when the industry pool is too "
+        "small to be a meaningful sample on its own. Computes each "
+        "peer's own valuation multiple (reusing the same logic "
+        "get_factor_score and get_valuation already use), takes the "
+        "median (not mean, so one outlier peer doesn't dominate), and "
+        "applies it to the target's own financials. metric is one of "
+        "'pe' (price/earnings), 'ev_ebitda' (enterprise value/EBITDA), "
+        "'ps' (price/sales), or 'pfcf' (price/free cash flow). Reports "
+        "which peers were actually usable, which were skipped, and "
+        "which matching level (industry, industry+sector, or sector) "
+        "was actually used — never silently.",
         {
             "type": "object",
             "properties": {
@@ -1603,6 +1609,7 @@ class ChatWithAgentUseCase:
             r = assessment.result
             return {
                 "ticker": assessment.ticker, "metric": assessment.metric.value,
+                "peer_match_level": assessment.peer_match_level,
                 "peers_used": assessment.peers_used,
                 "peers_skipped": assessment.peers_skipped,
                 "median_multiple": r.median_multiple, "mean_multiple": r.mean_multiple,

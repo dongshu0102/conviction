@@ -37,6 +37,13 @@ function asOf(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
+function peerMatchLabel(level: string): string {
+  if (level === "industry") return "same industry";
+  if (level === "industry+sector") return "industry + sector";
+  if (level === "sector") return "same sector";
+  return level;
+}
+
 export default function ValuationPage() {
   const router = useRouter();
   const [ticker, setTicker] = useState("");
@@ -735,15 +742,17 @@ export default function ValuationPage() {
             {compsError && <p className="num loss" style={{ margin: 0, fontSize: "0.85rem" }}>{compsError}</p>}
             {!comps && !compsError && (
               <p style={{ margin: 0, color: "var(--text-soft)", fontSize: "0.9rem" }}>
-                Finds real, same-sector peers already in the universe, takes the median of their
-                own multiples (not the mean, so one outlier peer can&apos;t dominate), and applies
-                it to the target&apos;s own financials.
+                Prefers real same-industry peers already in the universe (e.g. Semiconductors),
+                only falling back to the broader same-sector match (e.g. Technology, which can mix
+                in software companies with very different multiple profiles) when the industry
+                pool is too small. Takes the median of peer multiples (not the mean, so one
+                outlier can&apos;t dominate), and applies it to the target&apos;s own financials.
               </p>
             )}
             {comps && (
               <>
                 <p className="num" style={{ fontSize: "0.7rem", color: "var(--text-soft)", margin: "0 0 0.75rem" }}>
-                  As of {asOf(comps.as_of)}
+                  As of {asOf(comps.as_of)} · peer match: {peerMatchLabel(comps.peer_match_level)}
                 </p>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.75rem" }}>
                   <div>
@@ -759,6 +768,12 @@ export default function ValuationPage() {
                   {comps.peers_used.length} peer{comps.peers_used.length === 1 ? "" : "s"} used ({comps.peers_used.join(", ")})
                   {comps.peers_skipped.length > 0 && ` · ${comps.peers_skipped.length} skipped (${comps.peers_skipped.join(", ")})`}
                 </p>
+                {comps.peer_match_level !== "industry" && (
+                  <p className="num" style={{ fontSize: "0.75rem", color: "var(--accent)", marginTop: "0.4rem" }}>
+                    Note: too few same-industry peers were available, so this includes broader
+                    same-sector peers, which can carry meaningfully different multiples.
+                  </p>
+                )}
               </>
             )}
           </div>

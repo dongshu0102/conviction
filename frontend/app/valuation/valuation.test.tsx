@@ -126,7 +126,7 @@ describe("Valuation page", () => {
 
   it("computing Comps defaults to the pe metric and shows which peers were used", async () => {
     const spy = vi.spyOn(api, "getComps").mockResolvedValue({
-      ticker: "NVDA", as_of: "2026-08-06T00:00:00Z", metric: "pe",
+      ticker: "NVDA", as_of: "2026-08-06T00:00:00Z", metric: "pe", peer_match_level: "industry",
       peers_considered: ["AMD", "INTC"], peers_used: ["AMD", "INTC"], peers_skipped: [],
       peer_count: 2, median_multiple: 20.0, mean_multiple: 20.0,
       implied_enterprise_value: null, implied_equity_value: 2000, implied_per_share_value: 20,
@@ -138,6 +138,23 @@ describe("Valuation page", () => {
     await waitFor(() => {
       expect(spy).toHaveBeenCalledWith("NVDA", "pe");
       expect(screen.getByText(/2 peers used \(AMD, INTC\)/)).toBeInTheDocument();
+      expect(screen.getByText(/peer match: same industry/)).toBeInTheDocument();
+    });
+  });
+
+  it("shows a warning when Comps had to fall back to sector-level peers", async () => {
+    vi.spyOn(api, "getComps").mockResolvedValue({
+      ticker: "NVDA", as_of: "2026-08-06T00:00:00Z", metric: "pe", peer_match_level: "industry+sector",
+      peers_considered: ["AMD"], peers_used: ["AMD"], peers_skipped: [],
+      peer_count: 1, median_multiple: 20.0, mean_multiple: 20.0,
+      implied_enterprise_value: null, implied_equity_value: 2000, implied_per_share_value: 20,
+    });
+    render(<ValuationPage />);
+    enterTicker();
+    fireEvent.click(screen.getAllByText("Compute")[6]);
+
+    await waitFor(() => {
+      expect(screen.getByText(/too few same-industry peers were available/)).toBeInTheDocument();
     });
   });
 

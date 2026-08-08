@@ -4,10 +4,14 @@ Deliberately reuses ComputeValuationUseCase for every peer's own
 multiple rather than recomputing that logic here — same multiples the
 rest of the platform already shows for a single company, just
 aggregated across a peer set and applied to the target. Peer discovery
-is same-sector, same-universe (whatever's been ingested), excluding
-the target itself; a peer that fails to value (missing data, bad
-quote) is skipped rather than aborting the whole analysis, but every
-skip is reported, not silently dropped.
+prefers same-industry matches (e.g. "Semiconductors") over the
+broader same-sector match (e.g. "Technology"), falling back to
+sector-level supplementation only when the industry pool is too small
+to be a meaningful sample on its own — a same-sector-only match can
+silently mix hardware and software companies with very different
+multiple profiles, which is a real, found issue, not a hypothetical
+one. Every skip is reported, not silently dropped, and which matching
+level was actually used is reported too.
 """
 from __future__ import annotations
 
@@ -68,6 +72,7 @@ class CompsAssessment:
     ticker: str
     as_of: datetime
     metric: CompsMetric
+    peer_match_level: str
     peers_considered: list[str]
     peers_used: list[str]
     peers_skipped: list[str]
@@ -87,16 +92,39 @@ class ComputeCompsValuationUseCase:
         self._compute_valuation = compute_valuation
         self._max_peers = max_peers
 
+    # A comps analysis needs at least this many peers for a median to
+    # be meaningful at all — below this, industry-only matching (which
+    # can be a very small pool for a specific industry) falls back to
+    # supplementing with same-sector peers instead.
+    _MIN_PEERS_BEFORE_SECTOR_FALLBACK = 3
+
     def execute(self, ticker: str, metric: CompsMetric) -> CompsAssessment:
         ticker = ticker.strip().upper()
         target_company = self._company_repo.get_by_ticker(ticker)
         if target_company is None:
             raise CompanyNotFoundError(ticker)
 
-        peers_considered = [
-            c.ticker for c in self._company_repo.list_all()
-            if c.sector == target_company.sector and c.ticker != ticker
-        ][: self._max_peers]
+        all_companies = self._company_repo.list_all()
+        industry_peers = [
+            c.ticker for c in all_companies
+            if c.industry == target_company.industry and c.ticker != ticker
+        ]
+
+        if len(industry_peers) >= self._MIN_PEERS_BEFORE_SECTOR_FALLBACK:
+            peer_match_level = "industry"
+            peers_considered = industry_peers[: self._max_peers]
+        else:
+            # Same-industry pool is too small on its own — supplement
+            # with same-sector peers (broader, e.g. "Technology"
+            # rather than "Semiconductors") to reach a usable sample,
+            # rather than silently returning too few peers or none.
+            sector_peers = [
+                c.ticker for c in all_companies
+                if c.sector == target_company.sector and c.ticker != ticker
+                and c.ticker not in industry_peers
+            ]
+            peers_considered = (industry_peers + sector_peers)[: self._max_peers]
+            peer_match_level = "industry+sector" if industry_peers else "sector"
 
         peer_multiples: list[float] = []
         peers_used: list[str] = []
@@ -157,6 +185,7 @@ class ComputeCompsValuationUseCase:
 
         return CompsAssessment(
             ticker=ticker, as_of=datetime.now(timezone.utc), metric=metric,
+            peer_match_level=peer_match_level,
             peers_considered=peers_considered, peers_used=peers_used,
             peers_skipped=peers_skipped, result=result,
         )

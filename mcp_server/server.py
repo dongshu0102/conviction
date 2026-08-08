@@ -465,15 +465,20 @@ async def compute_irr(
 
 @mcp.tool()
 async def compute_comps(ticker: str, metric: str = "pe") -> str:
-    """Comparable-company valuation — finds real, same-sector peers
-    already in the universe, computes each one's own valuation
-    multiple (reusing the same logic get_factor_score and get_valuation
-    already use), takes the median (not mean, so one outlier peer
-    doesn't dominate), and applies it to the target's own financials.
-    metric is one of 'pe' (price/earnings), 'ev_ebitda' (enterprise
-    value/EBITDA), 'ps' (price/sales), or 'pfcf' (price/free cash
-    flow). Reports which peers were actually usable and which were
-    skipped, never silently."""
+    """Comparable-company valuation — prefers real same-industry peers
+    already in the universe (e.g. 'Semiconductors'), only falling back
+    to the broader same-sector match (e.g. 'Technology', which can mix
+    in software companies with very different multiple profiles) when
+    the industry pool is too small to be a meaningful sample on its
+    own. Computes each peer's own valuation multiple (reusing the same
+    logic get_factor_score and get_valuation already use), takes the
+    median (not mean, so one outlier peer doesn't dominate), and
+    applies it to the target's own financials. metric is one of 'pe'
+    (price/earnings), 'ev_ebitda' (enterprise value/EBITDA), 'ps'
+    (price/sales), or 'pfcf' (price/free cash flow). Reports which
+    peers were actually usable, which were skipped, and which
+    matching level (industry, industry+sector, or sector) was
+    actually used — never silently."""
     return await _request("GET", f"/companies/{ticker}/comps", params={"metric": metric})
 
 

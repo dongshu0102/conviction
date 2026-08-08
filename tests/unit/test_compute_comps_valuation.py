@@ -26,17 +26,25 @@ def _key(ticker: str, year: int = 2025) -> FiscalPeriodKey:
     return FiscalPeriodKey(ticker=ticker, fiscal_year=year, period=Period.ANNUAL)
 
 
-def _build(target_sector=Sector.TECHNOLOGY, peer_count=3, peer_sector=None, target_net_income=100.0):
-    """Sets up a target company plus `peer_count` same-sector peers,
-    each with real income statement data and a distinct quote so their
-    own EV/multiples genuinely differ, not just copies of one value."""
+def _build(
+    target_sector=Sector.TECHNOLOGY, peer_count=3, peer_sector=None, target_net_income=100.0,
+    target_industry="Software", peer_industry=None, sector_only_peer_count=0,
+):
+    """Sets up a target company plus `peer_count` same-industry peers
+    and, when given, `sector_only_peer_count` additional same-sector
+    but DIFFERENT-industry peers (e.g. "Software" when the target is
+    "Semiconductors") — both with real income statement data and a
+    distinct quote so their own EV/multiples genuinely differ, not
+    just copies of one value or, worse, unusable placeholders that
+    get silently skipped."""
     peer_sector = peer_sector or target_sector
+    peer_industry = peer_industry or target_industry
     company_repo = FakeCompanyRepository()
     statement_repo = FakeFinancialStatementRepository()
     quotes_by_ticker = {}
 
     target = Company(ticker="TARGET", name="Target Inc", sector=target_sector,
-                      industry="Software", exchange="NASDAQ", country="US")
+                      industry=target_industry, exchange="NASDAQ", country="US")
     company_repo.save(target)
     statement_repo.save_income_statement(IncomeStatement(
         key=_key("TARGET"), fiscal_date_ending=date(2025, 12, 31), reported_currency="USD",
@@ -49,7 +57,7 @@ def _build(target_sector=Sector.TECHNOLOGY, peer_count=3, peer_sector=None, targ
     for i in range(peer_count):
         ticker = f"PEER{i}"
         company_repo.save(Company(ticker=ticker, name=f"Peer {i}", sector=peer_sector,
-                                   industry="Software", exchange="NASDAQ", country="US"))
+                                   industry=peer_industry, exchange="NASDAQ", country="US"))
         # Each peer has a different net_income, giving each a genuinely
         # different P/E when priced against the same market cap.
         statement_repo.save_income_statement(IncomeStatement(
@@ -58,6 +66,21 @@ def _build(target_sector=Sector.TECHNOLOGY, peer_count=3, peer_sector=None, targ
         ))
         quotes_by_ticker[ticker] = MarketQuote(
             ticker=ticker, price=20.0, market_cap=1000.0, as_of=datetime.now(timezone.utc)
+        )
+
+    for i in range(sector_only_peer_count):
+        ticker = f"SECTORPEER{i}"
+        company_repo.save(Company(
+            ticker=ticker, name=f"Sector Peer {i}", sector=target_sector,
+            industry="Software" if target_industry != "Software" else "Hardware",
+            exchange="NASDAQ", country="US",
+        ))
+        statement_repo.save_income_statement(IncomeStatement(
+            key=_key(ticker), fiscal_date_ending=date(2025, 12, 31), reported_currency="USD",
+            revenue=500.0, net_income=80.0 + i * 10, ebitda=150.0,
+        ))
+        quotes_by_ticker[ticker] = MarketQuote(
+            ticker=ticker, price=25.0, market_cap=1200.0, as_of=datetime.now(timezone.utc)
         )
 
     provider = FakeDataProvider(
@@ -156,3 +179,46 @@ def test_comps_raises_insufficient_peer_data_with_zero_peers() -> None:
         raise AssertionError("expected InsufficientPeerDataError")
     except InsufficientPeerDataError:
         pass
+
+
+def test_comps_prefers_industry_matching_when_enough_industry_peers_exist() -> None:
+    """Regression test for a real, found issue: 3 same-industry peers
+    is enough to skip the sector-level fallback entirely, matching
+    the _MIN_PEERS_BEFORE_SECTOR_FALLBACK threshold exactly."""
+    use_case, _ = _build(peer_count=3, target_industry="Semiconductors")
+    assessment = use_case.execute("TARGET", CompsMetric.PE)
+
+    assert assessment.peer_match_level == "industry"
+    assert set(assessment.peers_considered) == {"PEER0", "PEER1", "PEER2"}
+
+
+def test_comps_falls_back_to_sector_when_industry_pool_is_too_small() -> None:
+    """The real scenario this fix exists for: a specific industry
+    (e.g. Semiconductors) has too few same-industry peers in the
+    universe, so same-sector peers (e.g. broader Technology, which can
+    include software companies with very different multiple profiles)
+    are used to supplement, not silently returned as-is or empty."""
+    use_case, _ = _build(peer_count=1, target_industry="Semiconductors", sector_only_peer_count=3)
+    assessment = use_case.execute("TARGET", CompsMetric.PE)
+
+    assert assessment.peer_match_level == "industry+sector"
+    assert "PEER0" in assessment.peers_considered  # the one real industry peer
+    assert any(p.startswith("SECTORPEER") for p in assessment.peers_considered)
+
+
+def test_comps_reports_pure_sector_when_no_industry_peers_exist_at_all() -> None:
+    use_case, _ = _build(peer_count=0, target_industry="Semiconductors", sector_only_peer_count=3)
+    assessment = use_case.execute("TARGET", CompsMetric.PE)
+
+    assert assessment.peer_match_level == "sector"
+    assert len(assessment.peers_considered) == 3
+
+
+def test_comps_does_not_double_count_a_peer_in_both_industry_and_sector_lists() -> None:
+    """A same-industry peer should never also appear via the
+    sector-fallback supplement — a real, easy duplication bug to
+    introduce when combining two separately-filtered lists."""
+    use_case, _ = _build(peer_count=1, target_industry="Semiconductors", sector_only_peer_count=3)
+    assessment = use_case.execute("TARGET", CompsMetric.PE)
+
+    assert len(assessment.peers_considered) == len(set(assessment.peers_considered))

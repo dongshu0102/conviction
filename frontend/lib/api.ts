@@ -571,6 +571,7 @@ export interface CompsResponse {
   ticker: string;
   as_of: string;
   metric: string;
+  peer_match_level: string;
   peers_considered: string[];
   peers_used: string[];
   peers_skipped: string[];

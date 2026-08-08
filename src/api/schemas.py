@@ -334,6 +334,7 @@ class CompsResponseSchema(BaseModel):
     ticker: str
     as_of: datetime
     metric: str
+    peer_match_level: str
     peers_considered: list[str]
     peers_used: list[str]
     peers_skipped: list[str]

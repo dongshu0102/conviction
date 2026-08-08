@@ -703,6 +703,7 @@ def get_comps(
     r = assessment.result
     return CompsResponseSchema(
         ticker=assessment.ticker, as_of=assessment.as_of, metric=assessment.metric.value,
+        peer_match_level=assessment.peer_match_level,
         peers_considered=assessment.peers_considered, peers_used=assessment.peers_used,
         peers_skipped=assessment.peers_skipped, peer_count=r.peer_count,
         median_multiple=r.median_multiple, mean_multiple=r.mean_multiple,
