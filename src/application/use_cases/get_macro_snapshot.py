@@ -1,12 +1,12 @@
-"""Use case: a combined macro snapshot — GDP, CPI, unemployment,
-the real US equity risk premium, and recent macro news headlines, all
-in one call. Every piece fetched independently and allowed to fail on
-its own: a missing indicator or a down news feed shouldn't block the
-rest of the snapshot from returning what it does have. This is
-explicitly the *structured, quantifiable* half of "macro" — real
-numbers and real headlines, not an attempt to model geopolitical risk,
-regulatory change, or foreign central bank policy, none of which have
-a clean numeric API to ingest.
+"""Use case: a combined macro snapshot — GDP, CPI, the real inflation
+rate, unemployment, the real US equity risk premium, and recent macro
+news headlines, all in one call. Every piece fetched independently and
+allowed to fail on its own: a missing indicator or a down news feed
+shouldn't block the rest of the snapshot from returning what it does
+have. This is explicitly the *structured, quantifiable* half of
+"macro" — real numbers and real headlines, not an attempt to model
+geopolitical risk, regulatory change, or foreign central bank policy,
+none of which have a clean numeric API to ingest.
 """
 from __future__ import annotations
 
@@ -27,6 +27,7 @@ class MacroSnapshot:
     as_of: datetime
     gdp: EconomicIndicatorReading | None
     cpi: EconomicIndicatorReading | None
+    inflation_rate: EconomicIndicatorReading | None
     unemployment_rate: EconomicIndicatorReading | None
     risk_premium: MarketRiskPremium | None
     recent_news: list[GeneralNewsHeadline]
@@ -41,6 +42,7 @@ class GetMacroSnapshotUseCase:
             as_of=datetime.now(timezone.utc),
             gdp=self._most_recent("GDP"),
             cpi=self._most_recent("CPI"),
+            inflation_rate=self._most_recent("inflationRate"),
             unemployment_rate=self._most_recent("unemploymentRate"),
             risk_premium=self._risk_premium(),
             recent_news=self._news(news_limit),

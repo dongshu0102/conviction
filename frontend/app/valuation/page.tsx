@@ -1,12 +1,13 @@
 "use client";
 
-// Valuation — 5 genuinely distinct models under one ticker input.
-// Multiples was already computed by the backend but never surfaced on
-// the web at all; DCF, reverse DCF, IRR, and Comps are new. Each
-// section is click-to-compute, not auto-loaded, since every one of
-// these is a real financial-data fetch (and Comps fans out to
-// multiple peers) — matching the same pattern as Growth Hunter's
-// tracked-candidate checks and the portfolio Greeks/hedging sections.
+// Valuation — a real macro context (Treasury yields, GDP/CPI/inflation/
+// unemployment/equity risk premium, yield curve inversion, the Taylor
+// Rule), then 5 genuinely distinct company-level models under one
+// ticker input. Every section is click-to-compute, not auto-loaded
+// (Treasury Yields is the one exception, since it's needed to seed the
+// DCF discount-rate suggestion) — matching the same pattern as Growth
+// Hunter's tracked-candidate checks and the portfolio Greeks/hedging
+// sections.
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -30,6 +31,10 @@ function pct(v: number | null): string {
 function mult(v: number | null): string {
   if (v === null) return "—";
   return `${v.toFixed(1)}x`;
+}
+
+function asOf(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
 export default function ValuationPage() {
@@ -241,69 +246,16 @@ export default function ValuationPage() {
         <p className="eyebrow" style={{ margin: 0 }}>Conviction · Valuation</p>
         <h1 style={{ margin: "0.3rem 0 0.75rem" }}>Valuation</h1>
         <p style={{ color: "var(--text-soft)", lineHeight: 1.6, marginBottom: "1.5rem", fontSize: "0.95rem" }}>
-          Four genuinely different ways to ask what a company is worth — a DCF builds value up
-          from projected cash flows, a reverse DCF asks what growth rate the current price
-          already assumes, IRR is a return calculator for a specific buy-hold-sell scenario, and
-          comps applies real peer multiples to the target's own financials. Every assumption is
-          shown, never hidden — small changes in growth or discount rate can swing a DCF
-          substantially, which is a real property of the model, not a flaw in this tool.
+          The real macro environment first, then four genuinely different ways to ask what a
+          specific company is worth. Every assumption is shown, never hidden — small changes in
+          growth or discount rate can swing a DCF substantially, which is a real property of the
+          model, not a flaw in this tool.
         </p>
 
-        <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
-          <input
-            type="text"
-            placeholder="Ticker, e.g. NVDA"
-            value={ticker}
-            onChange={(e) => setTicker(e.target.value.toUpperCase())}
-            className="num"
-            style={{ flex: 1, padding: "0.6rem 0.9rem", fontSize: "0.95rem", textTransform: "uppercase" }}
-          />
-        </div>
-        {globalError && (
-          <p className="num loss" style={{ fontSize: "0.85rem", marginBottom: "1rem" }}>{globalError}</p>
-        )}
-
-        <section style={{ marginTop: "2rem" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.75rem" }}>
-            <p className="eyebrow" style={{ margin: 0 }}>Multiples</p>
-            <button className="btn-primary" onClick={handleMultiples} disabled={multiplesLoading} style={{ padding: "0.4rem 0.9rem", fontSize: "0.8rem" }}>
-              {multiplesLoading ? "Loading…" : "Compute"}
-            </button>
-          </div>
-          <div className="card">
-            {multiplesError && <p className="num loss" style={{ margin: 0, fontSize: "0.85rem" }}>{multiplesError}</p>}
-            {!multiples && !multiplesError && (
-              <p style={{ margin: 0, color: "var(--text-soft)", fontSize: "0.9rem" }}>
-                Live price against most recent annual fundamentals: P/E, P/S, P/B, P/FCF, EV/EBITDA.
-              </p>
-            )}
-            {multiples && (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(90px, 1fr))", gap: "1rem" }}>
-                <div>
-                  <p className="eyebrow" style={{ fontSize: "0.65rem" }}>P/E</p>
-                  <p className="num" style={{ fontSize: "1.05rem", margin: "0.2rem 0 0" }}>{mult(multiples.price_to_earnings)}</p>
-                </div>
-                <div>
-                  <p className="eyebrow" style={{ fontSize: "0.65rem" }}>P/S</p>
-                  <p className="num" style={{ fontSize: "1.05rem", margin: "0.2rem 0 0" }}>{mult(multiples.price_to_sales)}</p>
-                </div>
-                <div>
-                  <p className="eyebrow" style={{ fontSize: "0.65rem" }}>P/B</p>
-                  <p className="num" style={{ fontSize: "1.05rem", margin: "0.2rem 0 0" }}>{mult(multiples.price_to_book)}</p>
-                </div>
-                <div>
-                  <p className="eyebrow" style={{ fontSize: "0.65rem" }}>P/FCF</p>
-                  <p className="num" style={{ fontSize: "1.05rem", margin: "0.2rem 0 0" }}>{mult(multiples.price_to_free_cash_flow)}</p>
-                </div>
-                <div>
-                  <p className="eyebrow" style={{ fontSize: "0.65rem" }}>EV/EBITDA</p>
-                  <p className="num" style={{ fontSize: "1.05rem", margin: "0.2rem 0 0" }}>{mult(multiples.ev_to_ebitda)}</p>
-                </div>
-              </div>
-            )}
-          </div>
-        </section>
-
+        <h2 style={{ fontSize: "1.05rem", fontWeight: 600, margin: "0 0 0.25rem" }}>Macro Context</h2>
+        <p style={{ color: "var(--text-soft)", fontSize: "0.85rem", marginBottom: "0.5rem" }}>
+          Ticker-independent — the real, current environment every valuation below sits inside.
+        </p>
         <section style={{ marginTop: "2rem" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.75rem" }}>
             <p className="eyebrow" style={{ margin: 0 }}>Treasury Yields</p>
@@ -321,6 +273,9 @@ export default function ValuationPage() {
             )}
             {treasury && (
               <>
+                <p className="num" style={{ fontSize: "0.7rem", color: "var(--text-soft)", margin: "0 0 0.75rem" }}>
+                  As of {asOf(treasury.as_of)}
+                </p>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(70px, 1fr))", gap: "0.85rem", marginBottom: "1rem" }}>
                   <div>
                     <p className="eyebrow" style={{ fontSize: "0.6rem" }}>1mo</p>
@@ -381,27 +336,35 @@ export default function ValuationPage() {
             {macroError && <p className="num loss" style={{ margin: 0, fontSize: "0.85rem" }}>{macroError}</p>}
             {!macro && !macroError && (
               <p style={{ margin: 0, color: "var(--text-soft)", fontSize: "0.9rem" }}>
-                GDP, CPI, unemployment, the real current US equity risk premium, and recent macro
-                news, all in one place. The structured, quantifiable half of macro analysis — real
-                numbers and real headlines, not an attempt to model geopolitical risk, regulatory
-                change, or foreign central bank policy, none of which have a clean numeric API to
-                pull from.
+                GDP, inflation, unemployment, the real current US equity risk premium, and recent
+                macro news, all in one place. The structured, quantifiable half of macro analysis —
+                real numbers and real headlines, not an attempt to model geopolitical risk,
+                regulatory change, or foreign central bank policy, none of which have a clean
+                numeric API to pull from.
               </p>
             )}
             {macro && (
               <>
+                <p className="num" style={{ fontSize: "0.7rem", color: "var(--text-soft)", margin: "0 0 0.75rem" }}>
+                  As of {asOf(macro.as_of)}
+                </p>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: "1rem", marginBottom: "1rem" }}>
                   <div>
                     <p className="eyebrow" style={{ fontSize: "0.65rem" }}>GDP</p>
                     <p className="num" style={{ fontSize: "1rem", margin: "0.2rem 0 0" }}>
-                      {macro.gdp ? macro.gdp.value.toLocaleString() : "—"}
+                      {macro.gdp ? `$${macro.gdp.value.toLocaleString()}B` : "—"}
                     </p>
                   </div>
                   <div>
-                    <p className="eyebrow" style={{ fontSize: "0.65rem" }}>CPI</p>
+                    <p className="eyebrow" style={{ fontSize: "0.65rem" }}>Inflation</p>
                     <p className="num" style={{ fontSize: "1rem", margin: "0.2rem 0 0" }}>
-                      {macro.cpi ? macro.cpi.value.toFixed(1) : "—"}
+                      {macro.inflation_rate ? `${macro.inflation_rate.value.toFixed(2)}%` : "—"}
                     </p>
+                    {macro.cpi && (
+                      <p className="num" style={{ fontSize: "0.68rem", color: "var(--text-soft)", margin: "0.1rem 0 0" }}>
+                        CPI {macro.cpi.value.toFixed(1)}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <p className="eyebrow" style={{ fontSize: "0.65rem" }}>Unemployment</p>
@@ -462,6 +425,9 @@ export default function ValuationPage() {
             )}
             {rateSignals && (
               <>
+                <p className="num" style={{ fontSize: "0.7rem", color: "var(--text-soft)", margin: "0 0 0.75rem" }}>
+                  As of {asOf(rateSignals.as_of)}
+                </p>
                 <div style={{ marginBottom: "1rem" }}>
                   <p className="eyebrow" style={{ fontSize: "0.65rem" }}>Yield Curve</p>
                   <p className="num" style={{ fontSize: "1.1rem", margin: "0.2rem 0 0.4rem", color: rateSignals.yield_curve.is_inverted ? "var(--loss)" : "var(--text)" }}>
@@ -506,6 +472,73 @@ export default function ValuationPage() {
           </div>
         </section>
 
+        <h2 style={{ fontSize: "1.05rem", fontWeight: 600, margin: "2.5rem 0 0.25rem" }}>Company Valuation</h2>
+        <p style={{ color: "var(--text-soft)", fontSize: "0.85rem", marginBottom: "0.75rem" }}>
+          Four genuinely different ways to ask what a company is worth — a DCF builds value up
+          from projected cash flows, a reverse DCF asks what growth rate the current price
+          already assumes, IRR is a return calculator for a specific buy-hold-sell scenario, and
+          comps applies real peer multiples to the target&apos;s own financials.
+        </p>
+        <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
+          <input
+            type="text"
+            placeholder="Ticker, e.g. NVDA"
+            value={ticker}
+            onChange={(e) => setTicker(e.target.value.toUpperCase())}
+            className="num"
+            style={{ flex: 1, padding: "0.6rem 0.9rem", fontSize: "0.95rem", textTransform: "uppercase" }}
+          />
+        </div>
+        {globalError && (
+          <p className="num loss" style={{ fontSize: "0.85rem", marginBottom: "1rem" }}>{globalError}</p>
+        )}
+
+        <section style={{ marginTop: "2rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.75rem" }}>
+            <p className="eyebrow" style={{ margin: 0 }}>Multiples</p>
+            <button className="btn-primary" onClick={handleMultiples} disabled={multiplesLoading} style={{ padding: "0.4rem 0.9rem", fontSize: "0.8rem" }}>
+              {multiplesLoading ? "…" : "Compute"}
+            </button>
+          </div>
+          <div className="card">
+            {multiplesError && <p className="num loss" style={{ margin: 0, fontSize: "0.85rem" }}>{multiplesError}</p>}
+            {!multiples && !multiplesError && (
+              <p style={{ margin: 0, color: "var(--text-soft)", fontSize: "0.9rem" }}>
+                Live price against most recent annual fundamentals: P/E, P/S, P/B, P/FCF, EV/EBITDA.
+              </p>
+            )}
+            {multiples && (
+              <>
+                <p className="num" style={{ fontSize: "0.7rem", color: "var(--text-soft)", margin: "0 0 0.75rem" }}>
+                  Price as of {asOf(multiples.as_of)} · fundamentals from FY{multiples.fundamentals_fiscal_year}
+                </p>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(90px, 1fr))", gap: "1rem" }}>
+                <div>
+                  <p className="eyebrow" style={{ fontSize: "0.65rem" }}>P/E</p>
+                  <p className="num" style={{ fontSize: "1.05rem", margin: "0.2rem 0 0" }}>{mult(multiples.price_to_earnings)}</p>
+                </div>
+                <div>
+                  <p className="eyebrow" style={{ fontSize: "0.65rem" }}>P/S</p>
+                  <p className="num" style={{ fontSize: "1.05rem", margin: "0.2rem 0 0" }}>{mult(multiples.price_to_sales)}</p>
+                </div>
+                <div>
+                  <p className="eyebrow" style={{ fontSize: "0.65rem" }}>P/B</p>
+                  <p className="num" style={{ fontSize: "1.05rem", margin: "0.2rem 0 0" }}>{mult(multiples.price_to_book)}</p>
+                </div>
+                <div>
+                  <p className="eyebrow" style={{ fontSize: "0.65rem" }}>P/FCF</p>
+                  <p className="num" style={{ fontSize: "1.05rem", margin: "0.2rem 0 0" }}>{mult(multiples.price_to_free_cash_flow)}</p>
+                </div>
+                <div>
+                  <p className="eyebrow" style={{ fontSize: "0.65rem" }}>EV/EBITDA</p>
+                  <p className="num" style={{ fontSize: "1.05rem", margin: "0.2rem 0 0" }}>{mult(multiples.ev_to_ebitda)}</p>
+                </div>
+              </div>
+              </>
+            )}
+          </div>
+        </section>
+
         <section style={{ marginTop: "2rem" }}>
           <p className="eyebrow" style={{ marginBottom: "0.75rem" }}>Discounted Cash Flow</p>
           <div className="card">
@@ -544,6 +577,9 @@ export default function ValuationPage() {
             )}
             {dcf && (
               <>
+                <p className="num" style={{ fontSize: "0.7rem", color: "var(--text-soft)", margin: "0 0 0.75rem" }}>
+                  As of {asOf(dcf.as_of)}
+                </p>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1rem" }}>
                   <div>
                     <p className="eyebrow" style={{ fontSize: "0.65rem" }}>Per-share value</p>
@@ -591,6 +627,9 @@ export default function ValuationPage() {
             )}
             {reverseDcf && (
               <>
+                <p className="num" style={{ fontSize: "0.7rem", color: "var(--text-soft)", margin: "0 0 0.75rem" }}>
+                  As of {asOf(reverseDcf.as_of)}
+                </p>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <div>
                     <p className="eyebrow" style={{ fontSize: "0.65rem" }}>Implied growth rate</p>
@@ -653,6 +692,9 @@ export default function ValuationPage() {
             )}
             {irr && (
               <>
+                <p className="num" style={{ fontSize: "0.7rem", color: "var(--text-soft)", margin: "0 0 0.75rem" }}>
+                  As of {asOf(irr.as_of)}
+                </p>
                 <p className="eyebrow" style={{ fontSize: "0.65rem" }}>IRR</p>
                 <p className="num" style={{ fontSize: "1.4rem", margin: "0.2rem 0 0.75rem" }}>
                   {irr.irr === null ? "No solution" : pct(irr.irr)}
@@ -700,6 +742,9 @@ export default function ValuationPage() {
             )}
             {comps && (
               <>
+                <p className="num" style={{ fontSize: "0.7rem", color: "var(--text-soft)", margin: "0 0 0.75rem" }}>
+                  As of {asOf(comps.as_of)}
+                </p>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.75rem" }}>
                   <div>
                     <p className="eyebrow" style={{ fontSize: "0.65rem" }}>Implied per-share value</p>

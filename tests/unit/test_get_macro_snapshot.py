@@ -53,6 +53,7 @@ def test_execute_returns_all_pieces_when_everything_is_available() -> None:
         indicators={
             "GDP": [_reading("GDP", 31422.526)],
             "CPI": [_reading("CPI", 325.063), _reading("CPI", 324.245, month=9)],
+            "inflationRate": [_reading("inflationRate", 2.28)],
             "unemploymentRate": [_reading("unemploymentRate", 4.5)],
         },
         risk_premium=MarketRiskPremium("United States", 0.0023, 0.0446),
@@ -63,6 +64,7 @@ def test_execute_returns_all_pieces_when_everything_is_available() -> None:
 
     assert snapshot.gdp.value == 31422.526
     assert snapshot.cpi.value == 325.063  # most recent, not the second row
+    assert snapshot.inflation_rate.value == 2.28
     assert snapshot.unemployment_rate.value == 4.5
     assert snapshot.risk_premium.total_equity_risk_premium == 0.0446
     assert len(snapshot.recent_news) == 1
@@ -93,6 +95,7 @@ def test_execute_degrades_gracefully_when_indicators_are_unsupported() -> None:
 
     assert snapshot.gdp is None
     assert snapshot.cpi is None
+    assert snapshot.inflation_rate is None
     assert snapshot.unemployment_rate is None
     assert snapshot.risk_premium is None
     assert snapshot.recent_news == []

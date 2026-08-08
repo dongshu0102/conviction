@@ -465,6 +465,7 @@ export interface MacroSnapshot {
   as_of: string;
   gdp: EconomicIndicator | null;
   cpi: EconomicIndicator | null;
+  inflation_rate: EconomicIndicator | null;
   unemployment_rate: EconomicIndicator | null;
   risk_premium: MarketRiskPremium | null;
   recent_news: GeneralNewsHeadline[];

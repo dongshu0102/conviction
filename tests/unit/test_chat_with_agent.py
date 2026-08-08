@@ -1741,6 +1741,8 @@ def test_get_macro_snapshot_via_chat_returns_real_data_and_degrades_gracefully()
         def get_economic_indicator(self, name: str):
             if name == "GDP":
                 return [EconomicIndicatorReading(name="GDP", as_of=date(2025, 10, 1), value=31422.526)]
+            if name == "inflationRate":
+                return [EconomicIndicatorReading(name="inflationRate", as_of=date(2025, 11, 1), value=2.28)]
             return []  # CPI and unemploymentRate genuinely unavailable
 
         def get_market_risk_premium(self, country: str = "United States"):
@@ -1760,6 +1762,7 @@ def test_get_macro_snapshot_via_chat_returns_real_data_and_degrades_gracefully()
     result = fake_agent.dispatch_results[0]
     assert result["gdp"]["value"] == 31422.526
     assert result["cpi"] is None  # genuinely unavailable, not an error
+    assert abs(result["inflation_rate_pct"] - 2.28) < 1e-9
     assert abs(result["equity_risk_premium"] - 0.0446) < 1e-9
     assert len(result["recent_news"]) == 1
     assert "note" in result

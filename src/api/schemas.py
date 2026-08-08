@@ -386,6 +386,7 @@ class MacroSnapshotSchema(BaseModel):
     as_of: datetime
     gdp: EconomicIndicatorSchema | None
     cpi: EconomicIndicatorSchema | None
+    inflation_rate: EconomicIndicatorSchema | None
     unemployment_rate: EconomicIndicatorSchema | None
     risk_premium: MarketRiskPremiumSchema | None
     recent_news: list[GeneralNewsHeadlineSchema]

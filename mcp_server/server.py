@@ -493,15 +493,16 @@ async def get_treasury_rates() -> str:
 
 @mcp.tool()
 async def get_macro_snapshot(news_limit: int = 5) -> str:
-    """A combined real macro picture in one call: GDP, CPI,
-    unemployment rate, the real current US equity risk premium, and
-    recent macro/market news headlines. Every piece is fetched
-    independently — a missing indicator or a down news feed returns
-    null/empty for that piece, never fails the whole snapshot. This is
-    explicitly the structured, quantifiable half of macro analysis —
-    real numbers and real headlines, not an attempt to model
-    geopolitical risk, regulatory change, or foreign central bank
-    policy, none of which have a clean numeric API to pull from."""
+    """A combined real macro picture in one call: GDP, CPI, the real
+    current inflation rate, unemployment rate, the real current US
+    equity risk premium, and recent macro/market news headlines. Every
+    piece is fetched independently — a missing indicator or a down
+    news feed returns null/empty for that piece, never fails the
+    whole snapshot. This is explicitly the structured, quantifiable
+    half of macro analysis — real numbers and real headlines, not an
+    attempt to model geopolitical risk, regulatory change, or foreign
+    central bank policy, none of which have a clean numeric API to
+    pull from."""
     return await _request("GET", "/companies/macro-snapshot", params={"news_limit": news_limit})
 
 

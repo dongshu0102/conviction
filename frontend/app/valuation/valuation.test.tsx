@@ -37,7 +37,7 @@ describe("Valuation page", () => {
   it("shows an error and does not call the API when Compute is clicked with no ticker", () => {
     const spy = vi.spyOn(api, "getValuation");
     render(<ValuationPage />);
-    fireEvent.click(screen.getAllByText("Compute")[0]);
+    fireEvent.click(screen.getAllByText("Compute")[2]);
     expect(screen.getByText("Enter a ticker first.")).toBeInTheDocument();
     expect(spy).not.toHaveBeenCalled();
   });
@@ -51,7 +51,7 @@ describe("Valuation page", () => {
     });
     render(<ValuationPage />);
     enterTicker();
-    fireEvent.click(screen.getAllByText("Compute")[0]);
+    fireEvent.click(screen.getAllByText("Compute")[2]);
 
     await waitFor(() => {
       expect(spy).toHaveBeenCalledWith("NVDA");
@@ -182,22 +182,24 @@ describe("Valuation page", () => {
     });
   });
 
-  it("computing Macro Snapshot shows real GDP/CPI/unemployment/risk premium data", async () => {
+  it("computing Macro Snapshot shows real GDP/inflation/unemployment/risk premium data", async () => {
     const spy = vi.spyOn(api, "getMacroSnapshot").mockResolvedValue({
       as_of: "2026-08-06T00:00:00Z",
       gdp: { name: "GDP", as_of: "2025-10-01", value: 31422.526 },
       cpi: { name: "CPI", as_of: "2025-11-01", value: 325.063 },
+      inflation_rate: { name: "inflationRate", as_of: "2025-11-01", value: 2.28 },
       unemployment_rate: { name: "unemploymentRate", as_of: "2025-11-01", value: 4.1 },
       risk_premium: { country: "United States", country_risk_premium: 0.0023, total_equity_risk_premium: 0.0446 },
       recent_news: [{ title: "Fed holds rates steady", published_at: null, publisher: "Reuters", url: null, snippet: null }],
     });
     render(<ValuationPage />);
     await waitFor(() => screen.getByText("Macro Snapshot"));
-    fireEvent.click(screen.getAllByText("Compute")[1]);
+    fireEvent.click(screen.getAllByText("Compute")[0]);
 
     await waitFor(() => {
       expect(spy).toHaveBeenCalled();
-      expect(screen.getByText("31,422.526")).toBeInTheDocument();
+      expect(screen.getByText("$31,422.526B")).toBeInTheDocument();
+      expect(screen.getByText("2.28%")).toBeInTheDocument();
       expect(screen.getByText("4.1%")).toBeInTheDocument();
       expect(screen.getByText("4.46%")).toBeInTheDocument(); // risk premium, 2-decimal to disambiguate from unemployment's 1-decimal display
       expect(screen.getByText("Fed holds rates steady")).toBeInTheDocument();
@@ -207,11 +209,11 @@ describe("Valuation page", () => {
   it("Macro Snapshot shows an em dash, not a crash, for indicators that are genuinely unavailable", async () => {
     vi.spyOn(api, "getMacroSnapshot").mockResolvedValue({
       as_of: "2026-08-06T00:00:00Z",
-      gdp: null, cpi: null, unemployment_rate: null, risk_premium: null, recent_news: [],
+      gdp: null, cpi: null, inflation_rate: null, unemployment_rate: null, risk_premium: null, recent_news: [],
     });
     render(<ValuationPage />);
     await waitFor(() => screen.getByText("Macro Snapshot"));
-    fireEvent.click(screen.getAllByText("Compute")[1]);
+    fireEvent.click(screen.getAllByText("Compute")[0]);
 
     await waitFor(() => {
       expect(screen.getAllByText("—").length).toBeGreaterThan(0);
@@ -222,7 +224,7 @@ describe("Valuation page", () => {
     vi.spyOn(api, "getMacroSnapshot").mockRejectedValue(new Error("Server error"));
     render(<ValuationPage />);
     await waitFor(() => screen.getByText("Macro Snapshot"));
-    fireEvent.click(screen.getAllByText("Compute")[1]);
+    fireEvent.click(screen.getAllByText("Compute")[0]);
 
     await waitFor(() => {
       expect(screen.getAllByText("Server error").length).toBeGreaterThan(0);
@@ -244,7 +246,7 @@ describe("Valuation page", () => {
     });
     render(<ValuationPage />);
     await waitFor(() => screen.getByText("Rate Signals"));
-    fireEvent.click(screen.getAllByText("Compute")[2]);
+    fireEvent.click(screen.getAllByText("Compute")[1]);
 
     await waitFor(() => {
       expect(spy).toHaveBeenCalled();
@@ -262,7 +264,7 @@ describe("Valuation page", () => {
     });
     render(<ValuationPage />);
     await waitFor(() => screen.getByText("Rate Signals"));
-    fireEvent.click(screen.getAllByText("Compute")[2]);
+    fireEvent.click(screen.getAllByText("Compute")[1]);
 
     await waitFor(() => {
       expect(screen.getByText("The real, current inflation rate reading is unavailable.")).toBeInTheDocument();
@@ -273,7 +275,7 @@ describe("Valuation page", () => {
     vi.spyOn(api, "getRateSignals").mockRejectedValue(new Error("Server error"));
     render(<ValuationPage />);
     await waitFor(() => screen.getByText("Rate Signals"));
-    fireEvent.click(screen.getAllByText("Compute")[2]);
+    fireEvent.click(screen.getAllByText("Compute")[1]);
 
     await waitFor(() => {
       expect(screen.getAllByText("Server error").length).toBeGreaterThan(0);

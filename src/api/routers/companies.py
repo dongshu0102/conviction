@@ -395,6 +395,10 @@ def get_macro_snapshot(
         as_of=snapshot.as_of,
         gdp=EconomicIndicatorSchema(name=snapshot.gdp.name, as_of=snapshot.gdp.as_of, value=snapshot.gdp.value) if snapshot.gdp else None,
         cpi=EconomicIndicatorSchema(name=snapshot.cpi.name, as_of=snapshot.cpi.as_of, value=snapshot.cpi.value) if snapshot.cpi else None,
+        inflation_rate=(
+            EconomicIndicatorSchema(name=snapshot.inflation_rate.name, as_of=snapshot.inflation_rate.as_of, value=snapshot.inflation_rate.value)
+            if snapshot.inflation_rate else None
+        ),
         unemployment_rate=(
             EconomicIndicatorSchema(name=snapshot.unemployment_rate.name, as_of=snapshot.unemployment_rate.as_of, value=snapshot.unemployment_rate.value)
             if snapshot.unemployment_rate else None

@@ -727,12 +727,12 @@ _TOOLS = [
     ),
     ToolDefinition(
         "get_macro_snapshot",
-        "A combined real macro picture in one call: GDP, CPI, "
-        "unemployment rate, the real current US equity risk premium, "
-        "and recent macro/market news headlines. Every piece is "
-        "fetched independently — a missing indicator or a down news "
-        "feed returns null/empty for that piece, never fails the "
-        "whole snapshot. This is explicitly the structured, "
+        "A combined real macro picture in one call: GDP, CPI, the real "
+        "current inflation rate, unemployment rate, the real current US "
+        "equity risk premium, and recent macro/market news headlines. "
+        "Every piece is fetched independently — a missing indicator or "
+        "a down news feed returns null/empty for that piece, never "
+        "fails the whole snapshot. This is explicitly the structured, "
         "quantifiable half of macro analysis — real numbers and real "
         "headlines, not an attempt to model geopolitical risk, "
         "regulatory change, or foreign central bank policy, none of "
@@ -1645,6 +1645,9 @@ class ChatWithAgentUseCase:
                 "cpi": (
                     {"as_of": snapshot.cpi.as_of.isoformat(), "value": snapshot.cpi.value}
                     if snapshot.cpi else None
+                ),
+                "inflation_rate_pct": (
+                    snapshot.inflation_rate.value if snapshot.inflation_rate else None
                 ),
                 "unemployment_rate": (
                     {"as_of": snapshot.unemployment_rate.as_of.isoformat(), "value": snapshot.unemployment_rate.value}
