@@ -470,6 +470,29 @@ export interface MacroSnapshot {
   recent_news: GeneralNewsHeadline[];
 }
 
+export interface YieldCurveReading {
+  spread_10y_2y: number | null;
+  spread_10y_3m: number | null;
+  is_inverted: boolean;
+  interpretation: string;
+}
+
+export interface TaylorRuleResult {
+  target_rate: number;
+  current_rate: number | null;
+  gap: number | null;
+  inflation_rate: number;
+  output_gap_pct: number | null;
+  interpretation: string;
+}
+
+export interface RateSignals {
+  as_of: string;
+  yield_curve: YieldCurveReading;
+  taylor_rule: TaylorRuleResult | null;
+  taylor_rule_unavailable_reason: string | null;
+}
+
 export interface ValuationSnapshot {
   ticker: string;
   as_of: string;
@@ -728,6 +751,13 @@ export const api = {
   getTreasuryRates: () => request<TreasuryRates>("/companies/treasury-rates"),
   getMacroSnapshot: (newsLimit: number = 5) =>
     request<MacroSnapshot>(`/companies/macro-snapshot?news_limit=${newsLimit}`),
+  getRateSignals: (opts?: { neutral_real_rate?: number; target_inflation?: number }) => {
+    const params = new URLSearchParams();
+    if (opts?.neutral_real_rate !== undefined) params.set("neutral_real_rate", String(opts.neutral_real_rate));
+    if (opts?.target_inflation !== undefined) params.set("target_inflation", String(opts.target_inflation));
+    const qs = params.toString();
+    return request<RateSignals>(`/companies/rate-signals${qs ? `?${qs}` : ""}`);
+  },
   getValuation: (ticker: string) =>
     request<ValuationSnapshot>(`/companies/${encodeURIComponent(ticker.toUpperCase())}/valuation`),
   getDcf: (

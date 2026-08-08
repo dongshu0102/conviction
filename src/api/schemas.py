@@ -391,6 +391,29 @@ class MacroSnapshotSchema(BaseModel):
     recent_news: list[GeneralNewsHeadlineSchema]
 
 
+class YieldCurveReadingSchema(BaseModel):
+    spread_10y_2y: float | None
+    spread_10y_3m: float | None
+    is_inverted: bool
+    interpretation: str
+
+
+class TaylorRuleResultSchema(BaseModel):
+    target_rate: float
+    current_rate: float | None
+    gap: float | None
+    inflation_rate: float
+    output_gap_pct: float | None
+    interpretation: str
+
+
+class RateSignalsSchema(BaseModel):
+    as_of: datetime
+    yield_curve: YieldCurveReadingSchema
+    taylor_rule: TaylorRuleResultSchema | None
+    taylor_rule_unavailable_reason: str | None
+
+
 class SpeculativeGrowthAssessmentSchema(BaseModel):
     ticker: str
     as_of: datetime

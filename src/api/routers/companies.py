@@ -22,6 +22,7 @@ from src.api.schemas import (
     MacroSnapshotSchema,
     MarketRiskPremiumSchema,
     RankedFactorScoreSchema,
+    RateSignalsSchema,
     CashFlowStatementSchema,
     CompanyFinancialAnalysisSchema,
     CompanyFinancialsSchema,
@@ -35,9 +36,11 @@ from src.api.schemas import (
     ScreenRequestSchema,
     ScreenResultSchema,
     SP500ConstituentsSchema,
+    TaylorRuleResultSchema,
     TreasuryRatesSchema,
     ValuationSnapshotSchema,
     YearlyRatiosSchema,
+    YieldCurveReadingSchema,
 )
 from src.application.interfaces.data_provider import DataProviderError
 from src.application.use_cases.compute_comps_valuation import (
@@ -56,6 +59,7 @@ from src.application.use_cases.compute_investment_irr import (
     InvalidIrrScenarioError,
 )
 from src.application.use_cases.get_macro_snapshot import GetMacroSnapshotUseCase
+from src.application.use_cases.get_rate_signals import GetRateSignalsUseCase
 from src.application.use_cases.get_risk_free_rate import GetRiskFreeRateUseCase
 from src.domain.services.valuation_math import DcfAssumptionError
 from src.application.use_cases.manage_universe_theme import GetThemeTickersUseCase
@@ -188,6 +192,12 @@ def get_macro_snapshot_use_case(
     provider: FinancialModelingPrepProvider = Depends(get_data_provider),
 ) -> GetMacroSnapshotUseCase:
     return GetMacroSnapshotUseCase(provider)
+
+
+def get_rate_signals_use_case(
+    provider: FinancialModelingPrepProvider = Depends(get_data_provider),
+) -> GetRateSignalsUseCase:
+    return GetRateSignalsUseCase(provider)
 
 
 def get_factor_score_use_case(
@@ -403,6 +413,38 @@ def get_macro_snapshot(
             )
             for h in snapshot.recent_news
         ],
+    )
+
+
+@router.get("/rate-signals", response_model=RateSignalsSchema)
+def get_rate_signals(
+    neutral_real_rate: float | None = Query(default=None),
+    target_inflation: float | None = Query(default=None),
+    use_case: GetRateSignalsUseCase = Depends(get_rate_signals_use_case),
+) -> RateSignalsSchema:
+    """Two real, standard rate-direction signals — yield curve
+    inversion and the Taylor Rule — applied to real, live data.
+    Neither predicts anything; both are tools professional economists
+    and the Fed itself weigh as one input among several. Registered
+    before /{ticker} for the same routing-order reason as
+    /sp500-constituents above."""
+    signals = use_case.execute(neutral_real_rate=neutral_real_rate, target_inflation=target_inflation)
+    yc = signals.yield_curve
+    tr = signals.taylor_rule
+    return RateSignalsSchema(
+        as_of=signals.as_of,
+        yield_curve=YieldCurveReadingSchema(
+            spread_10y_2y=yc.spread_10y_2y, spread_10y_3m=yc.spread_10y_3m,
+            is_inverted=yc.is_inverted, interpretation=yc.interpretation,
+        ),
+        taylor_rule=(
+            TaylorRuleResultSchema(
+                target_rate=tr.target_rate, current_rate=tr.current_rate, gap=tr.gap,
+                inflation_rate=tr.inflation_rate, output_gap_pct=tr.output_gap_pct,
+                interpretation=tr.interpretation,
+            ) if tr else None
+        ),
+        taylor_rule_unavailable_reason=signals.taylor_rule_unavailable_reason,
     )
 
 

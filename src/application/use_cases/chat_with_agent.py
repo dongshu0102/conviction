@@ -79,6 +79,7 @@ from src.application.use_cases.compute_investment_irr import (
     InvalidIrrScenarioError,
 )
 from src.application.use_cases.get_macro_snapshot import GetMacroSnapshotUseCase
+from src.application.use_cases.get_rate_signals import GetRateSignalsUseCase
 from src.application.use_cases.get_risk_free_rate import GetRiskFreeRateUseCase
 from src.domain.services.valuation_math import DcfAssumptionError
 from src.application.use_cases.check_speculative_growth_candidates import (
@@ -744,6 +745,31 @@ _TOOLS = [
         },
     ),
     ToolDefinition(
+        "get_rate_signals",
+        "Two real, standard rate-direction signals applied to real, "
+        "live data: yield curve inversion (10yr-2yr and 10yr-3mo "
+        "spreads — a negative spread is a real, widely-cited "
+        "historical recession signal, though with a lag that has "
+        "varied from roughly 6 to 24 months and no guarantee) and the "
+        "Taylor Rule (a standard formula computing where rates "
+        "arguably 'should' be, given real inflation and, when "
+        "available, the output gap between actual and potential GDP, "
+        "compared against the real current fed funds rate). Neither "
+        "signal predicts anything — both are real tools professional "
+        "economists and the Fed itself weigh as one input among "
+        "several, not a forecast. neutral_real_rate (default 0.5, a "
+        "standard 'r-star' estimate) and target_inflation (default "
+        "2.0, the Fed's own stated target) are both overridable, "
+        "explicit assumptions, never hidden.",
+        {
+            "type": "object",
+            "properties": {
+                "neutral_real_rate": {"type": "number", "description": "Optional, default 0.5."},
+                "target_inflation": {"type": "number", "description": "Optional, default 2.0."},
+            },
+        },
+    ),
+    ToolDefinition(
         "ingest_etf",
         "Ingest an ETF's profile (name, expense ratio, AUM) so it can be added "
         "to watchlists, themes, and screened/factor-scored. ETFs have no "
@@ -1050,6 +1076,7 @@ class ChatWithAgentUseCase:
         compute_comps: ComputeCompsValuationUseCase,
         get_risk_free_rate: GetRiskFreeRateUseCase,
         get_macro_snapshot: GetMacroSnapshotUseCase,
+        get_rate_signals: GetRateSignalsUseCase,
     ) -> None:
         self._chat_agent = chat_agent
         self._get_watchlist = get_watchlist
@@ -1104,6 +1131,7 @@ class ChatWithAgentUseCase:
         self._compute_comps = compute_comps
         self._get_risk_free_rate = get_risk_free_rate
         self._get_macro_snapshot = get_macro_snapshot
+        self._get_rate_signals = get_rate_signals
         self._construct_risk_parity_portfolio = construct_risk_parity_portfolio
         self._user_id: str = ""  # set per-request in execute()
 
@@ -1636,6 +1664,36 @@ class ChatWithAgentUseCase:
                     "policy, none of which have a clean numeric API to pull from. "
                     "A null field means that specific indicator was unavailable, "
                     "not that it was checked and found to be zero or absent."
+                ),
+            }
+
+        if tool_name == "get_rate_signals":
+            signals = self._get_rate_signals.execute(
+                neutral_real_rate=tool_input.get("neutral_real_rate"),
+                target_inflation=tool_input.get("target_inflation"),
+            )
+            yc = signals.yield_curve
+            tr = signals.taylor_rule
+            return {
+                "as_of": signals.as_of.isoformat(),
+                "yield_curve": {
+                    "spread_10y_2y": yc.spread_10y_2y, "spread_10y_3m": yc.spread_10y_3m,
+                    "is_inverted": yc.is_inverted, "interpretation": yc.interpretation,
+                },
+                "taylor_rule": (
+                    {
+                        "target_rate": tr.target_rate, "current_rate": tr.current_rate,
+                        "gap": tr.gap, "inflation_rate": tr.inflation_rate,
+                        "output_gap_pct": tr.output_gap_pct, "interpretation": tr.interpretation,
+                    } if tr else None
+                ),
+                "taylor_rule_unavailable_reason": signals.taylor_rule_unavailable_reason,
+                "note": (
+                    "Neither signal here predicts anything. A yield curve inversion "
+                    "is a real, widely-cited historical recession signal, not a "
+                    "certainty. The Taylor Rule is a real, standard formula, but "
+                    "one input professional economists weigh alongside others, not "
+                    "a forecast of what the Fed will actually do."
                 ),
             }
 

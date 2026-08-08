@@ -88,6 +88,7 @@ from src.application.use_cases.compute_dcf_valuation import (
 )
 from src.application.use_cases.compute_investment_irr import ComputeInvestmentIrrUseCase
 from src.application.use_cases.get_macro_snapshot import GetMacroSnapshotUseCase
+from src.application.use_cases.get_rate_signals import GetRateSignalsUseCase
 from src.application.use_cases.get_risk_free_rate import GetRiskFreeRateUseCase
 from src.application.use_cases.manage_speculative_growth_candidates import (
     AddSpeculativeGrowthCandidateUseCase,
@@ -270,6 +271,7 @@ def get_chat_use_case(
         ),
         get_risk_free_rate=GetRiskFreeRateUseCase(data_provider),
         get_macro_snapshot=GetMacroSnapshotUseCase(data_provider),
+        get_rate_signals=GetRateSignalsUseCase(data_provider),
     )
 
 

@@ -97,6 +97,7 @@ from src.application.use_cases.compute_dcf_valuation import (
 )
 from src.application.use_cases.compute_investment_irr import ComputeInvestmentIrrUseCase
 from src.application.use_cases.get_macro_snapshot import GetMacroSnapshotUseCase
+from src.application.use_cases.get_rate_signals import GetRateSignalsUseCase
 from src.application.use_cases.get_risk_free_rate import GetRiskFreeRateUseCase
 from src.application.use_cases.manage_speculative_growth_candidates import (
     AddSpeculativeGrowthCandidateUseCase,
@@ -241,6 +242,7 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
         compute_comps=ComputeCompsValuationUseCase(company_repo, get_financials, compute_company_valuation),
         get_risk_free_rate=GetRiskFreeRateUseCase(provider),
         get_macro_snapshot=GetMacroSnapshotUseCase(provider),
+        get_rate_signals=GetRateSignalsUseCase(provider),
     )
     return use_case, fake_agent, portfolio_repo
 
@@ -1760,4 +1762,39 @@ def test_get_macro_snapshot_via_chat_returns_real_data_and_degrades_gracefully()
     assert result["cpi"] is None  # genuinely unavailable, not an error
     assert abs(result["equity_risk_premium"] - 0.0446) < 1e-9
     assert len(result["recent_news"]) == 1
+    assert "note" in result
+
+
+def test_get_rate_signals_via_chat_returns_a_real_yield_curve_and_taylor_rule() -> None:
+    from datetime import date
+    from src.domain.entities.economic_indicator import EconomicIndicatorReading
+    from src.domain.entities.treasury_rates import TreasuryRates
+
+    class _RateSignalsProvider(FakeDataProvider):
+        def get_treasury_rates(self) -> TreasuryRates:
+            return TreasuryRates(
+                as_of=date(2026, 8, 6), month1=None, month2=None, month3=0.039, month6=None,
+                year1=None, year2=0.0425, year3=None, year5=None, year7=None,
+                year10=0.0469, year20=None, year30=None,
+            )
+
+        def get_economic_indicator(self, name: str):
+            values = {"inflationRate": 2.3, "GDP": 31422.526, "nominalPotentialGDP": 31029.6201689, "federalFunds": 3.88}
+            if name in values:
+                return [EconomicIndicatorReading(name=name, as_of=date(2025, 11, 1), value=values[name])]
+            return []
+
+    company_repo = _company_repo("AAPL")
+    provider = _RateSignalsProvider(company=company_repo.get_by_ticker("AAPL"))
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("get_rate_signals", {})],
+        company_repo=company_repo, provider=provider,
+    )
+    use_case.execute("alice", "are rates likely to go up or down?", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["yield_curve"]["is_inverted"] is False
+    assert abs(result["yield_curve"]["spread_10y_2y"] - 0.44) < 1e-6
+    assert result["taylor_rule"] is not None
+    assert abs(result["taylor_rule"]["target_rate"] - 3.5831141486124243) < 1e-6
     assert "note" in result

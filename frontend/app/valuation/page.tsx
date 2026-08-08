@@ -14,7 +14,7 @@ import { AppShell } from "@/components/AppShell";
 import {
   api, getApiKey, ApiError,
   ValuationSnapshot, DcfResponse, ReverseDcfResponse, IrrResponse, CompsResponse, CompsMetric,
-  TreasuryRates, MacroSnapshot,
+  TreasuryRates, MacroSnapshot, RateSignals,
 } from "@/lib/api";
 
 function usd(v: number | null): string {
@@ -46,6 +46,11 @@ export default function ValuationPage() {
   const [macro, setMacro] = useState<MacroSnapshot | null>(null);
   const [macroLoading, setMacroLoading] = useState(false);
   const [macroError, setMacroError] = useState<string | null>(null);
+
+  // Rate signals
+  const [rateSignals, setRateSignals] = useState<RateSignals | null>(null);
+  const [rateSignalsLoading, setRateSignalsLoading] = useState(false);
+  const [rateSignalsError, setRateSignalsError] = useState<string | null>(null);
 
   // Multiples
   const [multiples, setMultiples] = useState<ValuationSnapshot | null>(null);
@@ -135,6 +140,18 @@ export default function ValuationPage() {
       setMacroError(err instanceof Error ? err.message : "Couldn't load macro snapshot");
     } finally {
       setMacroLoading(false);
+    }
+  }
+
+  async function handleRateSignals() {
+    setRateSignalsLoading(true);
+    setRateSignalsError(null);
+    try {
+      setRateSignals(await api.getRateSignals());
+    } catch (err) {
+      setRateSignalsError(err instanceof Error ? err.message : "Couldn't load rate signals");
+    } finally {
+      setRateSignalsLoading(false);
     }
   }
 
@@ -420,6 +437,70 @@ export default function ValuationPage() {
                     ))}
                   </div>
                 )}
+              </>
+            )}
+          </div>
+        </section>
+
+        <section style={{ marginTop: "2rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.75rem" }}>
+            <p className="eyebrow" style={{ margin: 0 }}>Rate Signals</p>
+            <button className="btn-primary" onClick={handleRateSignals} disabled={rateSignalsLoading} style={{ padding: "0.4rem 0.9rem", fontSize: "0.8rem" }}>
+              {rateSignalsLoading ? "…" : "Compute"}
+            </button>
+          </div>
+          <div className="card">
+            {rateSignalsError && <p className="num loss" style={{ margin: 0, fontSize: "0.85rem" }}>{rateSignalsError}</p>}
+            {!rateSignals && !rateSignalsError && (
+              <p style={{ margin: 0, color: "var(--text-soft)", fontSize: "0.9rem" }}>
+                Two real, standard rate-direction signals: yield curve inversion (a real, widely-cited
+                historical recession signal, not a guarantee) and the Taylor Rule (where rates
+                arguably &quot;should&quot; be, given real inflation and output gap, versus the real
+                current fed funds rate). Neither predicts anything — both are tools economists and
+                the Fed itself weigh alongside others, not a forecast.
+              </p>
+            )}
+            {rateSignals && (
+              <>
+                <div style={{ marginBottom: "1rem" }}>
+                  <p className="eyebrow" style={{ fontSize: "0.65rem" }}>Yield Curve</p>
+                  <p className="num" style={{ fontSize: "1.1rem", margin: "0.2rem 0 0.4rem", color: rateSignals.yield_curve.is_inverted ? "var(--loss)" : "var(--text)" }}>
+                    {rateSignals.yield_curve.is_inverted ? "Inverted" : "Not inverted"}
+                  </p>
+                  <p className="num" style={{ fontSize: "0.78rem", color: "var(--text-soft)" }}>
+                    10yr-2yr: {rateSignals.yield_curve.spread_10y_2y !== null ? `${rateSignals.yield_curve.spread_10y_2y.toFixed(2)}pp` : "—"}
+                    {" · "}
+                    10yr-3mo: {rateSignals.yield_curve.spread_10y_3m !== null ? `${rateSignals.yield_curve.spread_10y_3m.toFixed(2)}pp` : "—"}
+                  </p>
+                  <p style={{ fontSize: "0.82rem", color: "var(--text-soft)", marginTop: "0.4rem", lineHeight: 1.5 }}>
+                    {rateSignals.yield_curve.interpretation}
+                  </p>
+                </div>
+                <div>
+                  <p className="eyebrow" style={{ fontSize: "0.65rem" }}>Taylor Rule</p>
+                  {rateSignals.taylor_rule ? (
+                    <>
+                      <div style={{ display: "flex", justifyContent: "space-between", margin: "0.2rem 0 0.4rem" }}>
+                        <p className="num" style={{ fontSize: "1.1rem", margin: 0 }}>
+                          {rateSignals.taylor_rule.target_rate.toFixed(2)}%
+                          <span style={{ fontSize: "0.78rem", color: "var(--text-soft)" }}> implied target</span>
+                        </p>
+                        {rateSignals.taylor_rule.current_rate !== null && (
+                          <p className="num" style={{ fontSize: "0.85rem", color: "var(--text-soft)", margin: 0 }}>
+                            {rateSignals.taylor_rule.current_rate.toFixed(2)}% current
+                          </p>
+                        )}
+                      </div>
+                      <p style={{ fontSize: "0.82rem", color: "var(--text-soft)", lineHeight: 1.5 }}>
+                        {rateSignals.taylor_rule.interpretation}
+                      </p>
+                    </>
+                  ) : (
+                    <p style={{ margin: "0.2rem 0 0", color: "var(--text-soft)", fontSize: "0.85rem" }}>
+                      {rateSignals.taylor_rule_unavailable_reason || "Unavailable."}
+                    </p>
+                  )}
+                </div>
               </>
             )}
           </div>

@@ -285,6 +285,22 @@ async def test_get_macro_snapshot_defaults_news_limit_to_5():
     mock_req.assert_called_once_with("GET", "/companies/macro-snapshot", params={"news_limit": 5})
 
 
+@pytest.mark.asyncio
+async def test_get_rate_signals_omits_params_when_not_supplied():
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.get_rate_signals()
+    mock_req.assert_called_once_with("GET", "/companies/rate-signals", params={})
+
+
+@pytest.mark.asyncio
+async def test_get_rate_signals_includes_params_when_explicitly_supplied():
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.get_rate_signals(neutral_real_rate=1.0, target_inflation=2.5)
+    mock_req.assert_called_once_with(
+        "GET", "/companies/rate-signals", params={"neutral_real_rate": 1.0, "target_inflation": 2.5}
+    )
+
+
 
 # --- The 11 tools added to close the MCP gap (options, screening, --------
 # recommendations, rebalancing, watchlist extras) — none of these had any

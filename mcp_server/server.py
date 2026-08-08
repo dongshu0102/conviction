@@ -506,6 +506,30 @@ async def get_macro_snapshot(news_limit: int = 5) -> str:
 
 
 @mcp.tool()
+async def get_rate_signals(neutral_real_rate: float | None = None, target_inflation: float | None = None) -> str:
+    """Two real, standard rate-direction signals applied to real,
+    live data: yield curve inversion (10yr-2yr and 10yr-3mo spreads —
+    a negative spread is a real, widely-cited historical recession
+    signal, though with a lag that has varied from roughly 6 to 24
+    months and no guarantee) and the Taylor Rule (a standard formula
+    computing where rates arguably 'should' be, given real inflation
+    and, when available, the output gap between actual and potential
+    GDP, compared against the real current fed funds rate). Neither
+    signal predicts anything — both are real tools professional
+    economists and the Fed itself weigh as one input among several,
+    not a forecast. neutral_real_rate (default 0.5, a standard
+    'r-star' estimate) and target_inflation (default 2.0, the Fed's
+    own stated target) are both overridable, explicit assumptions,
+    never hidden."""
+    params = {}
+    if neutral_real_rate is not None:
+        params["neutral_real_rate"] = neutral_real_rate
+    if target_inflation is not None:
+        params["target_inflation"] = target_inflation
+    return await _request("GET", "/companies/rate-signals", params=params)
+
+
+@mcp.tool()
 async def generate_theme_synthesis(theme_name: str) -> str:
     """Generate an AI-written narrative synthesis across an ENTIRE
     theme — common threads, notable divergences, and risks visible

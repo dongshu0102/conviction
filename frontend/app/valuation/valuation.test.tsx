@@ -73,7 +73,7 @@ describe("Valuation page", () => {
     });
     render(<ValuationPage />);
     enterTicker();
-    fireEvent.click(screen.getAllByText("Compute")[2]);
+    fireEvent.click(screen.getAllByText("Compute")[3]);
 
     await waitFor(() => {
       expect(spy).toHaveBeenCalledWith("NVDA", {
@@ -91,7 +91,7 @@ describe("Valuation page", () => {
     });
     render(<ValuationPage />);
     enterTicker();
-    fireEvent.click(screen.getAllByText("Compute")[3]);
+    fireEvent.click(screen.getAllByText("Compute")[4]);
 
     await waitFor(() => {
       expect(screen.getByText("No solution")).toBeInTheDocument();
@@ -102,7 +102,7 @@ describe("Valuation page", () => {
     const spy = vi.spyOn(api, "getIrr");
     render(<ValuationPage />);
     enterTicker();
-    fireEvent.click(screen.getAllByText("Compute")[4]);
+    fireEvent.click(screen.getAllByText("Compute")[5]);
 
     expect(screen.getByText("Enter a positive exit price and at least 1 year.")).toBeInTheDocument();
     expect(spy).not.toHaveBeenCalled();
@@ -116,7 +116,7 @@ describe("Valuation page", () => {
     render(<ValuationPage />);
     enterTicker();
     fireEvent.change(screen.getByPlaceholderText("Exit price"), { target: { value: "110" } });
-    fireEvent.click(screen.getAllByText("Compute")[4]);
+    fireEvent.click(screen.getAllByText("Compute")[5]);
 
     await waitFor(() => {
       expect(spy).toHaveBeenCalledWith("NVDA", 110, 5, { entry_price: undefined, annual_dividend_per_share: 0 });
@@ -133,7 +133,7 @@ describe("Valuation page", () => {
     });
     render(<ValuationPage />);
     enterTicker();
-    fireEvent.click(screen.getAllByText("Compute")[5]);
+    fireEvent.click(screen.getAllByText("Compute")[6]);
 
     await waitFor(() => {
       expect(spy).toHaveBeenCalledWith("NVDA", "pe");
@@ -223,6 +223,57 @@ describe("Valuation page", () => {
     render(<ValuationPage />);
     await waitFor(() => screen.getByText("Macro Snapshot"));
     fireEvent.click(screen.getAllByText("Compute")[1]);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Server error").length).toBeGreaterThan(0);
+    });
+  });
+
+  it("computing Rate Signals shows a real yield curve reading and Taylor Rule", async () => {
+    const spy = vi.spyOn(api, "getRateSignals").mockResolvedValue({
+      as_of: "2026-08-06T00:00:00Z",
+      yield_curve: {
+        spread_10y_2y: 0.44, spread_10y_3m: 0.79, is_inverted: false,
+        interpretation: "The yield curve is not inverted (normal, upward-sloping).",
+      },
+      taylor_rule: {
+        target_rate: 3.58, current_rate: 3.88, gap: 0.30, inflation_rate: 2.3,
+        output_gap_pct: 1.27, interpretation: "Taylor Rule implies a target rate of 3.58%, below the current 3.88% — room to cut.",
+      },
+      taylor_rule_unavailable_reason: null,
+    });
+    render(<ValuationPage />);
+    await waitFor(() => screen.getByText("Rate Signals"));
+    fireEvent.click(screen.getAllByText("Compute")[2]);
+
+    await waitFor(() => {
+      expect(spy).toHaveBeenCalled();
+      expect(screen.getByText("Not inverted")).toBeInTheDocument();
+      expect(screen.getByText(/implied target/)).toBeInTheDocument();
+    });
+  });
+
+  it("Rate Signals honestly shows why the Taylor Rule is unavailable, rather than a fabricated number", async () => {
+    vi.spyOn(api, "getRateSignals").mockResolvedValue({
+      as_of: "2026-08-06T00:00:00Z",
+      yield_curve: { spread_10y_2y: null, spread_10y_3m: null, is_inverted: false, interpretation: "Insufficient yield data to read the curve." },
+      taylor_rule: null,
+      taylor_rule_unavailable_reason: "The real, current inflation rate reading is unavailable.",
+    });
+    render(<ValuationPage />);
+    await waitFor(() => screen.getByText("Rate Signals"));
+    fireEvent.click(screen.getAllByText("Compute")[2]);
+
+    await waitFor(() => {
+      expect(screen.getByText("The real, current inflation rate reading is unavailable.")).toBeInTheDocument();
+    });
+  });
+
+  it("shows a real error message if Rate Signals fail to load", async () => {
+    vi.spyOn(api, "getRateSignals").mockRejectedValue(new Error("Server error"));
+    render(<ValuationPage />);
+    await waitFor(() => screen.getByText("Rate Signals"));
+    fireEvent.click(screen.getAllByText("Compute")[2]);
 
     await waitFor(() => {
       expect(screen.getAllByText("Server error").length).toBeGreaterThan(0);
