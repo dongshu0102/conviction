@@ -380,4 +380,47 @@ describe("Valuation page", () => {
       expect(irrSpy).toHaveBeenCalled();
     });
   });
+
+  it("Synthesis section does not appear before anything has been computed", () => {
+    render(<ValuationPage />);
+    expect(screen.queryByText("Synthesis")).not.toBeInTheDocument();
+  });
+
+  it("Synthesis compares DCF and Comps against the real current price, and cross-checks DCF against Reverse DCF", async () => {
+    vi.spyOn(api, "getValuation").mockResolvedValue({
+      ticker: "NVDA", as_of: "2026-08-06T00:00:00Z", price: 100, market_cap: 5_000_000_000_000,
+      enterprise_value: 4_900_000_000_000, fundamentals_fiscal_year: 2025,
+      price_to_earnings: 45.2, price_to_sales: 25.1, price_to_book: 50.3,
+      price_to_free_cash_flow: 60.0, ev_to_ebitda: 35.0,
+    });
+    vi.spyOn(api, "getDcf").mockResolvedValue({
+      ticker: "NVDA", as_of: "2026-08-06T00:00:00Z",
+      assumptions: { base_fcf: 1000, growth_rate: 0.10, growth_rate_was_default: true, discount_rate: 0.10, terminal_growth_rate: 0.025, years: 5, net_debt: 0, shares_outstanding: 100 },
+      enterprise_value: 5000, equity_value: 5000, per_share_value: 120, terminal_value: 4000, present_value_of_terminal_value: 3500, projections: [],
+    });
+    vi.spyOn(api, "getReverseDcf").mockResolvedValue({
+      ticker: "NVDA", as_of: "2026-08-06T00:00:00Z", current_price: 100, implied_growth_rate: 0.04,
+      assumptions: { base_fcf: 1000, discount_rate: 0.10, terminal_growth_rate: 0.025, years: 5, net_debt: 0, shares_outstanding: 100 },
+    });
+    vi.spyOn(api, "getComps").mockResolvedValue({
+      ticker: "NVDA", as_of: "2026-08-06T00:00:00Z", metric: "pe", peer_match_level: "sector",
+      peers_considered: ["AMD"], peers_used: ["AMD"], peers_skipped: [],
+      peer_count: 1, median_multiple: 20.0, mean_multiple: 20.0,
+      implied_enterprise_value: null, implied_equity_value: 2000, implied_per_share_value: 80,
+    });
+
+    render(<ValuationPage />);
+    enterTicker();
+    fireEvent.click(screen.getByText("Run All"));
+
+    await waitFor(() => {
+      // 100 -> DCF 120 is +20.0%, Comps 80 is -20.0%.
+      expect(screen.getByText(/\+20\.0%/)).toBeInTheDocument();
+      expect(screen.getByText(/-20\.0%/)).toBeInTheDocument();
+      // DCF assumed 10% growth, market only pricing in 4% -> above-market case.
+      expect(screen.getByText(/consistent with its above-market implied value/)).toBeInTheDocument();
+      // peer_match_level is "sector", not "industry" -> caution banner.
+      expect(screen.getByText(/Treat the Comps figure with extra caution/)).toBeInTheDocument();
+    });
+  });
 });

@@ -44,6 +44,12 @@ function peerMatchLabel(level: string): string {
   return level;
 }
 
+function pctDiffFromPrice(estimate: number, price: number): string {
+  const diff = ((estimate - price) / price) * 100;
+  const sign = diff >= 0 ? "+" : "";
+  return `${sign}${diff.toFixed(1)}%`;
+}
+
 export default function ValuationPage() {
   const router = useRouter();
   const [ticker, setTicker] = useState("");
@@ -804,6 +810,62 @@ export default function ValuationPage() {
             )}
           </div>
         </section>
+
+        {multiples && (dcf || comps) && (
+          <section style={{ marginTop: "2rem" }}>
+            <p className="eyebrow" style={{ marginBottom: "0.75rem" }}>Synthesis</p>
+            <div className="card">
+              <p className="num" style={{ fontSize: "0.78rem", color: "var(--text-soft)", marginBottom: "0.75rem" }}>
+                Every real estimate computed so far for {multiples.ticker}, side by side against
+                the real current price — no single number here is the answer, each one tests the
+                others.
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "1rem", marginBottom: dcf && reverseDcf ? "1rem" : 0 }}>
+                <div>
+                  <p className="eyebrow" style={{ fontSize: "0.65rem" }}>Current price</p>
+                  <p className="num" style={{ fontSize: "1.1rem", margin: "0.2rem 0 0" }}>{usd(multiples.price)}</p>
+                </div>
+                {dcf && dcf.per_share_value !== null && (
+                  <div>
+                    <p className="eyebrow" style={{ fontSize: "0.65rem" }}>DCF</p>
+                    <p className="num" style={{ fontSize: "1.1rem", margin: "0.2rem 0 0" }}>
+                      {usd(dcf.per_share_value)}
+                      <span style={{ fontSize: "0.72rem", color: "var(--text-soft)" }}> ({pctDiffFromPrice(dcf.per_share_value, multiples.price)})</span>
+                    </p>
+                  </div>
+                )}
+                {comps && comps.implied_per_share_value !== null && (
+                  <div>
+                    <p className="eyebrow" style={{ fontSize: "0.65rem" }}>Comps</p>
+                    <p className="num" style={{ fontSize: "1.1rem", margin: "0.2rem 0 0" }}>
+                      {usd(comps.implied_per_share_value)}
+                      <span style={{ fontSize: "0.72rem", color: "var(--text-soft)" }}> ({pctDiffFromPrice(comps.implied_per_share_value, multiples.price)})</span>
+                    </p>
+                  </div>
+                )}
+              </div>
+              {dcf && reverseDcf && reverseDcf.implied_growth_rate !== null && (
+                <p style={{ fontSize: "0.82rem", color: "var(--text-soft)", lineHeight: 1.5, margin: 0 }}>
+                  DCF assumes {pct(dcf.assumptions.growth_rate)} growth
+                  {dcf.assumptions.growth_rate_was_default && " (the company's own historical CAGR)"}
+                  , while the market is currently pricing in {pct(reverseDcf.implied_growth_rate)} — {
+                    dcf.assumptions.growth_rate > reverseDcf.implied_growth_rate
+                      ? "the DCF's higher growth assumption is consistent with its above-market implied value."
+                      : dcf.assumptions.growth_rate < reverseDcf.implied_growth_rate
+                        ? "the DCF's lower growth assumption is consistent with its below-market implied value."
+                        : "the two happen to agree almost exactly on the growth assumption."
+                  }
+                </p>
+              )}
+              {comps && comps.peer_match_level !== "industry" && (
+                <p className="num" style={{ fontSize: "0.75rem", color: "var(--accent)", marginTop: "0.5rem" }}>
+                  Treat the Comps figure with extra caution here — it relied on {peerMatchLabel(comps.peer_match_level)}{" "}
+                  peers, not a pure same-industry match.
+                </p>
+              )}
+            </div>
+          </section>
+        )}
       </main>
     </AppShell>
   );
