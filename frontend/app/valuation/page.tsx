@@ -395,7 +395,9 @@ export default function ValuationPage() {
                   <div>
                     <p className="eyebrow" style={{ fontSize: "0.65rem" }}>Equity Risk Premium</p>
                     <p className="num" style={{ fontSize: "1rem", margin: "0.2rem 0 0" }}>
-                      {macro.risk_premium ? pct(macro.risk_premium.total_equity_risk_premium) : "—"}
+                      {macro.risk_premium
+                        ? `${(macro.risk_premium.total_equity_risk_premium * 100).toFixed(2)}%`
+                        : "—"}
                     </p>
                   </div>
                 </div>

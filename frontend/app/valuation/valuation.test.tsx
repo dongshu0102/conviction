@@ -199,7 +199,7 @@ describe("Valuation page", () => {
       expect(spy).toHaveBeenCalled();
       expect(screen.getByText("31,422.526")).toBeInTheDocument();
       expect(screen.getByText("4.1%")).toBeInTheDocument();
-      expect(screen.getByText("4.5%")).toBeInTheDocument(); // the risk premium, pct(0.0446)
+      expect(screen.getByText("4.46%")).toBeInTheDocument(); // risk premium, 2-decimal to disambiguate from unemployment's 1-decimal display
       expect(screen.getByText("Fed holds rates steady")).toBeInTheDocument();
     });
   });
