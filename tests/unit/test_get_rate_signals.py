@@ -112,3 +112,57 @@ def test_execute_passes_through_custom_neutral_rate_and_target_inflation() -> No
 
     assert result.taylor_rule is not None
     assert abs(result.taylor_rule.target_rate - 3.5) < 1e-6
+
+
+class _FakeMacroHistoryProvider:
+    def __init__(self, readings: list[EconomicIndicatorReading] | None = None, raise_error: bool = False):
+        self._readings = readings or []
+        self._raise_error = raise_error
+
+    def get_series_history(self, series_id: str, limit: int = 24) -> list[EconomicIndicatorReading]:
+        if self._raise_error:
+            raise NotImplementedError("FRED not configured")
+        return self._readings[:limit]
+
+
+def _unrate_readings_triggered() -> list[EconomicIndicatorReading]:
+    """Same values as the hand-verified triggered case in
+    test_sahm_rule_math.py, as most-recent-first readings."""
+    from datetime import timedelta
+
+    values_oldest_first = [3.5, 3.5, 3.6, 3.6, 3.7, 3.6, 3.5, 3.6, 3.7, 3.8, 4.0, 4.2, 4.4, 4.6, 4.8]
+    return [
+        EconomicIndicatorReading(name="UNRATE", as_of=date(2026, 1, 1) - timedelta(days=30 * i), value=v)
+        for i, v in enumerate(reversed(values_oldest_first))
+    ]
+
+
+def test_execute_reports_sahm_rule_unavailable_when_no_fred_provider_is_configured() -> None:
+    provider = _FakeProvider(rates=_rates())
+    use_case = GetRateSignalsUseCase(provider)  # no macro_history_provider given at all
+    result = use_case.execute()
+
+    assert result.sahm_rule is None
+    assert "no fred" in result.sahm_rule_unavailable_reason.lower()
+
+
+def test_execute_computes_a_real_sahm_rule_when_fred_is_configured() -> None:
+    provider = _FakeProvider(rates=_rates())
+    fred = _FakeMacroHistoryProvider(readings=_unrate_readings_triggered())
+    use_case = GetRateSignalsUseCase(provider, macro_history_provider=fred)
+    result = use_case.execute()
+
+    assert result.sahm_rule is not None
+    assert result.sahm_rule.is_triggered is True
+    assert abs(result.sahm_rule.gap - 1.0333333333333332) < 1e-9  # same hand-verified value as the math test
+    assert result.sahm_rule_unavailable_reason is None
+
+
+def test_execute_reports_sahm_rule_unavailable_when_fred_itself_fails() -> None:
+    provider = _FakeProvider(rates=_rates())
+    fred = _FakeMacroHistoryProvider(raise_error=True)
+    use_case = GetRateSignalsUseCase(provider, macro_history_provider=fred)
+    result = use_case.execute()
+
+    assert result.sahm_rule is None
+    assert "unavailable" in result.sahm_rule_unavailable_reason.lower()

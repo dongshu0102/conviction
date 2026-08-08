@@ -487,11 +487,21 @@ export interface TaylorRuleResult {
   interpretation: string;
 }
 
+export interface SahmRuleResult {
+  current_3mo_avg: number;
+  trailing_12mo_min_3mo_avg: number;
+  gap: number;
+  is_triggered: boolean;
+  interpretation: string;
+}
+
 export interface RateSignals {
   as_of: string;
   yield_curve: YieldCurveReading;
   taylor_rule: TaylorRuleResult | null;
   taylor_rule_unavailable_reason: string | null;
+  sahm_rule: SahmRuleResult | null;
+  sahm_rule_unavailable_reason: string | null;
 }
 
 export interface ValuationSnapshot {

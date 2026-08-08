@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     # -- MarketData.app (options data) --
     marketdata_api_key: str = ""
 
+    # -- FRED (deep macro history — FMP's own economic-indicators
+    # endpoint hard-caps at 2 rows regardless of plan tier, confirmed
+    # directly including after upgrading to test this specifically) --
+    fred_api_key: str = ""
+    fred_base_url: str = "https://api.stlouisfed.org/fred"
+    fred_request_timeout_seconds: float = 15.0
+
     # -- Email (AWS SES) --
     # Must be a verified SES identity or the send fails — see
     # ses_email_sender.py's docstring for the sandbox-mode caveat.

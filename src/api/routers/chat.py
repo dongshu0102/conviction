@@ -102,6 +102,7 @@ from src.application.use_cases.screen_stocks import ScreenStocksUseCase
 from src.application.use_cases.suggest_hedging import SuggestHedgingUseCase
 from src.application.use_cases.suggest_rebalancing import SuggestRebalancingUseCase
 from src.infrastructure.config import get_settings
+from src.infrastructure.data_providers.fred_provider import FredProvider
 from src.infrastructure.data_providers.marketdata_app_provider import MarketDataAppProvider
 from src.infrastructure.llm_providers.anthropic_brief_generator import AnthropicBriefGenerator
 from src.infrastructure.llm_providers.anthropic_chat_agent import AnthropicChatAgent
@@ -135,6 +136,10 @@ def get_options_provider() -> MarketDataAppProvider:
     return MarketDataAppProvider(settings=get_settings())
 
 
+def get_fred_provider_for_chat() -> FredProvider:
+    return FredProvider(settings=get_settings())
+
+
 def get_statement_repository_for_chat() -> SqlAlchemyFinancialStatementRepository:
     return SqlAlchemyFinancialStatementRepository()
 
@@ -161,6 +166,7 @@ def get_chat_use_case(
     company_repo=Depends(get_company_repository),
     portfolio_repo=Depends(get_portfolio_repository),
     options_provider: MarketDataAppProvider = Depends(get_options_provider),
+    fred_provider: FredProvider = Depends(get_fred_provider_for_chat),
     data_provider=Depends(get_data_provider),
     watchlist_repo=Depends(get_watchlist_repository),
     alert_repo=Depends(get_alert_repository),
@@ -271,7 +277,7 @@ def get_chat_use_case(
         ),
         get_risk_free_rate=GetRiskFreeRateUseCase(data_provider),
         get_macro_snapshot=GetMacroSnapshotUseCase(data_provider),
-        get_rate_signals=GetRateSignalsUseCase(data_provider),
+        get_rate_signals=GetRateSignalsUseCase(data_provider, macro_history_provider=fred_provider),
     )
 
 

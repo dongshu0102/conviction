@@ -752,21 +752,29 @@ _TOOLS = [
     ),
     ToolDefinition(
         "get_rate_signals",
-        "Two real, standard rate-direction signals applied to real, "
-        "live data: yield curve inversion (10yr-2yr and 10yr-3mo "
-        "spreads — a negative spread is a real, widely-cited "
+        "Three real, standard rate-direction/recession signals applied "
+        "to real, live data: yield curve inversion (10yr-2yr and "
+        "10yr-3mo spreads — a negative spread is a real, widely-cited "
         "historical recession signal, though with a lag that has "
-        "varied from roughly 6 to 24 months and no guarantee) and the "
+        "varied from roughly 6 to 24 months and no guarantee), the "
         "Taylor Rule (a standard formula computing where rates "
         "arguably 'should' be, given real inflation and, when "
         "available, the output gap between actual and potential GDP, "
-        "compared against the real current fed funds rate). Neither "
-        "signal predicts anything — both are real tools professional "
-        "economists and the Fed itself weigh as one input among "
-        "several, not a forecast. neutral_real_rate (default 0.5, a "
-        "standard 'r-star' estimate) and target_inflation (default "
-        "2.0, the Fed's own stated target) are both overridable, "
-        "explicit assumptions, never hidden.",
+        "compared against the real current fed funds rate), and the "
+        "Sahm Rule (a real recession indicator — triggers when the "
+        "3-month average unemployment rate rises 0.50 points or more "
+        "above its own trailing 12-month low; historically a real, "
+        "fairly reliable signal that a recession is already "
+        "underway). None of the three predicts anything — all are "
+        "real tools professional economists and the Fed itself weigh "
+        "as one input among several, not a forecast. neutral_real_rate "
+        "(default 0.5, a standard 'r-star' estimate) and "
+        "target_inflation (default 2.0, the Fed's own stated target) "
+        "are both overridable, explicit assumptions, never hidden. "
+        "The Sahm Rule specifically depends on FRED (a separate data "
+        "source from everything else in this tool) and will be "
+        "reported as honestly unavailable, with a real reason, if "
+        "that's not configured.",
         {
             "type": "object",
             "properties": {
@@ -1684,6 +1692,7 @@ class ChatWithAgentUseCase:
             )
             yc = signals.yield_curve
             tr = signals.taylor_rule
+            sr = signals.sahm_rule
             return {
                 "as_of": signals.as_of.isoformat(),
                 "yield_curve": {
@@ -1698,12 +1707,24 @@ class ChatWithAgentUseCase:
                     } if tr else None
                 ),
                 "taylor_rule_unavailable_reason": signals.taylor_rule_unavailable_reason,
+                "sahm_rule": (
+                    {
+                        "current_3mo_avg": sr.current_3mo_avg,
+                        "trailing_12mo_min_3mo_avg": sr.trailing_12mo_min_3mo_avg,
+                        "gap": sr.gap, "is_triggered": sr.is_triggered,
+                        "interpretation": sr.interpretation,
+                    } if sr else None
+                ),
+                "sahm_rule_unavailable_reason": signals.sahm_rule_unavailable_reason,
                 "note": (
-                    "Neither signal here predicts anything. A yield curve inversion "
-                    "is a real, widely-cited historical recession signal, not a "
-                    "certainty. The Taylor Rule is a real, standard formula, but "
-                    "one input professional economists weigh alongside others, not "
-                    "a forecast of what the Fed will actually do."
+                    "None of these three signals predicts anything. A yield curve "
+                    "inversion is a real, widely-cited historical recession signal, "
+                    "not a certainty. The Taylor Rule is a real, standard formula, "
+                    "but one input professional economists weigh alongside others, "
+                    "not a forecast of what the Fed will actually do. The Sahm Rule "
+                    "is a real, historically fairly reliable recession indicator, "
+                    "but a backward-looking one — it identifies a recession that has "
+                    "likely already begun, not one still to come."
                 ),
             }
 

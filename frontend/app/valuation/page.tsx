@@ -449,11 +449,13 @@ export default function ValuationPage() {
             {rateSignalsError && <p className="num loss" style={{ margin: 0, fontSize: "0.85rem" }}>{rateSignalsError}</p>}
             {!rateSignals && !rateSignalsError && (
               <p style={{ margin: 0, color: "var(--text-soft)", fontSize: "0.9rem" }}>
-                Two real, standard rate-direction signals: yield curve inversion (a real, widely-cited
-                historical recession signal, not a guarantee) and the Taylor Rule (where rates
-                arguably &quot;should&quot; be, given real inflation and output gap, versus the real
-                current fed funds rate). Neither predicts anything — both are tools economists and
-                the Fed itself weigh alongside others, not a forecast.
+                Three real, standard rate-direction/recession signals: yield curve inversion (a
+                real, widely-cited historical recession signal, not a guarantee), the Taylor Rule
+                (where rates arguably &quot;should&quot; be, given real inflation and output gap,
+                versus the real current fed funds rate), and the Sahm Rule (a real, historically
+                fairly reliable recession indicator based on the recent trend in unemployment).
+                None of these predict anything — all are tools economists and the Fed itself weigh
+                alongside others, not a forecast.
               </p>
             )}
             {rateSignals && (
@@ -475,7 +477,7 @@ export default function ValuationPage() {
                     {rateSignals.yield_curve.interpretation}
                   </p>
                 </div>
-                <div>
+                <div style={{ marginBottom: "1rem" }}>
                   <p className="eyebrow" style={{ fontSize: "0.65rem" }}>Taylor Rule</p>
                   {rateSignals.taylor_rule ? (
                     <>
@@ -497,6 +499,30 @@ export default function ValuationPage() {
                   ) : (
                     <p style={{ margin: "0.2rem 0 0", color: "var(--text-soft)", fontSize: "0.85rem" }}>
                       {rateSignals.taylor_rule_unavailable_reason || "Unavailable."}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <p className="eyebrow" style={{ fontSize: "0.65rem" }}>Sahm Rule</p>
+                  {rateSignals.sahm_rule ? (
+                    <>
+                      <p className="num" style={{ fontSize: "1.1rem", margin: "0.2rem 0 0.4rem", color: rateSignals.sahm_rule.is_triggered ? "var(--loss)" : "var(--text)" }}>
+                        {rateSignals.sahm_rule.is_triggered ? "Triggered" : "Not triggered"}
+                      </p>
+                      <p className="num" style={{ fontSize: "0.78rem", color: "var(--text-soft)" }}>
+                        3-mo avg: {rateSignals.sahm_rule.current_3mo_avg.toFixed(2)}%
+                        {" · "}
+                        12-mo low: {rateSignals.sahm_rule.trailing_12mo_min_3mo_avg.toFixed(2)}%
+                        {" · "}
+                        gap: {rateSignals.sahm_rule.gap.toFixed(2)}pp
+                      </p>
+                      <p style={{ fontSize: "0.82rem", color: "var(--text-soft)", marginTop: "0.4rem", lineHeight: 1.5 }}>
+                        {rateSignals.sahm_rule.interpretation}
+                      </p>
+                    </>
+                  ) : (
+                    <p style={{ margin: "0.2rem 0 0", color: "var(--text-soft)", fontSize: "0.85rem" }}>
+                      {rateSignals.sahm_rule_unavailable_reason || "Unavailable."}
                     </p>
                   )}
                 </div>

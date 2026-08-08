@@ -409,11 +409,21 @@ class TaylorRuleResultSchema(BaseModel):
     interpretation: str
 
 
+class SahmRuleResultSchema(BaseModel):
+    current_3mo_avg: float
+    trailing_12mo_min_3mo_avg: float
+    gap: float
+    is_triggered: bool
+    interpretation: str
+
+
 class RateSignalsSchema(BaseModel):
     as_of: datetime
     yield_curve: YieldCurveReadingSchema
     taylor_rule: TaylorRuleResultSchema | None
     taylor_rule_unavailable_reason: str | None
+    sahm_rule: SahmRuleResultSchema | None
+    sahm_rule_unavailable_reason: str | None
 
 
 class SpeculativeGrowthAssessmentSchema(BaseModel):

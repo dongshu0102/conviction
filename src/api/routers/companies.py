@@ -23,6 +23,7 @@ from src.api.schemas import (
     MarketRiskPremiumSchema,
     RankedFactorScoreSchema,
     RateSignalsSchema,
+    SahmRuleResultSchema,
     CashFlowStatementSchema,
     CompanyFinancialAnalysisSchema,
     CompanyFinancialsSchema,
@@ -95,6 +96,7 @@ from src.domain.entities.financial_statement import Period
 from src.infrastructure.config import get_settings
 from src.domain.entities.factor_scores import FactorWeights
 from src.infrastructure.data_providers.fmp_provider import FinancialModelingPrepProvider
+from src.infrastructure.data_providers.fred_provider import FredProvider
 from src.infrastructure.persistence.company_repository_impl import (
     SqlAlchemyCompanyRepository,
 )
@@ -124,6 +126,10 @@ def get_statement_repository() -> SqlAlchemyFinancialStatementRepository:
 
 def get_data_provider() -> FinancialModelingPrepProvider:
     return FinancialModelingPrepProvider(settings=get_settings())
+
+
+def get_fred_provider() -> FredProvider:
+    return FredProvider(settings=get_settings())
 
 
 def get_ingest_use_case(
@@ -196,8 +202,9 @@ def get_macro_snapshot_use_case(
 
 def get_rate_signals_use_case(
     provider: FinancialModelingPrepProvider = Depends(get_data_provider),
+    fred: FredProvider = Depends(get_fred_provider),
 ) -> GetRateSignalsUseCase:
-    return GetRateSignalsUseCase(provider)
+    return GetRateSignalsUseCase(provider, macro_history_provider=fred)
 
 
 def get_factor_score_use_case(
@@ -426,15 +433,16 @@ def get_rate_signals(
     target_inflation: float | None = Query(default=None),
     use_case: GetRateSignalsUseCase = Depends(get_rate_signals_use_case),
 ) -> RateSignalsSchema:
-    """Two real, standard rate-direction signals — yield curve
-    inversion and the Taylor Rule — applied to real, live data.
-    Neither predicts anything; both are tools professional economists
-    and the Fed itself weigh as one input among several. Registered
-    before /{ticker} for the same routing-order reason as
-    /sp500-constituents above."""
+    """Three real, standard rate-direction/recession signals — yield
+    curve inversion, the Taylor Rule, and the Sahm Rule — applied to
+    real, live data. None of them predicts anything; all are tools
+    professional economists and the Fed itself weigh as one input
+    among several. Registered before /{ticker} for the same
+    routing-order reason as /sp500-constituents above."""
     signals = use_case.execute(neutral_real_rate=neutral_real_rate, target_inflation=target_inflation)
     yc = signals.yield_curve
     tr = signals.taylor_rule
+    sr = signals.sahm_rule
     return RateSignalsSchema(
         as_of=signals.as_of,
         yield_curve=YieldCurveReadingSchema(
@@ -449,6 +457,13 @@ def get_rate_signals(
             ) if tr else None
         ),
         taylor_rule_unavailable_reason=signals.taylor_rule_unavailable_reason,
+        sahm_rule=(
+            SahmRuleResultSchema(
+                current_3mo_avg=sr.current_3mo_avg, trailing_12mo_min_3mo_avg=sr.trailing_12mo_min_3mo_avg,
+                gap=sr.gap, is_triggered=sr.is_triggered, interpretation=sr.interpretation,
+            ) if sr else None
+        ),
+        sahm_rule_unavailable_reason=signals.sahm_rule_unavailable_reason,
     )
 
 

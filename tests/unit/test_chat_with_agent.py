@@ -140,7 +140,7 @@ def _company_repo(*tickers: str) -> FakeCompanyRepository:
     return repo
 
 
-def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watchlist_repo=None, provider=None, options_provider=None, theme_repo=None, statement_repo=None, get_factor_scores_override=None, alert_repo=None, candidate_repo=None):
+def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watchlist_repo=None, provider=None, options_provider=None, theme_repo=None, statement_repo=None, get_factor_scores_override=None, alert_repo=None, candidate_repo=None, macro_history_provider=None):
     company_repo = company_repo or _company_repo()
     portfolio_repo = portfolio_repo or FakePortfolioRepository()
     watchlist_repo = watchlist_repo or FakeWatchlistRepository()
@@ -242,7 +242,7 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
         compute_comps=ComputeCompsValuationUseCase(company_repo, get_financials, compute_company_valuation),
         get_risk_free_rate=GetRiskFreeRateUseCase(provider),
         get_macro_snapshot=GetMacroSnapshotUseCase(provider),
-        get_rate_signals=GetRateSignalsUseCase(provider),
+        get_rate_signals=GetRateSignalsUseCase(provider, macro_history_provider=macro_history_provider),
     )
     return use_case, fake_agent, portfolio_repo
 
@@ -1800,4 +1800,49 @@ def test_get_rate_signals_via_chat_returns_a_real_yield_curve_and_taylor_rule() 
     assert abs(result["yield_curve"]["spread_10y_2y"] - 0.44) < 1e-6
     assert result["taylor_rule"] is not None
     assert abs(result["taylor_rule"]["target_rate"] - 3.5831141486124243) < 1e-6
+    # No FRED provider was configured for this test — the Sahm Rule
+    # should be honestly reported as unavailable, not silently omitted.
+    assert result["sahm_rule"] is None
+    assert "no fred" in result["sahm_rule_unavailable_reason"].lower()
     assert "note" in result
+
+
+def test_get_rate_signals_via_chat_computes_a_real_sahm_rule_when_fred_is_configured() -> None:
+    from datetime import date, timedelta
+    from src.domain.entities.economic_indicator import EconomicIndicatorReading
+    from src.domain.entities.treasury_rates import TreasuryRates
+
+    class _RateSignalsProvider(FakeDataProvider):
+        def get_treasury_rates(self) -> TreasuryRates:
+            return TreasuryRates(
+                as_of=date(2026, 8, 6), month1=None, month2=None, month3=0.039, month6=None,
+                year1=None, year2=0.0425, year3=None, year5=None, year7=None,
+                year10=0.0469, year20=None, year30=None,
+            )
+
+        def get_economic_indicator(self, name: str):
+            return []  # Taylor Rule genuinely unavailable here — this test is specifically about the Sahm Rule
+
+    class _FakeFredProvider:
+        def get_series_history(self, series_id: str, limit: int = 24):
+            # Same hand-verified values as test_sahm_rule_math.py's triggered case.
+            values_oldest_first = [3.5, 3.5, 3.6, 3.6, 3.7, 3.6, 3.5, 3.6, 3.7, 3.8, 4.0, 4.2, 4.4, 4.6, 4.8]
+            return [
+                EconomicIndicatorReading(name=series_id, as_of=date(2026, 1, 1) - timedelta(days=30 * i), value=v)
+                for i, v in enumerate(reversed(values_oldest_first))
+            ]
+
+    company_repo = _company_repo("AAPL")
+    provider = _RateSignalsProvider(company=company_repo.get_by_ticker("AAPL"))
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("get_rate_signals", {})],
+        company_repo=company_repo, provider=provider,
+        macro_history_provider=_FakeFredProvider(),
+    )
+    use_case.execute("alice", "is a recession likely?", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["sahm_rule"] is not None
+    assert result["sahm_rule"]["is_triggered"] is True
+    assert abs(result["sahm_rule"]["gap"] - 1.0333333333333332) < 1e-9
+    assert result["sahm_rule_unavailable_reason"] is None

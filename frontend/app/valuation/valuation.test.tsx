@@ -248,7 +248,7 @@ describe("Valuation page", () => {
     });
   });
 
-  it("computing Rate Signals shows a real yield curve reading and Taylor Rule", async () => {
+  it("computing Rate Signals shows a real yield curve reading, Taylor Rule, and Sahm Rule", async () => {
     const spy = vi.spyOn(api, "getRateSignals").mockResolvedValue({
       as_of: "2026-08-06T00:00:00Z",
       yield_curve: {
@@ -260,6 +260,11 @@ describe("Valuation page", () => {
         output_gap_pct: 1.27, interpretation: "Taylor Rule implies a target rate of 3.58%, below the current 3.88% — room to cut.",
       },
       taylor_rule_unavailable_reason: null,
+      sahm_rule: {
+        current_3mo_avg: 4.6, trailing_12mo_min_3mo_avg: 3.57, gap: 1.03, is_triggered: true,
+        interpretation: "The Sahm Rule is triggered — a real, fairly reliable recession signal.",
+      },
+      sahm_rule_unavailable_reason: null,
     });
     render(<ValuationPage />);
     await waitFor(() => screen.getByText("Rate Signals"));
@@ -269,6 +274,8 @@ describe("Valuation page", () => {
       expect(spy).toHaveBeenCalled();
       expect(screen.getByText("Not inverted")).toBeInTheDocument();
       expect(screen.getByText(/implied target/)).toBeInTheDocument();
+      expect(screen.getByText("Triggered")).toBeInTheDocument();
+      expect(screen.getByText(/gap: 1.03pp/)).toBeInTheDocument();
     });
   });
 
@@ -278,6 +285,8 @@ describe("Valuation page", () => {
       yield_curve: { spread_10y_2y: null, spread_10y_3m: null, is_inverted: false, interpretation: "Insufficient yield data to read the curve." },
       taylor_rule: null,
       taylor_rule_unavailable_reason: "The real, current inflation rate reading is unavailable.",
+      sahm_rule: null,
+      sahm_rule_unavailable_reason: "No FRED (deep macro history) provider is configured.",
     });
     render(<ValuationPage />);
     await waitFor(() => screen.getByText("Rate Signals"));
@@ -285,6 +294,7 @@ describe("Valuation page", () => {
 
     await waitFor(() => {
       expect(screen.getByText("The real, current inflation rate reading is unavailable.")).toBeInTheDocument();
+      expect(screen.getByText("No FRED (deep macro history) provider is configured.")).toBeInTheDocument();
     });
   });
 

@@ -1,14 +1,23 @@
-"""Use case: a combined rate-direction picture — yield curve inversion
-and the Taylor Rule, both real, hand-verified formulas (see
-rate_signal_math.py) applied to real, live data. Reuses
-get_economic_indicator for inflationRate, federalFunds, and
-nominalPotentialGDP — no new provider capability needed, since these
-are just different named series through the same endpoint already
-built for GDP/CPI/unemployment.
+"""Use case: a combined rate-direction picture — yield curve inversion,
+the Taylor Rule, and the Sahm Rule, all real, hand-verified formulas
+(see rate_signal_math.py and sahm_rule_math.py) applied to real, live
+data. Reuses get_economic_indicator for inflationRate, federalFunds,
+and nominalPotentialGDP — no new FMP provider capability needed for
+those, since they're just different named series through the same
+endpoint already built for GDP/CPI/unemployment.
 
-Neither signal here predicts anything. Both are real, standard tools
-professional economists and the Fed itself use as one input among
-several — genuinely different from a confident forecast.
+The Sahm Rule is different: it genuinely needs deep historical
+unemployment data (at least 15 months), and FMP's own
+economic-indicators endpoint hard-caps at 2 rows regardless of plan
+tier (confirmed directly, including after a plan upgrade specifically
+to test this). macro_history_provider (FRED) is a separate, optional
+dependency for exactly this reason — if it isn't configured, the Sahm
+Rule is reported as unavailable with a real, honest reason, never
+silently omitted or faked.
+
+None of the three signals here predicts anything. All are real,
+standard tools professional economists and the Fed itself use as one
+input among several — genuinely different from a confident forecast.
 """
 from __future__ import annotations
 
@@ -17,11 +26,20 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from src.application.interfaces.data_provider import DataProviderError, FinancialDataProvider
+from src.application.interfaces.macro_history_provider import (
+    MacroHistoryProvider,
+    MacroHistoryProviderError,
+)
 from src.domain.services.rate_signal_math import (
     TaylorRuleResult,
     YieldCurveReading,
     compute_taylor_rule,
     read_yield_curve,
+)
+from src.domain.services.sahm_rule_math import (
+    MIN_MONTHS_OF_DATA_REQUIRED,
+    SahmRuleResult,
+    compute_sahm_rule,
 )
 
 logger = logging.getLogger(__name__)
@@ -33,20 +51,29 @@ class RateSignals:
     yield_curve: YieldCurveReading
     taylor_rule: TaylorRuleResult | None
     taylor_rule_unavailable_reason: str | None
+    sahm_rule: SahmRuleResult | None
+    sahm_rule_unavailable_reason: str | None
 
 
 class GetRateSignalsUseCase:
-    def __init__(self, data_provider: FinancialDataProvider) -> None:
+    def __init__(
+        self,
+        data_provider: FinancialDataProvider,
+        macro_history_provider: MacroHistoryProvider | None = None,
+    ) -> None:
         self._data_provider = data_provider
+        self._macro_history_provider = macro_history_provider
 
     def execute(
         self, neutral_real_rate: float | None = None, target_inflation: float | None = None,
     ) -> RateSignals:
         yield_curve = self._yield_curve()
-        taylor_rule, unavailable_reason = self._taylor_rule(neutral_real_rate, target_inflation)
+        taylor_rule, taylor_unavailable_reason = self._taylor_rule(neutral_real_rate, target_inflation)
+        sahm_rule, sahm_unavailable_reason = self._sahm_rule()
         return RateSignals(
             as_of=datetime.now(timezone.utc), yield_curve=yield_curve,
-            taylor_rule=taylor_rule, taylor_rule_unavailable_reason=unavailable_reason,
+            taylor_rule=taylor_rule, taylor_rule_unavailable_reason=taylor_unavailable_reason,
+            sahm_rule=sahm_rule, sahm_rule_unavailable_reason=sahm_unavailable_reason,
         )
 
     def _yield_curve(self) -> YieldCurveReading:
@@ -85,4 +112,24 @@ class GetRateSignalsUseCase:
             inflation_rate=inflation_rate, gdp=gdp, potential_gdp=potential_gdp,
             current_fed_funds_rate=current_fed_funds_rate, **kwargs,
         )
+        return result, None
+
+    def _sahm_rule(self) -> tuple[SahmRuleResult | None, str | None]:
+        if self._macro_history_provider is None:
+            return None, "No FRED (deep macro history) provider is configured."
+
+        try:
+            readings = self._macro_history_provider.get_series_history(
+                "UNRATE", limit=MIN_MONTHS_OF_DATA_REQUIRED
+            )
+        except (MacroHistoryProviderError, NotImplementedError) as exc:
+            logger.warning("Rate signals: FRED unemployment history unavailable: %s", exc)
+            return None, "Real, historical unemployment data from FRED is currently unavailable."
+
+        result = compute_sahm_rule([(r.as_of, r.value) for r in readings])
+        if result is None:
+            return None, (
+                f"Fewer than {MIN_MONTHS_OF_DATA_REQUIRED} months of real unemployment "
+                "history were available to compute the Sahm Rule."
+            )
         return result, None
