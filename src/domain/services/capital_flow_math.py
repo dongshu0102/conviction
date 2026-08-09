@@ -266,3 +266,21 @@ def build_politician_event(
         detected_at=datetime.now(timezone.utc),
         dedup_key=f"{trade.chamber.value.lower()}:{trade.symbol}:{trade.person_name}:{trade.transaction_date.isoformat()}:{trade.amount_range}",
     )
+
+
+# Real, confirmed-live FRED series (see FredProvider) — a deliberately
+# curated, explicit list of international capital-flow series, not
+# "every BOP-tagged series FRED has" (734 of them), most of which are
+# too narrow or too slow-moving to be a real signal here. Lives here,
+# not in the REST router, so both the router AND the standalone
+# scan script can import it without either depending on the other —
+# this module has zero framework dependencies (no FastAPI, no
+# SQLAlchemy), which is exactly why run_capital_flow_scan.py runs as a
+# lightweight standalone process outside the FastAPI app in the first
+# place.
+DEFAULT_MACRO_SERIES: dict[str, str] = {
+    "IEABC": "Balance on current account",
+    "ROWFDIQ027S": "Foreign Direct Investment in U.S. (transactions)",
+    "USLTTOTALPOS99996": "U.S. portfolio holdings of foreign long-term securities",
+    "FORLTTOTALPOS69995": "Foreign portfolio holdings of U.S. long-term securities",
+}

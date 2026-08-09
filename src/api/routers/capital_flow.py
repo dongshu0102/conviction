@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, Query
 from src.api.schemas import CapitalFlowEventSchema, CapitalFlowScanResultSchema
 from src.application.use_cases.run_capital_flow_scan import RunCapitalFlowScanUseCase
 from src.domain.entities.capital_flow import CapitalFlowEvent, CapitalFlowSource
+from src.domain.services.capital_flow_math import DEFAULT_MACRO_SERIES
 from src.infrastructure.config import get_settings
 from src.infrastructure.data_providers.fmp_provider import FinancialModelingPrepProvider
 from src.infrastructure.data_providers.fred_provider import FredProvider
@@ -29,17 +30,6 @@ from src.infrastructure.persistence.capital_flow_repository_impl import (
 )
 
 router = APIRouter(prefix="/capital-flow", tags=["capital-flow"])
-
-# Real, confirmed-live FRED series (see FredProvider) — a deliberately
-# curated, explicit list of international capital-flow series, not
-# "every BOP-tagged series FRED has" (734 of them), most of which are
-# too narrow or too slow-moving to be a real signal here.
-DEFAULT_MACRO_SERIES: dict[str, str] = {
-    "IEABC": "Balance on current account",
-    "ROWFDIQ027S": "Foreign Direct Investment in U.S. (transactions)",
-    "USLTTOTALPOS99996": "U.S. portfolio holdings of foreign long-term securities",
-    "FORLTTOTALPOS69995": "Foreign portfolio holdings of U.S. long-term securities",
-}
 
 
 def get_capital_flow_repository() -> SqlAlchemyCapitalFlowRepository:

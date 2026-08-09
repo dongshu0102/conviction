@@ -40,8 +40,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.api.routers.capital_flow import DEFAULT_MACRO_SERIES
 from src.application.use_cases.run_capital_flow_scan import RunCapitalFlowScanUseCase
+from src.domain.services.capital_flow_math import DEFAULT_MACRO_SERIES
 from src.infrastructure.config import get_settings
 from src.infrastructure.data_providers.fmp_provider import FinancialModelingPrepProvider
 from src.infrastructure.data_providers.fred_provider import FredProvider
