@@ -425,11 +425,18 @@ class CapitalFlowEventSchema(BaseModel):
     headline: str
     detail_url: str | None
     detected_at: datetime
+    is_late_filing: bool | None = None
 
 
 class CapitalFlowScanResultSchema(BaseModel):
     new_event_count: int
     events: list[CapitalFlowEventSchema]
+
+
+class Next13FDeadlineSchema(BaseModel):
+    next_deadline: date | None
+    days_until: int | None
+    source_note: str
 
 
 class RateSignalsSchema(BaseModel):

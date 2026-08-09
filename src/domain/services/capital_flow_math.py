@@ -17,7 +17,7 @@ module currently uses and why.
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from src.domain.entities.capital_flow import (
     CapitalFlowDirection,
@@ -231,6 +231,22 @@ def build_volume_event(
     )
 
 
+# The real STOCK Act deadline: a covered transaction must be disclosed
+# no later than 45 days after the transaction date (30 days after
+# notice, if earlier — but the transaction date is the one real,
+# fixed anchor available in this data, so 45 days from it is the
+# genuine hard cap this codebase can actually check).
+STOCK_ACT_DISCLOSURE_DEADLINE_DAYS = 45
+
+
+def is_late_filing(transaction_date, disclosure_date) -> bool:
+    """True when a real disclosure arrived more than 45 days after the
+    real transaction it discloses — a genuine STOCK Act violation, not
+    a judgment call or a configurable threshold like the other
+    thresholds in this module."""
+    return (disclosure_date - transaction_date).days > STOCK_ACT_DISCLOSURE_DEADLINE_DAYS
+
+
 def build_politician_event(
     trade: PoliticianTrade, min_value_usd: float = DEFAULT_POLITICIAN_MIN_VALUE_USD,
 ) -> CapitalFlowEvent | None:
@@ -250,10 +266,16 @@ def build_politician_event(
         else CapitalFlowDirection.UNKNOWN
     )
     chamber_label = "Senator" if trade.chamber == CapitalFlowSource.SENATE else "Representative"
+    late = is_late_filing(trade.transaction_date, trade.disclosure_date)
     headline = (
         f"{chamber_label} {trade.person_name} ({trade.office}) disclosed a "
         f"{trade.transaction_type.lower()} of {trade.asset_description} "
         f"({trade.symbol}), {trade.amount_range}"
+        + (
+            f" — filed {(trade.disclosure_date - trade.transaction_date).days} days "
+            f"after the trade, past the STOCK Act's 45-day deadline"
+            if late else ""
+        )
     )
 
     return CapitalFlowEvent(
@@ -265,6 +287,7 @@ def build_politician_event(
         detail_url=trade.link,
         detected_at=datetime.now(timezone.utc),
         dedup_key=f"{trade.chamber.value.lower()}:{trade.symbol}:{trade.person_name}:{trade.transaction_date.isoformat()}:{trade.amount_range}",
+        is_late_filing=late,
     )
 
 
@@ -284,3 +307,40 @@ DEFAULT_MACRO_SERIES: dict[str, str] = {
     "USLTTOTALPOS99996": "U.S. portfolio holdings of foreign long-term securities",
     "FORLTTOTALPOS69995": "Foreign portfolio holdings of U.S. long-term securities",
 }
+
+
+# Exact, real Form 13F filing deadlines, copied directly from the
+# SEC's own FAQ (sec.gov, "Frequently Asked Questions About Form
+# 13F", Question 25, table for quarters ending 2026-2028, last
+# reviewed March 13, 2026) — not computed algorithmically. The real
+# rule (45 calendar days after each quarter-end, rolled forward past
+# both weekends AND federal holidays) is genuinely complex enough that
+# a from-scratch implementation risks silently drifting wrong; the
+# SEC's own published table is the authoritative, verifiable source,
+# at the cost of needing a manual update once the SEC publishes dates
+# beyond 2028.
+FORM_13F_DEADLINES: list[date] = [
+    date(2026, 5, 15),  # 1Q 2026
+    date(2026, 8, 14),  # 2Q 2026
+    date(2026, 11, 16),  # 3Q 2026
+    date(2027, 2, 16),  # 4Q 2026
+    date(2027, 5, 17),  # 1Q 2027
+    date(2027, 8, 16),  # 2Q 2027
+    date(2027, 11, 15),  # 3Q 2027
+    date(2028, 2, 14),  # 4Q 2027
+    date(2028, 5, 15),  # 1Q 2028
+    date(2028, 8, 14),  # 2Q 2028
+    date(2028, 11, 14),  # 3Q 2028
+    date(2029, 2, 14),  # 4Q 2028
+]
+
+
+def next_13f_deadline(as_of: date) -> date | None:
+    """The next real Form 13F filing deadline on or after as_of.
+    Returns None past the last date the SEC has published (currently
+    Feb 14, 2029) — an honest "we genuinely don't know yet," never a
+    guessed or extrapolated date."""
+    for deadline in FORM_13F_DEADLINES:
+        if deadline >= as_of:
+            return deadline
+    return None

@@ -16,12 +16,14 @@ shouldn't accidentally burn that budget by default.
 """
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, Query
 
-from src.api.schemas import CapitalFlowEventSchema, CapitalFlowScanResultSchema
+from src.api.schemas import CapitalFlowEventSchema, CapitalFlowScanResultSchema, Next13FDeadlineSchema
 from src.application.use_cases.run_capital_flow_scan import RunCapitalFlowScanUseCase
 from src.domain.entities.capital_flow import CapitalFlowEvent, CapitalFlowSource
-from src.domain.services.capital_flow_math import DEFAULT_MACRO_SERIES
+from src.domain.services.capital_flow_math import DEFAULT_MACRO_SERIES, next_13f_deadline
 from src.infrastructure.config import get_settings
 from src.infrastructure.data_providers.fmp_provider import FinancialModelingPrepProvider
 from src.infrastructure.data_providers.fred_provider import FredProvider
@@ -61,6 +63,7 @@ def _to_schema(event: CapitalFlowEvent) -> CapitalFlowEventSchema:
         source=event.source.value, symbol=event.symbol, event_date=event.event_date,
         direction=event.direction.value, headline=event.headline,
         detail_url=event.detail_url, detected_at=event.detected_at,
+        is_late_filing=event.is_late_filing,
     )
 
 
@@ -87,4 +90,25 @@ def trigger_scan(
     new_events = use_case.execute()
     return CapitalFlowScanResultSchema(
         new_event_count=len(new_events), events=[_to_schema(e) for e in new_events],
+    )
+
+
+@router.get("/13f-deadline", response_model=Next13FDeadlineSchema)
+def get_next_13f_deadline() -> Next13FDeadlineSchema:
+    """The next real Form 13F filing deadline, from the SEC's own
+    published table (see capital_flow_math.py's FORM_13F_DEADLINES for
+    the exact source). Note: 13F data itself is not currently
+    accessible via this platform's FMP plan tier (confirmed HTTP 402)
+    — this endpoint tells you WHEN the next deadline is, honestly,
+    even though the underlying holdings data can't be shown yet."""
+    today = date.today()
+    deadline = next_13f_deadline(today)
+    return Next13FDeadlineSchema(
+        next_deadline=deadline,
+        days_until=(deadline - today).days if deadline else None,
+        source_note=(
+            "From the SEC's own published FAQ table (sec.gov, Form 13F FAQ, "
+            "Question 25) — not computed. 13F holdings data itself is not "
+            "currently accessible on this platform's FMP plan tier."
+        ),
     )

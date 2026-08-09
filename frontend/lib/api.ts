@@ -512,11 +512,18 @@ export interface CapitalFlowEvent {
   headline: string;
   detail_url: string | null;
   detected_at: string;
+  is_late_filing: boolean | null;
 }
 
 export interface CapitalFlowScanResult {
   new_event_count: number;
   events: CapitalFlowEvent[];
+}
+
+export interface Next13FDeadline {
+  next_deadline: string | null;
+  days_until: number | null;
+  source_note: string;
 }
 
 export interface ValuationSnapshot {
@@ -793,6 +800,7 @@ export const api = {
   },
   triggerCapitalFlowScan: () =>
     request<CapitalFlowScanResult>("/capital-flow/scan", { method: "POST" }),
+  getNext13FDeadline: () => request<Next13FDeadline>("/capital-flow/13f-deadline"),
   getValuation: (ticker: string) =>
     request<ValuationSnapshot>(`/companies/${encodeURIComponent(ticker.toUpperCase())}/valuation`),
   getDcf: (

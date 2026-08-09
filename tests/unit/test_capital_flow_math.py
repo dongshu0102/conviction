@@ -275,3 +275,75 @@ def test_build_macro_flow_event_respects_a_custom_threshold() -> None:
 
 def test_default_macro_flow_threshold_is_the_documented_value() -> None:
     assert DEFAULT_MACRO_FLOW_CHANGE_THRESHOLD == 0.25
+
+
+# --- is_late_filing / build_politician_event late-filing flag ----------------
+
+from src.domain.services.capital_flow_math import STOCK_ACT_DISCLOSURE_DEADLINE_DAYS, is_late_filing
+
+
+def test_is_late_filing_hand_verified_boundary_cases() -> None:
+    assert is_late_filing(date(2026, 1, 1), date(2026, 1, 1)) is False  # same day
+    assert is_late_filing(date(2026, 1, 1), date(2026, 2, 15)) is False  # exactly 45 days
+    assert is_late_filing(date(2026, 1, 1), date(2026, 2, 16)) is True  # 46 days
+
+
+def test_build_politician_event_flags_a_real_wildly_late_disclosure() -> None:
+    """Regression test for the exact real case found in production
+    tonight: a Senate trade disclosed 817 days after the transaction."""
+    trade = _politician(amount_range="$100,001 - $250,000")
+    late_trade = PoliticianTrade(
+        chamber=trade.chamber, symbol=trade.symbol, disclosure_date=date(2026, 8, 5),
+        transaction_date=date(2024, 5, 10), person_name=trade.person_name, office=trade.office,
+        owner=trade.owner, asset_description=trade.asset_description, asset_type=trade.asset_type,
+        transaction_type=trade.transaction_type, amount_range=trade.amount_range, link=trade.link,
+    )
+    event = build_politician_event(late_trade)
+
+    assert event is not None
+    assert event.is_late_filing is True
+    assert "817 days" in event.headline
+    assert "STOCK Act" in event.headline
+
+
+def test_build_politician_event_does_not_flag_an_on_time_disclosure() -> None:
+    trade = _politician(amount_range="$100,001 - $250,000")
+    event = build_politician_event(trade)  # default fixture has disclosure_date == transaction_date + a few days
+    assert event is not None
+    assert event.is_late_filing is False
+    assert "STOCK Act" not in event.headline
+
+
+def test_stock_act_deadline_constant_is_the_documented_value() -> None:
+    assert STOCK_ACT_DISCLOSURE_DEADLINE_DAYS == 45
+
+
+# --- next_13f_deadline ---------------------------------------------------------
+
+from src.domain.services.capital_flow_math import FORM_13F_DEADLINES, next_13f_deadline
+
+
+def test_next_13f_deadline_hand_verified_against_the_real_sec_table() -> None:
+    # Today (per this session) is August 8, 2026 — next real SEC
+    # deadline is August 14, 2026 (Q2 2026), confirmed directly
+    # against sec.gov's own published FAQ table.
+    assert next_13f_deadline(date(2026, 8, 8)) == date(2026, 8, 14)
+
+
+def test_next_13f_deadline_is_inclusive_of_the_deadline_date_itself() -> None:
+    assert next_13f_deadline(date(2026, 8, 14)) == date(2026, 8, 14)
+
+
+def test_next_13f_deadline_advances_to_the_following_quarter_the_day_after() -> None:
+    assert next_13f_deadline(date(2026, 8, 15)) == date(2026, 11, 16)
+
+
+def test_next_13f_deadline_returns_none_past_the_last_published_date() -> None:
+    """Honest degradation — never guesses at a date the SEC hasn't
+    actually published yet."""
+    assert next_13f_deadline(date(2029, 6, 1)) is None
+
+
+def test_form_13f_deadlines_table_has_twelve_real_entries() -> None:
+    assert len(FORM_13F_DEADLINES) == 12
+    assert FORM_13F_DEADLINES == sorted(FORM_13F_DEADLINES)  # genuinely chronological

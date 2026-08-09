@@ -22,6 +22,7 @@ const SAMPLE_INSIDER_EVENT: CapitalFlowEvent = {
   headline: "HUANG JENSEN (director, officer: CEO) bought 10,000 shares of NVDA at $180.00 ($1,800,000 total)",
   detail_url: "https://www.sec.gov/test",
   detected_at: "2026-08-07T00:33:57Z",
+  is_late_filing: null,
 };
 
 const SAMPLE_MACRO_EVENT: CapitalFlowEvent = {
@@ -32,6 +33,7 @@ const SAMPLE_MACRO_EVENT: CapitalFlowEvent = {
   headline: "Foreign Direct Investment in U.S. moved +87.5% — 150,000.0 vs 80,000.0 the prior period",
   detail_url: null,
   detected_at: "2026-08-08T12:00:00Z",
+  is_late_filing: null,
 };
 
 beforeEach(() => {
@@ -39,6 +41,9 @@ beforeEach(() => {
   localStorage.clear();
   localStorage.setItem("conviction_api_key", "fi_live_test123");
   vi.restoreAllMocks();
+  vi.spyOn(api, "getNext13FDeadline").mockResolvedValue({
+    next_deadline: null, days_until: null, source_note: "",
+  });
 });
 
 describe("Capital Flow page", () => {
@@ -146,5 +151,58 @@ describe("Capital Flow page", () => {
     await waitFor(() => {
       expect(screen.getByText("Server error")).toBeInTheDocument();
     });
+  });
+
+  it("groups events under a real date heading, most recent date first", async () => {
+    const older = { ...SAMPLE_MACRO_EVENT, event_date: "2026-08-01", symbol: "OLDER" };
+    const newer = { ...SAMPLE_INSIDER_EVENT, event_date: "2026-08-06" };
+    vi.spyOn(api, "getCapitalFlow").mockResolvedValue([newer, older]);
+    render(<CapitalFlowPage />);
+
+    await waitFor(() => screen.getByText("NVDA"));
+    const headings = screen.getAllByText(/2026/);
+    // The Aug 6 heading (newer) must appear before the Aug 1 heading (older) in document order.
+    const aug6Index = headings.findIndex((h) => h.textContent?.includes("August 6"));
+    const aug1Index = headings.findIndex((h) => h.textContent?.includes("August 1"));
+    expect(aug6Index).toBeGreaterThanOrEqual(0);
+    expect(aug1Index).toBeGreaterThan(aug6Index);
+  });
+
+  it("shows a LATE FILING badge for a real late Senate disclosure", async () => {
+    const lateEvent = { ...SAMPLE_INSIDER_EVENT, is_late_filing: true };
+    vi.spyOn(api, "getCapitalFlow").mockResolvedValue([lateEvent]);
+    render(<CapitalFlowPage />);
+
+    await waitFor(() => screen.getByText("NVDA"));
+    expect(screen.getByText("LATE FILING")).toBeInTheDocument();
+  });
+
+  it("does not show a LATE FILING badge when is_late_filing is null", async () => {
+    vi.spyOn(api, "getCapitalFlow").mockResolvedValue([SAMPLE_INSIDER_EVENT]);
+    render(<CapitalFlowPage />);
+
+    await waitFor(() => screen.getByText("NVDA"));
+    expect(screen.queryByText("LATE FILING")).not.toBeInTheDocument();
+  });
+
+  it("shows the next real 13F deadline when available", async () => {
+    vi.spyOn(api, "getCapitalFlow").mockResolvedValue([]);
+    vi.spyOn(api, "getNext13FDeadline").mockResolvedValue({
+      next_deadline: "2026-08-14", days_until: 6, source_note: "From the SEC's own published FAQ table.",
+    });
+    render(<CapitalFlowPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("2026-08-14")).toBeInTheDocument();
+      expect(screen.getByText(/6 days away/)).toBeInTheDocument();
+    });
+  });
+
+  it("does not show a 13F deadline banner when none is available", async () => {
+    vi.spyOn(api, "getCapitalFlow").mockResolvedValue([]);
+    render(<CapitalFlowPage />);
+
+    await waitFor(() => screen.getByText("No unusually large capital flow events detected yet."));
+    expect(screen.queryByText(/Next Form 13F filing deadline/)).not.toBeInTheDocument();
   });
 });

@@ -98,3 +98,10 @@ class CapitalFlowEvent:
     # (not this detection) — used purely for dedup against
     # CapitalFlowSeen, never shown to a user.
     dedup_key: str
+    # True/False only for SENATE/HOUSE, where a real, known 45-day
+    # STOCK Act deadline exists between transaction_date and
+    # disclosure_date. None for every other source — INSIDER, VOLUME,
+    # and MACRO have no equivalent statutory disclosure deadline, and
+    # forcing a False there would misrepresent "not applicable" as
+    # "on time."
+    is_late_filing: bool | None = None
