@@ -47,11 +47,21 @@ on:
     # and the real, enforced dedup means extra runs never re-alert on
     # something already seen.
     - cron: '0 13-21 * * 1-5'
-    # Capital Flow volume scan — once daily, after market close. The
-    # only source with a real per-call cost (500 real API calls for
-    # the S&P 500), which is why this alone gets its own, less
-    # frequent schedule via the include_volume_scan flag.
-    - cron: '30 21 * * 1-5'
+    # Capital Flow volume scan — once daily, the NEXT MORNING well
+    # before market open, not the same evening. Originally scheduled
+    # for 21:30 UTC (~30-90 min after close) — a real, confirmed
+    # timing bug: FMP's end-of-day data isn't fully settled that
+    # quickly after close, so that schedule was missing the very
+    # spikes it existed to catch (verified directly: a manual re-run
+    # hours later found 2 new, real events — ABNB and TTD — that the
+    # scheduled run had missed entirely). 11:00 UTC gives FMP a full
+    # overnight window to settle the prior trading day's numbers.
+    # Same Mon-Fri day pattern as before: each morning naturally
+    # checks the PRIOR trading day's close, so Monday morning checks
+    # Friday's close, Tuesday morning checks Monday's, etc. — no
+    # weekend gap to account for separately, since no new trading data
+    # appears over the weekend anyway.
+    - cron: '0 11 * * 1-5'
   workflow_dispatch: {}  # manual trigger from the Actions tab for testing
 
 env:
@@ -101,7 +111,7 @@ jobs:
     # manual test run shouldn't accidentally burn that budget. Test
     # this specific job by running scripts/run_capital_flow_scan.py
     # --include-volume-scan locally instead.
-    if: github.event.schedule == '30 21 * * 1-5'
+    if: github.event.schedule == '0 11 * * 1-5'
     runs-on: ubuntu-latest
     steps:
       - name: Scan capital flow (S&P 500 volume)
