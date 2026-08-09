@@ -10,6 +10,7 @@ from abc import ABC, abstractmethod
 from datetime import date
 
 from src.domain.entities.company import Company
+from src.domain.entities.capital_flow import InsiderTrade, PoliticianTrade
 from src.domain.entities.earnings import EarningsEvent
 from src.domain.entities.economic_indicator import EconomicIndicatorReading
 from src.domain.entities.etf import EtfProfile
@@ -112,6 +113,30 @@ class FinancialDataProvider(ABC):
         provider failure. Optional, same rationale as
         get_treasury_rates."""
         raise NotImplementedError("This data provider does not support get_market_risk_premium")
+
+    def get_latest_insider_trades(self, limit: int = 100) -> list[InsiderTrade]:
+        """The most recent insider-trading disclosures across the
+        entire market, most recent first — not scoped to a single
+        ticker. Optional, same rationale as get_treasury_rates."""
+        raise NotImplementedError("This data provider does not support get_latest_insider_trades")
+
+    def get_latest_senate_trades(self, limit: int = 100) -> list[PoliticianTrade]:
+        """The most recent U.S. Senate financial disclosures across
+        the entire market, most recent first. Optional, same rationale
+        as get_treasury_rates."""
+        raise NotImplementedError("This data provider does not support get_latest_senate_trades")
+
+    def get_latest_house_trades(self, limit: int = 100) -> list[PoliticianTrade]:
+        """The most recent U.S. House financial disclosures across the
+        entire market, most recent first. Optional, same rationale as
+        get_treasury_rates."""
+        raise NotImplementedError("This data provider does not support get_latest_house_trades")
+
+    def get_daily_bars_full(self, ticker: str, limit: int = 30) -> list[PriceBar]:
+        """Real OHLCV bars INCLUDING volume, most recent first — unlike
+        get_daily_closes (close price only, used for momentum). Optional,
+        same rationale as get_treasury_rates."""
+        raise NotImplementedError("This data provider does not support get_daily_bars_full")
 
 
 class DataProviderError(Exception):

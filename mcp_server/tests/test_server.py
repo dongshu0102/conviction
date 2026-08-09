@@ -301,6 +301,20 @@ async def test_get_rate_signals_includes_params_when_explicitly_supplied():
     )
 
 
+@pytest.mark.asyncio
+async def test_get_capital_flow_defaults_to_limit_20_with_no_source_filter():
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.get_capital_flow()
+    mock_req.assert_called_once_with("GET", "/capital-flow", params={"limit": 20})
+
+
+@pytest.mark.asyncio
+async def test_get_capital_flow_includes_source_filter_when_supplied():
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.get_capital_flow(source="SENATE", limit=5)
+    mock_req.assert_called_once_with("GET", "/capital-flow", params={"limit": 5, "source": "SENATE"})
+
+
 
 # --- The 11 tools added to close the MCP gap (options, screening, --------
 # recommendations, rebalancing, watchlist extras) — none of these had any

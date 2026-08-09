@@ -417,6 +417,21 @@ class SahmRuleResultSchema(BaseModel):
     interpretation: str
 
 
+class CapitalFlowEventSchema(BaseModel):
+    source: str
+    symbol: str | None
+    event_date: date
+    direction: str
+    headline: str
+    detail_url: str | None
+    detected_at: datetime
+
+
+class CapitalFlowScanResultSchema(BaseModel):
+    new_event_count: int
+    events: list[CapitalFlowEventSchema]
+
+
 class RateSignalsSchema(BaseModel):
     as_of: datetime
     yield_curve: YieldCurveReadingSchema

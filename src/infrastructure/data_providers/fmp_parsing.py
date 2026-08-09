@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime
 
+from src.domain.entities.capital_flow import CapitalFlowSource, InsiderTrade, PoliticianTrade
 from src.domain.entities.earnings import EarningsEvent
 from src.domain.entities.economic_indicator import EconomicIndicatorReading
 from src.domain.entities.etf import EtfProfile
@@ -246,3 +247,129 @@ def parse_general_news(payload) -> list[GeneralNewsHeadline]:
             )
         )
     return headlines
+
+
+def _parse_date(value: str) -> date:
+    return datetime.strptime(value, "%Y-%m-%d").date()
+
+
+def parse_eod_full(payload, ticker: str) -> list[PriceBar]:
+    """Real, confirmed shape from /stable/historical-price-eod/full,
+    verified directly against the live API tonight: {symbol, date,
+    open, high, low, close, volume, change, changePercent, vwap}.
+    Deliberately a separate function from parse_eod_light rather than
+    a shared one with an "include volume" flag — the momentum
+    computation that already depends on parse_eod_light has no reason
+    to touch a new code path, and this function's only real job
+    (volume) is the one thing that endpoint doesn't provide at all.
+    Returns bars most-recent-first, same convention as parse_eod_light."""
+    rows = payload
+    if isinstance(payload, dict):
+        rows = payload.get("historical", [])
+    if not isinstance(rows, list):
+        logger.warning("Unexpected EOD-full payload shape for %s: %s", ticker, type(payload))
+        return []
+
+    bars: list[PriceBar] = []
+    for i, row in enumerate(rows):
+        try:
+            bar_date = datetime.strptime(row["date"], "%Y-%m-%d").date()
+            close = float(row["close"])
+            volume = float(row["volume"]) if row.get("volume") is not None else None
+            bars.append(PriceBar(bar_date=bar_date, close=close, volume=volume))
+        except (KeyError, ValueError, TypeError) as exc:
+            logger.warning("Skipping malformed EOD-full row %d for %s: %s", i, ticker, exc)
+            continue
+    return bars
+
+
+def parse_latest_insider_trades(payload) -> list[InsiderTrade]:
+    """Real, confirmed shape from /stable/insider-trading/latest,
+    verified directly against the live API tonight: symbol, filingDate,
+    transactionDate, reportingCik, companyCik, transactionType,
+    reportingName, typeOfOwner, acquisitionOrDisposition,
+    directOrIndirect, formType, securitiesTransacted, price,
+    securityName, url. Most real rows are noise (gifts, exercises,
+    conversions) — that filtering happens in capital_flow_math.py, not
+    here; this function's only job is a faithful, complete parse.
+    A malformed row is skipped, not fatal to the whole batch."""
+    if not isinstance(payload, list):
+        logger.warning("Unexpected insider-trading/latest payload shape: %s", type(payload))
+        return []
+
+    trades: list[InsiderTrade] = []
+    for i, row in enumerate(payload):
+        try:
+            trades.append(
+                InsiderTrade(
+                    symbol=row["symbol"],
+                    filing_date=_parse_date(row["filingDate"]),
+                    transaction_date=_parse_date(row["transactionDate"]),
+                    reporting_name=row["reportingName"],
+                    type_of_owner=row["typeOfOwner"],
+                    transaction_type=row["transactionType"],
+                    acquisition_or_disposition=row["acquisitionOrDisposition"],
+                    securities_transacted=float(row["securitiesTransacted"]),
+                    price=float(row["price"]),
+                    security_name=row["securityName"],
+                    url=row["url"],
+                )
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            logger.warning("Skipping malformed insider-trading row %d: %s", i, exc)
+            continue
+    return trades
+
+
+def _parse_politician_trades(payload, chamber: CapitalFlowSource, source_label: str) -> list[PoliticianTrade]:
+    """Shared parser for /stable/senate-latest and /stable/house-latest
+    — both confirmed, real shapes are close enough (same core columns)
+    to share one function, given each row's chamber is passed in
+    explicitly rather than inferred from the data itself."""
+    if not isinstance(payload, list):
+        logger.warning("Unexpected %s payload shape: %s", source_label, type(payload))
+        return []
+
+    trades: list[PoliticianTrade] = []
+    for i, row in enumerate(payload):
+        try:
+            trades.append(
+                PoliticianTrade(
+                    chamber=chamber,
+                    symbol=row["symbol"],
+                    disclosure_date=_parse_date(row["disclosureDate"]),
+                    transaction_date=_parse_date(row["transactionDate"]),
+                    person_name=f"{row['firstName']} {row['lastName']}",
+                    office=row["office"],
+                    # Confirmed real quirk: House rows can report owner
+                    # as an empty string rather than "Self" — passed
+                    # through as-is, not silently defaulted to a value
+                    # FMP itself didn't report.
+                    owner=row.get("owner", ""),
+                    asset_description=row["assetDescription"],
+                    asset_type=row["assetType"],
+                    transaction_type=row["type"],
+                    amount_range=row["amount"],
+                    link=row["link"],
+                )
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            logger.warning("Skipping malformed %s row %d: %s", source_label, i, exc)
+            continue
+    return trades
+
+
+def parse_latest_senate_trades(payload) -> list[PoliticianTrade]:
+    """Real, confirmed shape from /stable/senate-latest, verified
+    directly against the live API tonight."""
+    return _parse_politician_trades(payload, CapitalFlowSource.SENATE, "senate-latest")
+
+
+def parse_latest_house_trades(payload) -> list[PoliticianTrade]:
+    """Real, confirmed shape from /stable/house-latest, verified
+    directly against the live API tonight. Note the confirmed quirk:
+    FMP reuses the field name "senateID" even in House rows — not a
+    bug to "fix" here, just their real wire format, which this parser
+    simply doesn't need (person_name is built from firstName/lastName
+    instead)."""
+    return _parse_politician_trades(payload, CapitalFlowSource.HOUSE, "house-latest")

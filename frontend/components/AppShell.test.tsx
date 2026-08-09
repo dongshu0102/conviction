@@ -25,7 +25,7 @@ beforeEach(() => {
 });
 
 describe("AppShell", () => {
-  it("renders all six nav destinations", () => {
+  it("renders all nine nav destinations", () => {
     render(<AppShell><div /></AppShell>);
     expect(screen.getByText("Dashboard")).toBeInTheDocument();
     expect(screen.getByText("Watchlist")).toBeInTheDocument();
@@ -34,6 +34,7 @@ describe("AppShell", () => {
     expect(screen.getByText("Portfolios")).toBeInTheDocument();
     expect(screen.getByText("Alerts")).toBeInTheDocument();
     expect(screen.getByText("Valuation")).toBeInTheDocument();
+    expect(screen.getByText("Capital Flow")).toBeInTheDocument();
     expect(screen.getByText("Chat")).toBeInTheDocument();
   });
 

@@ -80,6 +80,7 @@ from tests.unit.fakes import (
     FakeAlertRepository,
     FakeBriefGenerator,
     FakeSpeculativeGrowthCandidateRepository,
+    FakeCapitalFlowRepository,
 )
 from src.application.use_cases.manage_alerts import GetAlertsUseCase
 from src.application.use_cases.generate_daily_brief import GenerateDailyBriefUseCase
@@ -96,6 +97,7 @@ from src.application.use_cases.compute_dcf_valuation import (
     ComputeReverseDcfUseCase,
 )
 from src.application.use_cases.compute_investment_irr import ComputeInvestmentIrrUseCase
+from src.application.use_cases.get_capital_flow import GetCapitalFlowUseCase
 from src.application.use_cases.get_macro_snapshot import GetMacroSnapshotUseCase
 from src.application.use_cases.get_rate_signals import GetRateSignalsUseCase
 from src.application.use_cases.get_risk_free_rate import GetRiskFreeRateUseCase
@@ -140,13 +142,14 @@ def _company_repo(*tickers: str) -> FakeCompanyRepository:
     return repo
 
 
-def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watchlist_repo=None, provider=None, options_provider=None, theme_repo=None, statement_repo=None, get_factor_scores_override=None, alert_repo=None, candidate_repo=None, macro_history_provider=None):
+def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watchlist_repo=None, provider=None, options_provider=None, theme_repo=None, statement_repo=None, get_factor_scores_override=None, alert_repo=None, candidate_repo=None, macro_history_provider=None, capital_flow_repo=None):
     company_repo = company_repo or _company_repo()
     portfolio_repo = portfolio_repo or FakePortfolioRepository()
     watchlist_repo = watchlist_repo or FakeWatchlistRepository()
     statement_repo = statement_repo or FakeFinancialStatementRepository()
     alert_repo = alert_repo or FakeAlertRepository()
     candidate_repo = candidate_repo or FakeSpeculativeGrowthCandidateRepository()
+    capital_flow_repo = capital_flow_repo or FakeCapitalFlowRepository()
     provider = provider or FakeDataProvider(company=Company(ticker="X", name="X", sector=Sector.TECHNOLOGY, industry="X", exchange="X", country="US"))
     options_provider = options_provider or FakeOptionsDataProvider()
     research_repo = FakeResearchReportRepository()
@@ -243,6 +246,7 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
         get_risk_free_rate=GetRiskFreeRateUseCase(provider),
         get_macro_snapshot=GetMacroSnapshotUseCase(provider),
         get_rate_signals=GetRateSignalsUseCase(provider, macro_history_provider=macro_history_provider),
+        get_capital_flow=GetCapitalFlowUseCase(capital_flow_repo),
     )
     return use_case, fake_agent, portfolio_repo
 
@@ -1846,3 +1850,71 @@ def test_get_rate_signals_via_chat_computes_a_real_sahm_rule_when_fred_is_config
     assert result["sahm_rule"]["is_triggered"] is True
     assert abs(result["sahm_rule"]["gap"] - 1.0333333333333332) < 1e-9
     assert result["sahm_rule_unavailable_reason"] is None
+
+
+def test_get_capital_flow_via_chat_returns_stored_events() -> None:
+    from src.domain.entities.capital_flow import (
+        CapitalFlowDirection,
+        CapitalFlowEvent,
+        CapitalFlowSource,
+    )
+
+    company_repo = _company_repo("AAPL")
+    provider = FakeDataProvider(company=company_repo.get_by_ticker("AAPL"))
+    capital_flow_repo = FakeCapitalFlowRepository()
+    capital_flow_repo.save_new_events([
+        CapitalFlowEvent(
+            source=CapitalFlowSource.INSIDER, symbol="NVDA", event_date=date(2026, 8, 6),
+            direction=CapitalFlowDirection.BUY, headline="Test insider buy",
+            detail_url="https://test.gov", detected_at=datetime(2026, 8, 7, tzinfo=timezone.utc),
+            dedup_key="insider:NVDA:test",
+        ),
+    ])
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("get_capital_flow", {})],
+        company_repo=company_repo, provider=provider, capital_flow_repo=capital_flow_repo,
+    )
+    use_case.execute("alice", "any unusual capital flow lately?", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["event_count"] == 1
+    assert result["events"][0]["symbol"] == "NVDA"
+    assert result["events"][0]["source"] == "INSIDER"
+    assert "note" in result
+
+
+def test_get_capital_flow_via_chat_filters_by_source() -> None:
+    from src.domain.entities.capital_flow import (
+        CapitalFlowDirection,
+        CapitalFlowEvent,
+        CapitalFlowSource,
+    )
+
+    company_repo = _company_repo("AAPL")
+    provider = FakeDataProvider(company=company_repo.get_by_ticker("AAPL"))
+    capital_flow_repo = FakeCapitalFlowRepository()
+    capital_flow_repo.save_new_events([
+        CapitalFlowEvent(
+            source=CapitalFlowSource.INSIDER, symbol="NVDA", event_date=date(2026, 8, 6),
+            direction=CapitalFlowDirection.BUY, headline="Insider event",
+            detail_url=None, detected_at=datetime(2026, 8, 7, tzinfo=timezone.utc),
+            dedup_key="insider:NVDA:test",
+        ),
+        CapitalFlowEvent(
+            source=CapitalFlowSource.SENATE, symbol="AAPL", event_date=date(2026, 8, 6),
+            direction=CapitalFlowDirection.SELL, headline="Senate event",
+            detail_url=None, detected_at=datetime(2026, 8, 7, tzinfo=timezone.utc),
+            dedup_key="senate:AAPL:test",
+        ),
+    ])
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("get_capital_flow", {"source": "SENATE"})],
+        company_repo=company_repo, provider=provider, capital_flow_repo=capital_flow_repo,
+    )
+    use_case.execute("alice", "any Senate trades lately?", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["event_count"] == 1
+    assert result["events"][0]["source"] == "SENATE"

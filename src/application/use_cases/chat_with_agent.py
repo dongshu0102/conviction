@@ -78,6 +78,7 @@ from src.application.use_cases.compute_investment_irr import (
     ComputeInvestmentIrrUseCase,
     InvalidIrrScenarioError,
 )
+from src.application.use_cases.get_capital_flow import GetCapitalFlowUseCase
 from src.application.use_cases.get_macro_snapshot import GetMacroSnapshotUseCase
 from src.application.use_cases.get_rate_signals import GetRateSignalsUseCase
 from src.application.use_cases.get_risk_free_rate import GetRiskFreeRateUseCase
@@ -115,6 +116,7 @@ from src.application.use_cases.manage_universe_theme import (
     ThemeNotFoundError,
 )
 from src.application.use_cases.get_watchlist_news import GetWatchlistNewsUseCase
+from src.domain.entities.capital_flow import CapitalFlowSource
 from src.domain.entities.factor_scores import FactorWeights
 from src.application.use_cases.triage_watchlist import TriageWatchlistUseCase
 from src.application.use_cases.recommend_stocks import RecommendStocksUseCase
@@ -784,6 +786,37 @@ _TOOLS = [
         },
     ),
     ToolDefinition(
+        "get_capital_flow",
+        "Recently detected, unusually large real capital-flow events, "
+        "across up to 4 real sources: INSIDER (executives/directors "
+        "buying or selling their own company's stock in the real, "
+        "public open market — filtered to genuine purchases/sales "
+        "only, excluding grants/exercises/conversions, which are "
+        "noise, not signal), SENATE and HOUSE (real, legally-required "
+        "U.S. Congressional financial disclosures — note their "
+        "disclosed dollar amounts are legally-required RANGES, e.g. "
+        "'$1,000,001 - $5,000,000', never an exact figure), and MACRO "
+        "(real, quarterly/monthly international capital-flow shifts "
+        "from FRED — foreign direct investment, portfolio security "
+        "holdings, the current account balance — not tied to any one "
+        "ticker). Every event already cleared a real, explicit size "
+        "threshold before being stored — this tool only returns "
+        "genuinely large, unusual events, never routine ones. This is "
+        "real, disclosed activity, not insider information nor advice "
+        "to mirror anyone's trades.",
+        {
+            "type": "object",
+            "properties": {
+                "source": {
+                    "type": "string",
+                    "enum": ["INSIDER", "SENATE", "HOUSE", "VOLUME", "MACRO"],
+                    "description": "Optional — filter to one source. Omit for all sources together.",
+                },
+                "limit": {"type": "integer", "description": "Optional, default 20."},
+            },
+        },
+    ),
+    ToolDefinition(
         "ingest_etf",
         "Ingest an ETF's profile (name, expense ratio, AUM) so it can be added "
         "to watchlists, themes, and screened/factor-scored. ETFs have no "
@@ -1091,6 +1124,7 @@ class ChatWithAgentUseCase:
         get_risk_free_rate: GetRiskFreeRateUseCase,
         get_macro_snapshot: GetMacroSnapshotUseCase,
         get_rate_signals: GetRateSignalsUseCase,
+        get_capital_flow: GetCapitalFlowUseCase,
     ) -> None:
         self._chat_agent = chat_agent
         self._get_watchlist = get_watchlist
@@ -1146,6 +1180,7 @@ class ChatWithAgentUseCase:
         self._get_risk_free_rate = get_risk_free_rate
         self._get_macro_snapshot = get_macro_snapshot
         self._get_rate_signals = get_rate_signals
+        self._get_capital_flow = get_capital_flow
         self._construct_risk_parity_portfolio = construct_risk_parity_portfolio
         self._user_id: str = ""  # set per-request in execute()
 
@@ -1725,6 +1760,29 @@ class ChatWithAgentUseCase:
                     "is a real, historically fairly reliable recession indicator, "
                     "but a backward-looking one — it identifies a recession that has "
                     "likely already begun, not one still to come."
+                ),
+            }
+
+        if tool_name == "get_capital_flow":
+            source_str = tool_input.get("source")
+            source = CapitalFlowSource(source_str) if source_str else None
+            limit = tool_input.get("limit", 20)
+            events = self._get_capital_flow.execute(source=source, limit=limit)
+            return {
+                "event_count": len(events),
+                "events": [
+                    {
+                        "source": e.source.value, "symbol": e.symbol,
+                        "event_date": e.event_date.isoformat(), "direction": e.direction.value,
+                        "headline": e.headline, "detail_url": e.detail_url,
+                        "detected_at": e.detected_at.isoformat(),
+                    }
+                    for e in events
+                ],
+                "note": (
+                    "This is real, publicly disclosed activity that already cleared "
+                    "an explicit size threshold — never routine transactions, and "
+                    "never insider information. Not advice to mirror anyone's trades."
                 ),
             }
 

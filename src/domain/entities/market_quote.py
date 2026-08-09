@@ -21,9 +21,13 @@ class MarketQuote:
 
 @dataclass(frozen=True, slots=True)
 class PriceBar:
-    """One end-of-day close. Used for momentum computation — fetched
-    live from FMP's historical EOD endpoint (Starter-plan accessible),
-    NOT stored locally; there is deliberately no price-history table."""
+    """One end-of-day bar — fetched live from FMP's historical EOD
+    endpoint (Starter-plan accessible), NOT stored locally; there is
+    deliberately no price-history table. volume is None when fetched
+    via the "light" variant (momentum computation only ever needed
+    close), matching this codebase's convention of reporting a genuine
+    absence rather than a fabricated 0."""
 
     bar_date: date
     close: float
+    volume: float | None = None

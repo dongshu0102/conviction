@@ -17,6 +17,7 @@ from src.application.interfaces.data_provider import (
     FinancialDataProvider,
 )
 from src.domain.entities.company import Company, Sector
+from src.domain.entities.capital_flow import InsiderTrade, PoliticianTrade
 from src.domain.entities.financial_statement import (
     BalanceSheet,
     CashFlowStatement,
@@ -35,9 +36,13 @@ from src.domain.entities.treasury_rates import TreasuryRates
 from src.infrastructure.data_providers.fmp_parsing import (
     parse_earnings_calendar,
     parse_economic_indicator,
+    parse_eod_full,
     parse_eod_light,
     parse_etf_info,
     parse_general_news,
+    parse_latest_house_trades,
+    parse_latest_insider_trades,
+    parse_latest_senate_trades,
     parse_market_risk_premium,
     parse_stock_news,
     parse_treasury_rates,
@@ -272,3 +277,26 @@ class FinancialModelingPrepProvider(FinancialDataProvider):
         # 404s — the real path is /stable/news/general-latest.
         payload = self._get("/news/general-latest", page=0, limit=limit)
         return parse_general_news(payload)
+
+    def get_latest_insider_trades(self, limit: int = 100) -> list[InsiderTrade]:
+        # Confirmed live tonight: /stable/insider-trading/latest,
+        # page-based pagination (not a plain limit-only cutoff).
+        payload = self._get("/insider-trading/latest", page=0, limit=limit)
+        return parse_latest_insider_trades(payload)
+
+    def get_latest_senate_trades(self, limit: int = 100) -> list[PoliticianTrade]:
+        # Confirmed live tonight: /stable/senate-latest.
+        payload = self._get("/senate-latest", page=0, limit=limit)
+        return parse_latest_senate_trades(payload)
+
+    def get_latest_house_trades(self, limit: int = 100) -> list[PoliticianTrade]:
+        # Confirmed live tonight: /stable/house-latest.
+        payload = self._get("/house-latest", page=0, limit=limit)
+        return parse_latest_house_trades(payload)
+
+    def get_daily_bars_full(self, ticker: str, limit: int = 30) -> list[PriceBar]:
+        # Confirmed live tonight: /stable/historical-price-eod/full
+        # (genuinely different from /light — includes volume, which
+        # get_daily_closes' underlying endpoint does not).
+        payload = self._get("/historical-price-eod/full", symbol=ticker)
+        return parse_eod_full(payload, ticker)[:limit]

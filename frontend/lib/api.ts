@@ -504,6 +504,21 @@ export interface RateSignals {
   sahm_rule_unavailable_reason: string | null;
 }
 
+export interface CapitalFlowEvent {
+  source: string;
+  symbol: string | null;
+  event_date: string;
+  direction: string;
+  headline: string;
+  detail_url: string | null;
+  detected_at: string;
+}
+
+export interface CapitalFlowScanResult {
+  new_event_count: number;
+  events: CapitalFlowEvent[];
+}
+
 export interface ValuationSnapshot {
   ticker: string;
   as_of: string;
@@ -770,6 +785,14 @@ export const api = {
     const qs = params.toString();
     return request<RateSignals>(`/companies/rate-signals${qs ? `?${qs}` : ""}`);
   },
+  getCapitalFlow: (opts?: { source?: string; limit?: number }) => {
+    const params = new URLSearchParams();
+    if (opts?.source) params.set("source", opts.source);
+    params.set("limit", String(opts?.limit ?? 50));
+    return request<CapitalFlowEvent[]>(`/capital-flow?${params.toString()}`);
+  },
+  triggerCapitalFlowScan: () =>
+    request<CapitalFlowScanResult>("/capital-flow/scan", { method: "POST" }),
   getValuation: (ticker: string) =>
     request<ValuationSnapshot>(`/companies/${encodeURIComponent(ticker.toUpperCase())}/valuation`),
   getDcf: (

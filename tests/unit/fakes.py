@@ -609,3 +609,22 @@ class FakeSpeculativeGrowthCandidateRepository:
                 last_checked_at=checked_at,
             )
 
+
+class FakeCapitalFlowRepository:
+    """Matches the real save_new_events semantics: dedup by dedup_key,
+    return only the genuinely new events."""
+
+    def __init__(self) -> None:
+        self._seen_dedup_keys: set = set()
+        self._saved: list = []
+
+    def save_new_events(self, events: list) -> list:
+        new_events = [e for e in events if e.dedup_key not in self._seen_dedup_keys]
+        for e in new_events:
+            self._seen_dedup_keys.add(e.dedup_key)
+        self._saved.extend(new_events)
+        return new_events
+
+    def list_recent(self, source=None, limit: int = 50) -> list:
+        results = self._saved if source is None else [e for e in self._saved if e.source == source]
+        return list(reversed(results))[:limit]

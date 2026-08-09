@@ -30,6 +30,7 @@ const NAV_ITEMS = [
   { href: "/terminal", label: "Watchlist", icon: "▤" },
   { href: "/portfolios", label: "Portfolios", icon: "▣" },
   { href: "/valuation", label: "Valuation", icon: "◇" },
+  { href: "/capital-flow", label: "Capital Flow", icon: "⇄" },
   { href: "/alerts", label: "Alerts", icon: "◉" },
 ];
 

@@ -357,3 +357,26 @@ class SpeculativeGrowthCandidateModel(Base):
     last_cash_runway_months: Mapped[float | None] = mapped_column(Float, nullable=True)
     last_market_cap: Mapped[float | None] = mapped_column(Float, nullable=True)
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class CapitalFlowEventModel(Base):
+    __tablename__ = "capital_flow_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # Deliberately NOT a ForeignKey to companies.ticker, unlike
+    # AlertModel.ticker — this is a broad, market-wide scan, so most
+    # symbols it detects were never ingested into this platform's own
+    # companies table at all. A foreign key here would make a real
+    # insert fail for the common case, not the exception.
+    symbol: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    source: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    direction: Mapped[str] = mapped_column(String(16), nullable=False)
+    event_date: Mapped[date] = mapped_column(Date, nullable=False)
+    headline: Mapped[str] = mapped_column(String, nullable=False)
+    detail_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    detected_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    # The dedup key IS the mechanism that prevents the same real-world
+    # event from being persisted twice across separate scan runs — a
+    # unique constraint here is a real, enforced guarantee, not just a
+    # convention the application layer happens to follow.
+    dedup_key: Mapped[str] = mapped_column(String, nullable=False, unique=True)
