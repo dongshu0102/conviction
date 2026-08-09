@@ -193,7 +193,7 @@ describe("Capital Flow page", () => {
     render(<CapitalFlowPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("2026-08-14")).toBeInTheDocument();
+      expect(screen.getByText("Friday, August 14, 2026")).toBeInTheDocument();
       expect(screen.getByText(/6 days away/)).toBeInTheDocument();
     });
   });

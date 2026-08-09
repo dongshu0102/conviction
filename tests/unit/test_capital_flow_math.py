@@ -347,3 +347,44 @@ def test_next_13f_deadline_returns_none_past_the_last_published_date() -> None:
 def test_form_13f_deadlines_table_has_twelve_real_entries() -> None:
     assert len(FORM_13F_DEADLINES) == 12
     assert FORM_13F_DEADLINES == sorted(FORM_13F_DEADLINES)  # genuinely chronological
+
+
+# --- _fmt_millions_usd / macro headline units -----------------------------
+
+from src.domain.services.capital_flow_math import _fmt_millions_usd
+
+
+def test_fmt_millions_usd_hand_verified_cases() -> None:
+    assert _fmt_millions_usd(434808.0) == "$434.8B"
+    assert _fmt_millions_usd(-190745.0) == "-$190.7B"
+    assert _fmt_millions_usd(500.0) == "$500.0M"
+    assert _fmt_millions_usd(-500.0) == "-$500.0M"
+    assert _fmt_millions_usd(1_500_000.0) == "$1.50T"
+    assert _fmt_millions_usd(0.0) == "$0.0M"
+
+
+def test_build_macro_flow_event_headline_includes_real_units() -> None:
+    """Regression test for a real, genuine gap: the original headline
+    printed a bare number ('434,808.0') with no indication it was
+    millions of USD, not raw dollars — confirmed directly against
+    every series' own FRED page before fixing."""
+    event = build_macro_flow_event(
+        "ROWFDIQ027S", "Foreign Direct Investment in U.S. (transactions)",
+        _reading(434808.0), _reading(289948.0, date(2025, 10, 1)),
+    )
+    assert event is not None
+    assert "$434.8B" in event.headline
+    assert "$289.9B" in event.headline
+    assert "434,808.0" not in event.headline  # the old, unit-less format is genuinely gone
+
+
+def test_build_macro_flow_event_can_opt_out_of_millions_formatting() -> None:
+    """A future series with different units shouldn't be silently
+    mislabeled — explicit opt-out available."""
+    event = build_macro_flow_event(
+        "TEST", "Test Series", _reading(150.5), _reading(80.0, date(2026, 1, 1)),
+        values_are_millions_usd=False,
+    )
+    assert event is not None
+    assert "150.5" in event.headline
+    assert "$" not in event.headline

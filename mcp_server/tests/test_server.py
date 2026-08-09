@@ -315,6 +315,13 @@ async def test_get_capital_flow_includes_source_filter_when_supplied():
     mock_req.assert_called_once_with("GET", "/capital-flow", params={"limit": 5, "source": "SENATE"})
 
 
+@pytest.mark.asyncio
+async def test_get_next_13f_deadline_calls_the_real_endpoint():
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.get_next_13f_deadline()
+    mock_req.assert_called_once_with("GET", "/capital-flow/13f-deadline")
+
+
 
 # --- The 11 tools added to close the MCP gap (options, screening, --------
 # recommendations, rebalancing, watchlist extras) — none of these had any

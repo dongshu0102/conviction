@@ -123,7 +123,7 @@ management, factor rankings, AI synthesis, risk-parity allocator, ETF
 ingestion), and per-portfolio risk analysis — all built on top of the
 REST API, not duplicating the chat agent's logic.
 
-**MCP server** — 61 tools for Claude Desktop / claude.ai. Previously
+**MCP server** — 62 tools for Claude Desktop / claude.ai. Previously
 had a real gap — options (Greeks, hedging, option holdings),
 `screen_stocks`, `recommend_stocks`, `suggest_rebalancing`, and
 watchlist named-list management had no REST endpoint for MCP to proxy

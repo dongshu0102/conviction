@@ -1,11 +1,12 @@
 """Use case: run a capital-flow scan.
 
-Fetches the latest insider-trading and political-disclosure feeds,
-filters each down to genuinely unusual events (capital_flow_math.py),
-and persists only the ones not already seen. A broad, market-wide
-scan — no watchlist, no per-user scoping — matching the explicit
-"scan broadly, any ticker" design decision made when this feature was
-scoped, not the per-user pattern RunMonitoringCheckUseCase uses.
+Fetches the latest insider-trading, political-disclosure, volume-spike
+(opt-in), and macro-flow (opt-in) sources, filters each down to
+genuinely unusual events (capital_flow_math.py), and persists only
+the ones not already seen. A broad, market-wide scan — no watchlist,
+no per-user scoping — matching the explicit "scan broadly, any
+ticker" design decision made when this feature was scoped, not the
+per-user pattern RunMonitoringCheckUseCase uses.
 
 Volume scanning is genuinely different in cost from the other two
 sources: insider/political trading are each ONE API call covering the
@@ -151,6 +152,14 @@ class RunCapitalFlowScanUseCase:
                 continue
 
             volumes = [b.volume for b in bars if b.volume is not None]
+            # Note: filtering out None entries here can shift date
+            # alignment if a day in the middle of the window is
+            # missing volume (e.g. a halted or extremely thin trading
+            # day) — the "prior N days" baseline would then span a
+            # slightly wider real date range than N calendar days.
+            # Accepted as a low-probability, low-impact edge case for
+            # actively-traded S&P 500 names, where FMP virtually always
+            # reports real volume for every trading day.
             event = build_volume_event(ticker, bars[0].bar_date, volumes, **volume_kwargs)
             if event is not None:
                 events.append(event)

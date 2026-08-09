@@ -69,7 +69,7 @@ def _to_schema(event: CapitalFlowEvent) -> CapitalFlowEventSchema:
 
 @router.get("", response_model=list[CapitalFlowEventSchema])
 def list_recent_events(
-    source: str | None = Query(default=None, description="Filter to one source: INSIDER, SENATE, or HOUSE."),
+    source: str | None = Query(default=None, description="Filter to one source: INSIDER, SENATE, HOUSE, VOLUME, or MACRO."),
     limit: int = Query(default=50, ge=1, le=200),
     repo: SqlAlchemyCapitalFlowRepository = Depends(get_capital_flow_repository),
 ) -> list[CapitalFlowEventSchema]:

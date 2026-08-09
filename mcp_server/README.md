@@ -96,7 +96,7 @@ startup.
 ## 5. Verify it connected
 
 In Claude Desktop, look for a small tools/plug icon near the message
-input — clicking it should show `conviction` with 61 tools listed. If
+input — clicking it should show `conviction` with 62 tools listed. If
 it's not there, check Claude Desktop's logs (usually accessible from
 its settings/developer menu) for a startup error from this server.
 
@@ -116,19 +116,17 @@ Ask Claude something like:
 
 ```bash
 cd mcp_server
-CONVICTION_API_KEY=test_key python3 tests/run_tests.py
+CONVICTION_API_KEY=test_key pytest tests/
 ```
 
-9 tests against the REAL, unmodified `server.py` — including a
-systematic sweep checking every one of the 61 tools against the exact
+43 tests against the REAL, unmodified `server.py` — including a
+systematic sweep checking every one of the 62 tools against the exact
 REST path it should hit, which self-checks that no new tool gets added
-without a corresponding entry (see `tests/test_server.py`). Since
-neither `httpx` nor `mcp` needs to be actually installed to run these
-(they're faked at the `sys.modules` level — see `tests/fake_deps.py`),
-this also works as a zero-dependency sanity check before you even set
-up the real venv. Also runnable with plain `pytest tests/` if you have
-pytest installed — every test is a normal sync function internally
-managing its own `asyncio.run()`, no special plugin needed.
+without a corresponding entry (see `tests/test_server.py`). Requires
+the isolated `.venv` set up above (pytest, pytest-asyncio, httpx, and
+mcp all genuinely need to be installed — there is no dependency-free
+path to running these, despite what an earlier version of this doc
+claimed).
 
 ## Troubleshooting
 

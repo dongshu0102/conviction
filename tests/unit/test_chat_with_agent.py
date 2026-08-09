@@ -1918,3 +1918,58 @@ def test_get_capital_flow_via_chat_filters_by_source() -> None:
     result = fake_agent.dispatch_results[0]
     assert result["event_count"] == 1
     assert result["events"][0]["source"] == "SENATE"
+
+
+def test_get_capital_flow_via_chat_includes_is_late_filing() -> None:
+    """Regression test: the dispatch result must actually include
+    is_late_filing, not just describe it in the tool's own
+    description — a real gap caught during review, where the tool
+    description was updated to mention this field before the dispatch
+    logic actually returned it."""
+    from src.domain.entities.capital_flow import (
+        CapitalFlowDirection,
+        CapitalFlowEvent,
+        CapitalFlowSource,
+    )
+
+    company_repo = _company_repo("AAPL")
+    provider = FakeDataProvider(company=company_repo.get_by_ticker("AAPL"))
+    capital_flow_repo = FakeCapitalFlowRepository()
+    capital_flow_repo.save_new_events([
+        CapitalFlowEvent(
+            source=CapitalFlowSource.SENATE, symbol="CLF", event_date=date(2024, 5, 10),
+            direction=CapitalFlowDirection.SELL, headline="A late Senate disclosure",
+            detail_url=None, detected_at=datetime(2026, 8, 9, tzinfo=timezone.utc),
+            dedup_key="senate:CLF:test", is_late_filing=True,
+        ),
+    ])
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("get_capital_flow", {})],
+        company_repo=company_repo, provider=provider, capital_flow_repo=capital_flow_repo,
+    )
+    use_case.execute("alice", "any late Senate filings?", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["events"][0]["is_late_filing"] is True
+
+
+def test_get_next_13f_deadline_via_chat_returns_a_real_sec_date() -> None:
+    """Regression test for a real gap found during review: the
+    /capital-flow/13f-deadline REST endpoint and frontend banner
+    existed, but no chat or MCP tool ever exposed this — a user could
+    see the deadline on the web page but couldn't ask Claude about it
+    at all."""
+    company_repo = _company_repo("AAPL")
+    provider = FakeDataProvider(company=company_repo.get_by_ticker("AAPL"))
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("get_next_13f_deadline", {})],
+        company_repo=company_repo, provider=provider,
+    )
+    use_case.execute("alice", "when is the next 13F deadline?", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["next_deadline"] is not None
+    assert result["days_until"] is not None
+    assert result["days_until"] >= 0
+    assert "sec.gov" in result["source_note"]

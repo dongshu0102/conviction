@@ -79,8 +79,11 @@ export default function CapitalFlowPage() {
 
   useEffect(() => {
     if (!getApiKey()) return;
-    api.getNext13FDeadline().then(setNext13F).catch(() => {
-      // Non-critical — the page works fine without this banner if it fails to load.
+    api.getNext13FDeadline().then(setNext13F).catch((err) => {
+      // Non-critical — the page works fine without this banner if it
+      // fails to load, but a silent, trace-free failure would make a
+      // real future outage harder to debug than it needs to be.
+      console.warn("Couldn't load the 13F deadline banner:", err);
     });
   }, []);
 
@@ -156,7 +159,7 @@ export default function CapitalFlowPage() {
         {next13F && next13F.next_deadline && (
           <div className="card" style={{ marginBottom: "1.25rem", padding: "0.85rem 1rem" }}>
             <p style={{ margin: 0, fontSize: "0.85rem" }}>
-              Next Form 13F filing deadline: <span className="num" style={{ fontWeight: 600 }}>{next13F.next_deadline}</span>
+              Next Form 13F filing deadline: <span className="num" style={{ fontWeight: 600 }}>{fmtDateHeading(next13F.next_deadline)}</span>
               {next13F.days_until !== null && (
                 <span style={{ color: "var(--text-soft)" }}> ({next13F.days_until === 0 ? "today" : `${next13F.days_until} day${next13F.days_until === 1 ? "" : "s"} away`})</span>
               )}

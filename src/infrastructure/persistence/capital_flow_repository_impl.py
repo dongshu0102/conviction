@@ -56,6 +56,7 @@ class SqlAlchemyCapitalFlowRepository(CapitalFlowRepository):
                         detail_url=event.detail_url,
                         detected_at=event.detected_at,
                         dedup_key=event.dedup_key,
+                        is_late_filing=event.is_late_filing,
                     )
                 )
 
@@ -80,6 +81,7 @@ class SqlAlchemyCapitalFlowRepository(CapitalFlowRepository):
                     detail_url=row.detail_url,
                     detected_at=row.detected_at,
                     dedup_key=row.dedup_key,
+                    is_late_filing=row.is_late_filing,
                 )
                 for row in rows
             ]

@@ -117,6 +117,7 @@ from src.application.use_cases.manage_universe_theme import (
 )
 from src.application.use_cases.get_watchlist_news import GetWatchlistNewsUseCase
 from src.domain.entities.capital_flow import CapitalFlowSource
+from src.domain.services.capital_flow_math import next_13f_deadline
 from src.domain.entities.factor_scores import FactorWeights
 from src.application.use_cases.triage_watchlist import TriageWatchlistUseCase
 from src.application.use_cases.recommend_stocks import RecommendStocksUseCase
@@ -788,14 +789,20 @@ _TOOLS = [
     ToolDefinition(
         "get_capital_flow",
         "Recently detected, unusually large real capital-flow events, "
-        "across up to 4 real sources: INSIDER (executives/directors "
+        "across up to 5 real sources: INSIDER (executives/directors "
         "buying or selling their own company's stock in the real, "
         "public open market — filtered to genuine purchases/sales "
         "only, excluding grants/exercises/conversions, which are "
         "noise, not signal), SENATE and HOUSE (real, legally-required "
         "U.S. Congressional financial disclosures — note their "
         "disclosed dollar amounts are legally-required RANGES, e.g. "
-        "'$1,000,001 - $5,000,000', never an exact figure), and MACRO "
+        "'$1,000,001 - $5,000,000', never an exact figure; may also "
+        "carry a real 'late filing' flag when disclosed more than the "
+        "STOCK Act's 45-day deadline after the trade), VOLUME (a "
+        "ticker's real daily trading volume spiking to several times "
+        "its own recent average — direction is always UNKNOWN here, "
+        "since a volume spike alone doesn't say which way money moved, "
+        "only that something unusual happened), and MACRO "
         "(real, quarterly/monthly international capital-flow shifts "
         "from FRED — foreign direct investment, portfolio security "
         "holdings, the current account balance — not tied to any one "
@@ -815,6 +822,18 @@ _TOOLS = [
                 "limit": {"type": "integer", "description": "Optional, default 20."},
             },
         },
+    ),
+    ToolDefinition(
+        "get_next_13f_deadline",
+        "The next real Form 13F institutional-holdings filing deadline, "
+        "from the SEC's own published FAQ table (sec.gov, not computed "
+        "— the real deadline rule rolls forward past both weekends and "
+        "federal holidays, complex enough that a from-scratch "
+        "implementation risked silently drifting wrong). Honest caveat: "
+        "13F holdings data itself is not currently accessible on this "
+        "platform's FMP plan tier (confirmed HTTP 402) — this tells you "
+        "WHEN the next deadline is, not what any manager actually holds.",
+        {"type": "object", "properties": {}},
     ),
     ToolDefinition(
         "ingest_etf",
@@ -1775,7 +1794,7 @@ class ChatWithAgentUseCase:
                         "source": e.source.value, "symbol": e.symbol,
                         "event_date": e.event_date.isoformat(), "direction": e.direction.value,
                         "headline": e.headline, "detail_url": e.detail_url,
-                        "detected_at": e.detected_at.isoformat(),
+                        "detected_at": e.detected_at.isoformat(), "is_late_filing": e.is_late_filing,
                     }
                     for e in events
                 ],
@@ -1783,6 +1802,19 @@ class ChatWithAgentUseCase:
                     "This is real, publicly disclosed activity that already cleared "
                     "an explicit size threshold — never routine transactions, and "
                     "never insider information. Not advice to mirror anyone's trades."
+                ),
+            }
+
+        if tool_name == "get_next_13f_deadline":
+            today = date.today()
+            deadline = next_13f_deadline(today)
+            return {
+                "next_deadline": deadline.isoformat() if deadline else None,
+                "days_until": (deadline - today).days if deadline else None,
+                "source_note": (
+                    "From the SEC's own published FAQ table (sec.gov, Form 13F FAQ, "
+                    "Question 25) — not computed. 13F holdings data itself is not "
+                    "currently accessible on this platform's FMP plan tier."
                 ),
             }
 

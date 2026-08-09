@@ -380,3 +380,9 @@ class CapitalFlowEventModel(Base):
     # unique constraint here is a real, enforced guarantee, not just a
     # convention the application layer happens to follow.
     dedup_key: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    # Nullable, matching the domain entity's own None-for-not-applicable
+    # convention — only ever True/False for SENATE/HOUSE events, where
+    # a real STOCK Act deadline exists; genuinely None for every other
+    # source (INSIDER, VOLUME, MACRO have no equivalent disclosure
+    # deadline), never a fabricated False standing in for "not applicable."
+    is_late_filing: Mapped[bool | None] = mapped_column(Boolean, nullable=True)

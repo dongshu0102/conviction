@@ -92,26 +92,48 @@ def compute_macro_flow_change(current: float, prior: float) -> float | None:
     return (current - prior) / abs(prior)
 
 
+def _fmt_millions_usd(value_in_millions: float) -> str:
+    """Formats a value already expressed in millions of USD (the real,
+    confirmed unit for every series in DEFAULT_MACRO_SERIES below —
+    verified directly against each series' own FRED page, not
+    assumed) into a human-readable $M/$B/$T string. A prior version of
+    this module's headline printed the raw number with no unit label
+    at all — "434,808.0" — which is genuinely ambiguous/misleading
+    without knowing it's millions, not raw dollars."""
+    sign = "-" if value_in_millions < 0 else ""
+    abs_val = abs(value_in_millions)
+    if abs_val >= 1_000_000:
+        return f"{sign}${abs_val / 1_000_000:,.2f}T"
+    elif abs_val >= 1_000:
+        return f"{sign}${abs_val / 1_000:,.1f}B"
+    else:
+        return f"{sign}${abs_val:,.1f}M"
+
+
 def build_macro_flow_event(
     series_id: str,
     series_label: str,
     current_reading: EconomicIndicatorReading,
     prior_reading: EconomicIndicatorReading,
     change_threshold: float = DEFAULT_MACRO_FLOW_CHANGE_THRESHOLD,
+    values_are_millions_usd: bool = True,
 ) -> CapitalFlowEvent | None:
     """current_reading/prior_reading are EconomicIndicatorReading
     objects (date + value) — see get_series_history's real, existing
     shape. Returns None when the change can't be computed or doesn't
-    clear the threshold."""
+    clear the threshold. values_are_millions_usd defaults to True
+    because every series currently in DEFAULT_MACRO_SERIES is
+    confirmed to report in millions of USD — explicit and overridable
+    rather than silently assumed, in case a future series added to
+    that dict uses different units."""
     change = compute_macro_flow_change(current_reading.value, prior_reading.value)
     if change is None or abs(change) < change_threshold:
         return None
 
     direction = CapitalFlowDirection.BUY if change > 0 else CapitalFlowDirection.SELL
-    headline = (
-        f"{series_label} moved {change:+.1%} — {current_reading.value:,.1f} "
-        f"vs {prior_reading.value:,.1f} the prior period"
-    )
+    current_str = _fmt_millions_usd(current_reading.value) if values_are_millions_usd else f"{current_reading.value:,.1f}"
+    prior_str = _fmt_millions_usd(prior_reading.value) if values_are_millions_usd else f"{prior_reading.value:,.1f}"
+    headline = f"{series_label} moved {change:+.1%} — {current_str} vs {prior_str} the prior period"
 
     return CapitalFlowEvent(
         source=CapitalFlowSource.MACRO,
@@ -190,7 +212,7 @@ def average_prior_volume(
 
 def build_volume_event(
     symbol: str,
-    bar_date,
+    bar_date: date,
     volumes_most_recent_first: list[float],
     lookback_days: int = DEFAULT_VOLUME_LOOKBACK_DAYS,
     spike_multiple: float = DEFAULT_VOLUME_SPIKE_MULTIPLE,
@@ -239,7 +261,7 @@ def build_volume_event(
 STOCK_ACT_DISCLOSURE_DEADLINE_DAYS = 45
 
 
-def is_late_filing(transaction_date, disclosure_date) -> bool:
+def is_late_filing(transaction_date: date, disclosure_date: date) -> bool:
     """True when a real disclosure arrived more than 45 days after the
     real transaction it discloses — a genuine STOCK Act violation, not
     a judgment call or a configurable threshold like the other
