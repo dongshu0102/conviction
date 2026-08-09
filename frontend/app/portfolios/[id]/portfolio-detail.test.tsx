@@ -121,6 +121,7 @@ describe("Portfolio detail page", () => {
 
     await waitFor(() => screen.getByText("Delete portfolio"));
     fireEvent.click(screen.getByText("Delete portfolio"));
+    await waitFor(() => screen.getByText("Confirm delete"));
     fireEvent.click(screen.getByText("Confirm delete"));
 
     await waitFor(() => {
@@ -136,6 +137,7 @@ describe("Portfolio detail page", () => {
 
     await waitFor(() => screen.getByText("Delete portfolio"));
     fireEvent.click(screen.getByText("Delete portfolio"));
+    await waitFor(() => screen.getByText("Cancel"));
     fireEvent.click(screen.getByText("Cancel"));
 
     await waitFor(() => {

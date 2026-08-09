@@ -109,6 +109,7 @@ describe("Portfolios index page", () => {
     await waitFor(() => screen.getByText("Growth"));
     const callsBefore = listSpy.mock.calls.length;
     fireEvent.click(screen.getByText("Delete"));
+    await waitFor(() => screen.getByText("Confirm"));
     fireEvent.click(screen.getByText("Confirm"));
 
     await waitFor(() => {

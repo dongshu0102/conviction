@@ -133,6 +133,7 @@ describe("Universe — delete theme", () => {
 
     await waitFor(() => screen.getByText("Delete theme"));
     fireEvent.click(screen.getByText("Delete theme"));
+    await waitFor(() => screen.getByText("Confirm delete"));
     fireEvent.click(screen.getByText("Confirm delete"));
 
     await waitFor(() => {
@@ -165,6 +166,7 @@ describe("Universe — delete theme", () => {
     await waitFor(() => screen.getByText("Delete theme"));
     const callsBefore = listSpy.mock.calls.length;
     fireEvent.click(screen.getByText("Delete theme"));
+    await waitFor(() => screen.getByText("Confirm delete"));
     fireEvent.click(screen.getByText("Confirm delete"));
 
     await waitFor(() => {
