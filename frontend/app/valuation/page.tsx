@@ -28,6 +28,29 @@ function pct(v: number | null): string {
   return `${(v * 100).toFixed(1)}%`;
 }
 
+// For percentage-rate INPUT fields specifically (discount rate, growth
+// rate, terminal growth) — every one of these is stored as a raw
+// decimal to match the API's own contract (0.10 = 10%, same
+// convention pct() above already assumes), but a bare "0.10" in a
+// number input reads as a tiny, confusing value to type/see. These
+// convert only at the input boundary: the user types/sees "10", the
+// state underneath and everything sent to the API stays exactly "0.1"
+// — nothing about the API contract, state shape, or default values
+// changes, only how one input element displays and edits that state.
+function decimalToPercentInput(decimalStr: string): string {
+  if (decimalStr === "") return "";
+  const n = parseFloat(decimalStr);
+  if (isNaN(n)) return "";
+  return String(Math.round(n * 100 * 1e6) / 1e6);
+}
+
+function percentInputToDecimal(percentStr: string): string {
+  if (percentStr === "") return "";
+  const n = parseFloat(percentStr);
+  if (isNaN(n)) return "";
+  return String(Math.round((n / 100) * 1e9) / 1e9);
+}
+
 function mult(v: number | null): string {
   if (v === null) return "—";
   return `${v.toFixed(1)}x`;
@@ -177,6 +200,12 @@ export default function ValuationPage() {
   function useAsDiscountRate() {
     if (treasury?.suggested_discount_rate != null) {
       setDcfDiscountRate(String(treasury.suggested_discount_rate));
+    }
+  }
+
+  function useDcfAsExitPrice() {
+    if (dcf?.per_share_value != null) {
+      setIrrExitPrice(String(dcf.per_share_value));
     }
   }
 
@@ -609,18 +638,21 @@ export default function ValuationPage() {
           <div className="card">
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "1rem" }}>
               <input
-                type="number" placeholder="Growth rate (blank = historical CAGR)"
-                value={dcfGrowthRate} onChange={(e) => setDcfGrowthRate(e.target.value)}
+                type="number" placeholder="Growth rate % (blank = historical CAGR)"
+                value={decimalToPercentInput(dcfGrowthRate)}
+                onChange={(e) => setDcfGrowthRate(percentInputToDecimal(e.target.value))}
                 style={{ flex: "1 1 180px", fontSize: "0.85rem", padding: "0.5rem 0.7rem" }}
               />
               <input
-                type="number" placeholder="Discount rate" value={dcfDiscountRate}
-                onChange={(e) => setDcfDiscountRate(e.target.value)}
+                type="number" placeholder="Discount rate %"
+                value={decimalToPercentInput(dcfDiscountRate)}
+                onChange={(e) => setDcfDiscountRate(percentInputToDecimal(e.target.value))}
                 style={{ flex: "1 1 110px", fontSize: "0.85rem", padding: "0.5rem 0.7rem" }}
               />
               <input
-                type="number" placeholder="Terminal growth" value={dcfTerminalGrowth}
-                onChange={(e) => setDcfTerminalGrowth(e.target.value)}
+                type="number" placeholder="Terminal growth %"
+                value={decimalToPercentInput(dcfTerminalGrowth)}
+                onChange={(e) => setDcfTerminalGrowth(percentInputToDecimal(e.target.value))}
                 style={{ flex: "1 1 110px", fontSize: "0.85rem", padding: "0.5rem 0.7rem" }}
               />
               <input
@@ -649,6 +681,14 @@ export default function ValuationPage() {
                   <div>
                     <p className="eyebrow" style={{ fontSize: "0.65rem" }}>Per-share value</p>
                     <p className="num" style={{ fontSize: "1.4rem", margin: "0.2rem 0 0" }}>{usd(dcf.per_share_value)}</p>
+                    {dcf.per_share_value !== null && (
+                      <button
+                        onClick={useDcfAsExitPrice}
+                        style={{ background: "none", border: "none", color: "var(--accent)", fontSize: "0.72rem", cursor: "pointer", padding: 0, marginTop: "0.3rem" }}
+                      >
+                        Use as IRR exit price ↓
+                      </button>
+                    )}
                   </div>
                   <div style={{ textAlign: "right" }}>
                     <p className="eyebrow" style={{ fontSize: "0.65rem" }}>Enterprise value</p>

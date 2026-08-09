@@ -83,6 +83,59 @@ describe("Valuation page", () => {
     });
   });
 
+  it("discount rate input shows and accepts a human-friendly percentage, not a raw decimal", async () => {
+    const spy = vi.spyOn(api, "getDcf").mockResolvedValue({
+      ticker: "NVDA", as_of: "2026-08-06T00:00:00Z",
+      assumptions: {
+        base_fcf: 1000, growth_rate: 0.10, growth_rate_was_default: true,
+        discount_rate: 0.08, terminal_growth_rate: 0.025, years: 5,
+        net_debt: 0, shares_outstanding: 100,
+      },
+      enterprise_value: 5000, equity_value: 5000, per_share_value: 50,
+      terminal_value: 4000, present_value_of_terminal_value: 3500,
+      projections: [],
+    });
+    render(<ValuationPage />);
+    enterTicker();
+
+    // The default 0.10 decimal must display as 10, not 0.1.
+    expect(screen.getByPlaceholderText("Discount rate %")).toHaveValue(10);
+
+    // Typing "8" (meaning 8%) must send the API the real decimal 0.08.
+    fireEvent.change(screen.getByPlaceholderText("Discount rate %"), { target: { value: "8" } });
+    fireEvent.click(screen.getAllByText("Compute")[3]);
+
+    await waitFor(() => {
+      expect(spy).toHaveBeenCalledWith("NVDA", {
+        growth_rate: undefined, discount_rate: 0.08, terminal_growth_rate: 0.025, years: 5,
+      });
+    });
+  });
+
+  it("Use as IRR exit price fills the IRR form with the real DCF per-share value", async () => {
+    vi.spyOn(api, "getDcf").mockResolvedValue({
+      ticker: "NVDA", as_of: "2026-08-06T00:00:00Z",
+      assumptions: {
+        base_fcf: 1000, growth_rate: 0.10, growth_rate_was_default: true,
+        discount_rate: 0.10, terminal_growth_rate: 0.025, years: 5,
+        net_debt: 0, shares_outstanding: 100,
+      },
+      enterprise_value: 5000, equity_value: 5000, per_share_value: 194.87,
+      terminal_value: 4000, present_value_of_terminal_value: 3500,
+      projections: [],
+    });
+    render(<ValuationPage />);
+    enterTicker();
+    fireEvent.click(screen.getAllByText("Compute")[3]);
+
+    await waitFor(() => screen.getByText("Use as IRR exit price ↓"));
+    fireEvent.click(screen.getByText("Use as IRR exit price ↓"));
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("Exit price")).toHaveValue(194.87);
+    });
+  });
+
   it("reverse DCF honestly shows 'No solution' rather than a fabricated number", async () => {
     vi.spyOn(api, "getReverseDcf").mockResolvedValue({
       ticker: "NVDA", as_of: "2026-08-06T00:00:00Z", current_price: 999999,
@@ -186,7 +239,7 @@ describe("Valuation page", () => {
     fireEvent.click(screen.getByText("Use in DCF below"));
 
     await waitFor(() => {
-      expect(screen.getByPlaceholderText("Discount rate")).toHaveValue(0.0969);
+      expect(screen.getByPlaceholderText("Discount rate %")).toHaveValue(9.69);
     });
   });
 
