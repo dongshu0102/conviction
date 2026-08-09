@@ -64,21 +64,36 @@ jobs:
     steps:
       - name: Check alerts (price moves, upcoming earnings)
         run: |
-          curl -sf -X POST "$API_BASE/alerts/check" \
-            -H "X-Api-Key: ${{ secrets.CONVICTION_API_KEY }}" \
-            | python3 -c "import json,sys; d=json.load(sys.stdin); print(f'{len(d)} new alert(s)')"
+          response=$(curl -s -w "\n%{http_code}" -X POST "$API_BASE/alerts/check" \
+            -H "X-Api-Key: ${{ secrets.CONVICTION_API_KEY }}")
+          status="${response##*$'\n'}"
+          body="${response%$'\n'*}"
+          echo "HTTP status: $status"
+          echo "Body: $body"
+          if [ "$status" != "200" ]; then echo "::error::alerts/check failed"; exit 1; fi
+          echo "$body" | python3 -c "import json,sys; d=json.load(sys.stdin); print(f'{len(d)} new alert(s)')"
 
       - name: Check growth candidates
         run: |
-          curl -sf -X POST "$API_BASE/growth-candidates/check" \
-            -H "X-Api-Key: ${{ secrets.CONVICTION_API_KEY }}" \
-            | python3 -c "import json,sys; d=json.load(sys.stdin); print(f'{len(d)} new alert(s)')"
+          response=$(curl -s -w "\n%{http_code}" -X POST "$API_BASE/growth-candidates/check" \
+            -H "X-Api-Key: ${{ secrets.CONVICTION_API_KEY }}")
+          status="${response##*$'\n'}"
+          body="${response%$'\n'*}"
+          echo "HTTP status: $status"
+          echo "Body: $body"
+          if [ "$status" != "200" ]; then echo "::error::growth-candidates/check failed"; exit 1; fi
+          echo "$body" | python3 -c "import json,sys; d=json.load(sys.stdin); print(f'{len(d)} new alert(s)')"
 
       - name: Scan capital flow (insider + Senate + House + macro)
         run: |
-          curl -sf -X POST "$API_BASE/capital-flow/scan" \
-            -H "X-Api-Key: ${{ secrets.CONVICTION_API_KEY }}" \
-            | python3 -c "import json,sys; d=json.load(sys.stdin); print(f\"{d['new_event_count']} new event(s)\")"
+          response=$(curl -s -w "\n%{http_code}" -X POST "$API_BASE/capital-flow/scan" \
+            -H "X-Api-Key: ${{ secrets.CONVICTION_API_KEY }}")
+          status="${response##*$'\n'}"
+          body="${response%$'\n'*}"
+          echo "HTTP status: $status"
+          echo "Body: $body"
+          if [ "$status" != "200" ]; then echo "::error::capital-flow/scan failed"; exit 1; fi
+          echo "$body" | python3 -c "import json,sys; d=json.load(sys.stdin); print(f\"{d['new_event_count']} new event(s)\")"
 
   daily-volume-scan:
     # Deliberately NOT included in workflow_dispatch's manual-trigger
@@ -91,6 +106,11 @@ jobs:
     steps:
       - name: Scan capital flow (S&P 500 volume)
         run: |
-          curl -sf -X POST "$API_BASE/capital-flow/scan?include_volume_scan=true" \
-            -H "X-Api-Key: ${{ secrets.CONVICTION_API_KEY }}" \
-            | python3 -c "import json,sys; d=json.load(sys.stdin); print(f\"{d['new_event_count']} new event(s)\")"
+          response=$(curl -s -w "\n%{http_code}" -X POST "$API_BASE/capital-flow/scan?include_volume_scan=true" \
+            -H "X-Api-Key: ${{ secrets.CONVICTION_API_KEY }}")
+          status="${response##*$'\n'}"
+          body="${response%$'\n'*}"
+          echo "HTTP status: $status"
+          echo "Body: $body"
+          if [ "$status" != "200" ]; then echo "::error::capital-flow/scan (volume) failed"; exit 1; fi
+          echo "$body" | python3 -c "import json,sys; d=json.load(sys.stdin); print(f\"{d['new_event_count']} new event(s)\")"
