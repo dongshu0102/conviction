@@ -1,0 +1,96 @@
+name: Scheduled Monitoring Checks
+
+# Calls the already-deployed REST endpoints on a schedule — deliberately
+# NOT running scripts/run_monitoring.py or scripts/run_capital_flow_scan.py
+# directly here, since that would require exposing the production
+# database to GitHub's runners (a real, meaningful security trade-off)
+# and duplicating every credential (DATABASE_URL, FMP/FRED/Anthropic
+# keys) as a second, separate secret store. Hitting the REST API
+# instead reuses infrastructure that's already deployed, already
+# authenticated, and already tested — the exact same path the "Check
+# now" / "Scan now" buttons already use.
+#
+# KNOWN LIMITATION — Alerts is per-user, not "all users": /alerts/check
+# and /growth-candidates/check both resolve to whichever user_id the
+# API key belongs to (one key = one user, see src/api/auth.py). This
+# workflow can only check the ONE user whose key is stored in
+# CONVICTION_API_KEY — genuinely different from
+# run_monitoring.py --all-users, which iterates every user with a
+# watchlist. Fine for this project's current single-operator reality;
+# would need real multi-user handling (e.g. a loop over stored API
+# keys) if that ever changes. Capital Flow has no such limit — it's
+# platform-wide, not user-scoped.
+#
+# KNOWN LIMITATION — approximate market hours, not exact: GitHub
+# Actions cron is always UTC, while US market hours are ET, which
+# shifts between UTC-5 (EST) and UTC-4 (EDT) with DST. The window below
+# is padded on both ends to safely cover both cases rather than being
+# precisely tuned to one — expect a small number of runs slightly
+# before/after the real market open/close, which is harmless for
+# idempotent, dedup-safe scans like these.
+#
+# KNOWN LIMITATION — GitHub Actions scheduled workflows are not
+# guaranteed to fire exactly on time (can be delayed under high GitHub
+# load) and are automatically disabled after 60 days with no commits
+# to the repository. Worth periodically confirming this workflow is
+# still enabled under the Actions tab.
+
+on:
+  schedule:
+    # Alerts + growth candidates + Capital Flow (insider/politician/macro) —
+    # hourly, market hours with padding (~8am-5pm ET depending on DST).
+    # Macro scanning is intentionally included here too, not on a
+    # separate schedule: /capital-flow/scan always includes it
+    # unconditionally (only volume scanning is gated behind a flag,
+    # since it's the only one with a real per-call cost) — an hourly
+    # cadence for quarterly/monthly FRED data is more than sufficient,
+    # and the real, enforced dedup means extra runs never re-alert on
+    # something already seen.
+    - cron: '0 13-21 * * 1-5'
+    # Capital Flow volume scan — once daily, after market close. The
+    # only source with a real per-call cost (500 real API calls for
+    # the S&P 500), which is why this alone gets its own, less
+    # frequent schedule via the include_volume_scan flag.
+    - cron: '30 21 * * 1-5'
+  workflow_dispatch: {}  # manual trigger from the Actions tab for testing
+
+env:
+  API_BASE: https://p8xpcshdn9.us-east-1.awsapprunner.com
+
+jobs:
+  hourly-checks:
+    if: github.event.schedule == '0 13-21 * * 1-5' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check alerts (price moves, upcoming earnings)
+        run: |
+          curl -sf -X POST "$API_BASE/alerts/check" \
+            -H "X-Api-Key: ${{ secrets.CONVICTION_API_KEY }}" \
+            | python3 -c "import json,sys; d=json.load(sys.stdin); print(f'{len(d)} new alert(s)')"
+
+      - name: Check growth candidates
+        run: |
+          curl -sf -X POST "$API_BASE/growth-candidates/check" \
+            -H "X-Api-Key: ${{ secrets.CONVICTION_API_KEY }}" \
+            | python3 -c "import json,sys; d=json.load(sys.stdin); print(f'{len(d)} new alert(s)')"
+
+      - name: Scan capital flow (insider + Senate + House + macro)
+        run: |
+          curl -sf -X POST "$API_BASE/capital-flow/scan" \
+            -H "X-Api-Key: ${{ secrets.CONVICTION_API_KEY }}" \
+            | python3 -c "import json,sys; d=json.load(sys.stdin); print(f\"{d['new_event_count']} new event(s)\")"
+
+  daily-volume-scan:
+    # Deliberately NOT included in workflow_dispatch's manual-trigger
+    # path — this job alone costs 500 real API calls, and a casual
+    # manual test run shouldn't accidentally burn that budget. Test
+    # this specific job by running scripts/run_capital_flow_scan.py
+    # --include-volume-scan locally instead.
+    if: github.event.schedule == '30 21 * * 1-5'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Scan capital flow (S&P 500 volume)
+        run: |
+          curl -sf -X POST "$API_BASE/capital-flow/scan?include_volume_scan=true" \
+            -H "X-Api-Key: ${{ secrets.CONVICTION_API_KEY }}" \
+            | python3 -c "import json,sys; d=json.load(sys.stdin); print(f\"{d['new_event_count']} new event(s)\")"
