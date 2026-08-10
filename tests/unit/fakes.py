@@ -723,3 +723,41 @@ class FakeCapitalFlowMonitorAgentCacheRepository:
         from datetime import datetime, timezone
         self.set_calls.append(result.module_id)
         self._cache[result.module_id] = (result, datetime.now(timezone.utc))
+
+
+class FakeSecForm13FDownloader:
+    def __init__(self, files_by_period: dict | None = None, raise_for_periods: set | None = None) -> None:
+        self._files_by_period = files_by_period or {}
+        self._raise_for_periods = raise_for_periods or set()
+        self.download_calls: list = []
+
+    def download_quarter(self, period_label: str) -> dict:
+        from src.infrastructure.data_providers.sec_form_13f_downloader import Form13FDownloadError
+        self.download_calls.append(period_label)
+        if period_label in self._raise_for_periods:
+            raise Form13FDownloadError(f"fake download failure for {period_label}")
+        return self._files_by_period[period_label]
+
+
+class FakeInstitutionalHoldingRepository:
+    def __init__(self) -> None:
+        self._holdings: list = []
+        self.delete_period_calls: list = []
+        self.bulk_save_calls: list = []
+
+    def bulk_save(self, holdings: list) -> int:
+        self.bulk_save_calls.append(len(holdings))
+        self._holdings.extend(holdings)
+        return len(holdings)
+
+    def delete_period(self, period_of_report) -> int:
+        self.delete_period_calls.append(period_of_report)
+        before = len(self._holdings)
+        self._holdings = [h for h in self._holdings if h.period_of_report != period_of_report]
+        return before - len(self._holdings)
+
+    def get_by_cusip(self, cusip: str, period_of_report):
+        return [h for h in self._holdings if h.cusip == cusip and h.period_of_report == period_of_report]
+
+    def get_by_filer(self, filer_cik: str, period_of_report):
+        return [h for h in self._holdings if h.filer_cik == filer_cik and h.period_of_report == period_of_report]

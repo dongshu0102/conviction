@@ -30,6 +30,14 @@ class Settings(BaseSettings):
     # -- MarketData.app (options data) --
     marketdata_api_key: str = ""
 
+    # -- SEC EDGAR (Form 13F bulk data sets) --
+    # No API key at all -- SEC requires only a compliant User-Agent
+    # identifying the requester with a real, monitored contact email,
+    # confirmed directly from SEC's own fair-access policy. Requests
+    # without one, or with a generic/default library User-Agent, are
+    # rejected with 403. Format: "AppName contact@email".
+    sec_edgar_user_agent: str = "Conviction dong.shu0102@gmail.com"
+
     # -- FRED (deep macro history — FMP's own economic-indicators
     # endpoint hard-caps at 2 rows regardless of plan tier, confirmed
     # directly including after upgrading to test this specifically) --

@@ -427,3 +427,73 @@ class CapitalFlowMonitorAgentCacheModel(Base):
     # _json_to_result for the exact shape.
     result_json: Mapped[dict] = mapped_column(JSON, nullable=False)
     cached_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+
+
+class Form13FHoldingModel(Base):
+    """One real, disclosed institutional holding from SEC's own free
+    quarterly Form 13F data sets — bulk-ingested, not a live per-
+    request API. No foreign key to `companies` — 13F holdings are
+    identified by CUSIP, and this dataset has no ticker symbol at all,
+    so there is no reliable join key against this platform's own
+    ticker-keyed companies table without a separate CUSIP-to-ticker
+    mapping this build deliberately does not attempt yet.
+
+    Deliberately no DB-level unique constraint: a manager can
+    genuinely report the same CUSIP+class more than once within one
+    filing (e.g. a shared-discretion position split across different
+    voting-authority arrangements), so a too-strict constraint risked
+    hard-failing ingestion on real, legitimate data. Idempotent
+    re-ingestion is instead handled at the application level — see
+    scripts/ingest_form_13f.py, which deletes any existing rows for an
+    accession_number before re-inserting it."""
+
+    __tablename__ = "form_13f_holdings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    cik: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    filer_name: Mapped[str] = mapped_column(String, nullable=False)
+    period_of_report: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    accession_number: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    name_of_issuer: Mapped[str] = mapped_column(String, nullable=False)
+    title_of_class: Mapped[str] = mapped_column(String(32), nullable=False)
+    cusip: Mapped[str] = mapped_column(String(9), nullable=False, index=True)
+    value_usd: Mapped[float] = mapped_column(Float, nullable=False)
+    shares_or_principal_amt: Mapped[float] = mapped_column(Float, nullable=False)
+    shares_or_principal_type: Mapped[str] = mapped_column(String(8), nullable=False)
+    put_call: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    investment_discretion: Mapped[str] = mapped_column(String(16), nullable=False)
+    ingested_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class InstitutionalHoldingModel(Base):
+    """One row from a Form 13F information table -- one security held
+    by one institutional manager as of one quarter-end. Global data,
+    not user-scoped (matches CapitalFlowEventModel's pattern, not the
+    per-user Capital Flow Monitor snapshot pattern) -- these are
+    public SEC filings, the same for every user.
+
+    No unique constraint on (accession_number, cusip): a single filing
+    can legitimately report the same CUSIP more than once (e.g. split
+    across different investment_discretion or put_call rows) -- a
+    surrogate primary key is the honest choice here, not an assumed
+    uniqueness that might not hold."""
+
+    __tablename__ = "institutional_holdings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    accession_number: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    filer_cik: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    filer_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    period_of_report: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    issuer_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    title_of_class: Mapped[str] = mapped_column(String(150), nullable=False)
+    cusip: Mapped[str] = mapped_column(String(9), nullable=False, index=True)
+    value_usd: Mapped[int] = mapped_column(Integer, nullable=False)
+    shares_or_principal_amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    share_type: Mapped[str] = mapped_column(String(10), nullable=False)
+    put_call: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    investment_discretion: Mapped[str] = mapped_column(String(20), nullable=False)
+    voting_authority_sole: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    voting_authority_shared: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    voting_authority_none: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    ingested_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
