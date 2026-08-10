@@ -386,3 +386,26 @@ class CapitalFlowEventModel(Base):
     # source (INSIDER, VOLUME, MACRO have no equivalent disclosure
     # deadline), never a fabricated False standing in for "not applicable."
     is_late_filing: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+
+class CapitalFlowMonitorSnapshotModel(Base):
+    """One saved day's Capital Flow Monitor board, per user — matches
+    this platform's existing per-user pattern (watchlist, alerts,
+    growth candidates), not a shared global board. Replaces the
+    original artifact's window.storage persistence with real Postgres.
+    """
+
+    __tablename__ = "capital_flow_monitor_snapshots"
+    __table_args__ = (
+        UniqueConstraint("user_id", "snapshot_date", name="uq_cfm_snapshot_user_date"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    snapshot_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    # {module_id: [headline_value, headline_direction, as_of]} — a plain
+    # JSON-serializable dict, matching the artifact's original compact
+    # per-module shape (v/d/as_of) rather than the full module result.
+    signals: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    regime_label: Mapped[str | None] = mapped_column(String, nullable=True)
+    regime_stance: Mapped[str | None] = mapped_column(String(16), nullable=True)

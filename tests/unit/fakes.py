@@ -628,3 +628,71 @@ class FakeCapitalFlowRepository:
     def list_recent(self, source=None, limit: int = 50) -> list:
         results = self._saved if source is None else [e for e in self._saved if e.source == source]
         return list(reversed(results))[:limit]
+
+
+class FakeCapitalFlowMonitorAgent:
+    """Scripted per-module results/errors, matching the real
+    CapitalFlowMonitorAgent protocol without needing the anthropic
+    package installed."""
+
+    def __init__(self, results_by_module_id=None, raise_for_module_ids=None, synthesis_result=None, raise_on_synthesize=False):
+        self._results_by_module_id = results_by_module_id or {}
+        self._raise_for_module_ids = raise_for_module_ids or set()
+        self._synthesis_result = synthesis_result
+        self._raise_on_synthesize = raise_on_synthesize
+        self.fetch_calls: list = []
+        self.synthesize_calls: list = []
+
+    def fetch_module(self, module_def):
+        from src.application.interfaces.capital_flow_monitor_agent import CapitalFlowMonitorAgentError
+        self.fetch_calls.append(module_def.id)
+        if module_def.id in self._raise_for_module_ids:
+            raise CapitalFlowMonitorAgentError(f"agent failed for {module_def.id}")
+        return self._results_by_module_id[module_def.id]
+
+    def synthesize(self, loaded):
+        from src.application.interfaces.capital_flow_monitor_agent import CapitalFlowMonitorAgentError
+        self.synthesize_calls.append(loaded)
+        if self._raise_on_synthesize:
+            raise CapitalFlowMonitorAgentError("synthesis failed")
+        return self._synthesis_result
+
+
+class FakeMacroHistoryProviderForMonitor:
+    """Separate from _FakeMacroHistoryProvider in
+    test_run_capital_flow_scan.py (that one's local to its own test
+    module) — same simple shape, reused here since the Capital Flow
+    Monitor's use cases need the identical interface."""
+
+    def __init__(self, readings_by_series=None, raise_on_series=None):
+        self._readings_by_series = readings_by_series or {}
+        self._raise_on_series = raise_on_series or set()
+
+    def get_series_history(self, series_id: str, limit: int = 24):
+        if series_id in self._raise_on_series:
+            raise NotImplementedError("not supported")
+        return self._readings_by_series.get(series_id, [])[:limit]
+
+
+class FakeCapitalFlowMonitorSnapshotRepository:
+    def __init__(self) -> None:
+        self._snapshots: dict = {}  # (user_id, snapshot_date) -> CapitalFlowMonitorSnapshot
+
+    def save_snapshot(self, user_id: str, snapshot) -> None:
+        key = (user_id, snapshot.snapshot_date)
+        existing = self._snapshots.get(key)
+        if existing is None:
+            self._snapshots[key] = snapshot
+        else:
+            from src.domain.entities.capital_flow_monitor import CapitalFlowMonitorSnapshot
+            merged_signals = {**existing.signals, **snapshot.signals}
+            self._snapshots[key] = CapitalFlowMonitorSnapshot(
+                snapshot_date=existing.snapshot_date,
+                signals=merged_signals,
+                regime_label=snapshot.regime_label if snapshot.regime_label is not None else existing.regime_label,
+                regime_stance=snapshot.regime_stance if snapshot.regime_label is not None else existing.regime_stance,
+            )
+
+    def list_recent(self, user_id: str, limit: int = 14) -> list:
+        mine = [s for (u, _), s in self._snapshots.items() if u == user_id]
+        return sorted(mine, key=lambda s: s.snapshot_date, reverse=True)[:limit]

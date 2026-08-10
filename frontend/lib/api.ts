@@ -526,6 +526,49 @@ export interface Next13FDeadline {
   source_note: string;
 }
 
+export interface CapitalFlowMonitorModuleDef {
+  id: string;
+  group: string;
+  title: string;
+  cadence: string;
+  source: string;
+  is_agent_estimate: boolean;
+}
+
+export interface CapitalFlowMonitorDetail {
+  label: string;
+  value: string;
+}
+
+export interface CapitalFlowMonitorModuleResult {
+  module_id: string;
+  headline_value: string;
+  headline_direction: string | null;
+  headline_label: string;
+  details: CapitalFlowMonitorDetail[];
+  read: string;
+  source_note: string;
+  as_of: string;
+  fetched_at: string;
+  is_agent_estimate: boolean;
+}
+
+export interface CapitalFlowMonitorSynthesis {
+  regime: string;
+  stance: string;
+  supportive: string[];
+  headwinds: string[];
+  conflict: string;
+  watch: string;
+}
+
+export interface CapitalFlowMonitorSnapshot {
+  snapshot_date: string;
+  signals: Record<string, [string, string | null, string]>;
+  regime_label: string | null;
+  regime_stance: string | null;
+}
+
 export interface ValuationSnapshot {
   ticker: string;
   as_of: string;
@@ -801,6 +844,16 @@ export const api = {
   triggerCapitalFlowScan: () =>
     request<CapitalFlowScanResult>("/capital-flow/scan", { method: "POST" }),
   getNext13FDeadline: () => request<Next13FDeadline>("/capital-flow/13f-deadline"),
+  getCapitalFlowMonitorModules: () => request<CapitalFlowMonitorModuleDef[]>("/capital-flow-monitor/modules"),
+  loadCapitalFlowMonitorModule: (moduleId: string) =>
+    request<CapitalFlowMonitorModuleResult>(`/capital-flow-monitor/modules/${encodeURIComponent(moduleId)}/load`, { method: "POST" }),
+  synthesizeCapitalFlowMonitor: (loaded: { title: string; group: string; result: CapitalFlowMonitorModuleResult }[]) =>
+    request<CapitalFlowMonitorSynthesis>("/capital-flow-monitor/synthesize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ loaded }),
+    }),
+  getCapitalFlowMonitorHistory: () => request<CapitalFlowMonitorSnapshot[]>("/capital-flow-monitor/history"),
   getValuation: (ticker: string) =>
     request<ValuationSnapshot>(`/companies/${encodeURIComponent(ticker.toUpperCase())}/valuation`),
   getDcf: (

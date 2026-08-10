@@ -836,3 +836,57 @@ class ResearchReportSchema(BaseModel):
     generated_at: datetime
     model_used: str
     grounded_fiscal_year: int | None
+
+
+class CapitalFlowMonitorModuleDefSchema(BaseModel):
+    id: str
+    group: str
+    title: str
+    cadence: str
+    source: str
+    is_agent_estimate: bool  # tells the frontend whether this module's numbers are a real API reading or an AI's best-effort web-search estimate
+
+
+class CapitalFlowMonitorDetailSchema(BaseModel):
+    label: str
+    value: str
+
+
+class CapitalFlowMonitorModuleResultSchema(BaseModel):
+    module_id: str
+    headline_value: str
+    headline_direction: str | None
+    headline_label: str
+    details: list[CapitalFlowMonitorDetailSchema]
+    read: str
+    source_note: str
+    as_of: str
+    fetched_at: datetime
+    is_agent_estimate: bool
+
+
+class CapitalFlowMonitorLoadedModuleSchema(BaseModel):
+    title: str
+    group: str
+    result: CapitalFlowMonitorModuleResultSchema
+
+
+class CapitalFlowMonitorSynthesisRequestSchema(BaseModel):
+    loaded: list[CapitalFlowMonitorLoadedModuleSchema]
+
+
+class CapitalFlowMonitorSynthesisSchema(BaseModel):
+    regime: str
+    stance: str
+    supportive: list[str]
+    headwinds: list[str]
+    conflict: str
+    watch: str
+
+
+class CapitalFlowMonitorSnapshotSchema(BaseModel):
+    snapshot_date: date
+    # module_id -> [headline_value, headline_direction, as_of]
+    signals: dict[str, list[str | None]]
+    regime_label: str | None
+    regime_stance: str | None
