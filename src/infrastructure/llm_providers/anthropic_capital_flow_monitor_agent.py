@@ -88,7 +88,15 @@ Rules: every string must be short and display-ready, and must be a single line â
         try:
             response = self._client.messages.create(
                 model=self._settings.anthropic_model,
-                max_tokens=1000,
+                # A real search round-trip needs budget for the search
+                # query itself, the retrieved result content the model
+                # reads, and only then the final JSON text â€” a plain
+                # tool-free call's budget (1000) proved too tight in a
+                # real production failure: the model's response came
+                # back with no text block at all, consistent with the
+                # exchange being cut off mid-search before any final
+                # answer was produced.
+                max_tokens=4000,
                 messages=[{"role": "user", "content": system_instruction}],
                 tools=[{"type": "web_search_20250305", "name": "web_search"}],
             )
@@ -96,6 +104,10 @@ Rules: every string must be short and display-ready, and must be a single line â
             raise CapitalFlowMonitorAgentError(f"Anthropic API request failed for {module_def.id}: {exc}") from exc
 
         raw_text = _extract_text(response)
+        if not raw_text:
+            raise CapitalFlowMonitorAgentError(
+                f"{module_def.id}: empty response text (stop_reason={getattr(response, 'stop_reason', 'unknown')})"
+            )
         parsed = _parse_json_object(raw_text, context=module_def.id)
 
         missing = _MODULE_REQUIRED_KEYS - parsed.keys()

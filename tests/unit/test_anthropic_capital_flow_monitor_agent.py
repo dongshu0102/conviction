@@ -149,6 +149,36 @@ def test_fetch_module_handles_a_fence_and_json_on_the_same_line() -> None:
     assert result.as_of == "week ended July 29, 2026"
 
 
+def test_fetch_module_raises_a_clear_error_when_the_response_has_no_text() -> None:
+    """Regression test for a real, confirmed production failure: a
+    web_search-enabled call returned no text block at all (an empty
+    response), consistent with the exchange being cut off mid-search
+    before any final answer — the resulting error must clearly say
+    the response was empty, not a confusing 'no JSON object found in
+    response: ' with nothing useful after the colon."""
+    client = _FakeAnthropicClient("")
+    agent = AnthropicCapitalFlowMonitorAgent(_settings(), client=client)
+
+    try:
+        agent.fetch_module(_etf_module_def())
+        assert False, "expected CapitalFlowMonitorAgentError"
+    except CapitalFlowMonitorAgentError as exc:
+        assert "empty response" in str(exc)
+
+
+def test_fetch_module_uses_a_generous_token_budget_for_the_search_round_trip() -> None:
+    """Regression test for the same production failure's root cause:
+    1000 tokens proved too tight for a real web_search round-trip
+    (query + retrieved content + final answer) — must be meaningfully
+    higher now."""
+    client = _FakeAnthropicClient('{"as_of": "x", "headline_value": "x", "headline_label": "x", "read": "x", "source_note": "x"}')
+    agent = AnthropicCapitalFlowMonitorAgent(_settings(), client=client)
+
+    agent.fetch_module(_etf_module_def())
+
+    assert client.messages.last_call_kwargs["max_tokens"] >= 4000
+
+
 def test_synthesize_parses_a_real_shaped_response() -> None:
     response_json = (
         '{"regime": "Cautious risk-on", "stance": "mixed", '
