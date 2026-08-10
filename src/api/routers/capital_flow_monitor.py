@@ -191,38 +191,3 @@ def get_history(
         )
         for s in snapshots
     ]
-
-
-@router.get("/_debug/cache/{module_id}")
-def debug_cache_state(
-    module_id: str,
-    cache_repo: SqlAlchemyCapitalFlowMonitorAgentCacheRepository = Depends(get_capital_flow_monitor_agent_cache_repository),
-) -> dict:
-    """TEMPORARY — direct visibility into the cache table's real state
-    while diagnosing a genuine production issue (caching appearing not
-    to take effect). Remove once resolved."""
-    from datetime import datetime, timezone
-
-    from sqlalchemy import select
-
-    from src.infrastructure.persistence.database import session_scope
-    from src.infrastructure.persistence.models import CapitalFlowMonitorAgentCacheModel
-
-    with session_scope() as session:
-        row = session.execute(
-            select(CapitalFlowMonitorAgentCacheModel).where(
-                CapitalFlowMonitorAgentCacheModel.module_id == module_id,
-            )
-        ).scalar_one_or_none()
-
-        if row is None:
-            return {"exists": False}
-
-        cached_at = row.cached_at
-        return {
-            "exists": True,
-            "cached_at": cached_at.isoformat(),
-            "cached_at_tzinfo": str(cached_at.tzinfo),
-            "age_seconds_naive_now": (datetime.now() - cached_at.replace(tzinfo=None)).total_seconds(),
-            "result_fetched_at": row.result_json.get("fetched_at"),
-        }

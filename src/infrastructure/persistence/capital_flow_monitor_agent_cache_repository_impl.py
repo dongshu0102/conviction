@@ -58,7 +58,7 @@ class SqlAlchemyCapitalFlowMonitorAgentCacheRepository(CapitalFlowMonitorAgentCa
             ).scalar_one_or_none()
 
             if row is None:
-                logger.warning("Capital flow monitor cache MISS (no row) for %s", module_id)
+                logger.debug("Capital flow monitor cache MISS (no row) for %s", module_id)
                 return None
 
             cached_at = row.cached_at
@@ -71,17 +71,17 @@ class SqlAlchemyCapitalFlowMonitorAgentCacheRepository(CapitalFlowMonitorAgentCa
 
             age_seconds = (datetime.now(timezone.utc) - cached_at).total_seconds()
             if age_seconds > max_age_seconds:
-                logger.warning(
+                logger.debug(
                     "Capital flow monitor cache MISS (expired) for %s: age=%.1fs > max=%.1fs",
                     module_id, age_seconds, max_age_seconds,
                 )
                 return None
 
-            logger.warning("Capital flow monitor cache HIT for %s: age=%.1fs", module_id, age_seconds)
+            logger.debug("Capital flow monitor cache HIT for %s: age=%.1fs", module_id, age_seconds)
             return _json_to_result(row.result_json)
 
     def set_cached(self, result: CapitalFlowMonitorModuleResult) -> None:
-        logger.warning("Capital flow monitor cache SET for %s", result.module_id)
+        logger.debug("Capital flow monitor cache SET for %s", result.module_id)
         with session_scope() as session:
             existing = session.execute(
                 select(CapitalFlowMonitorAgentCacheModel).where(
@@ -101,4 +101,4 @@ class SqlAlchemyCapitalFlowMonitorAgentCacheRepository(CapitalFlowMonitorAgentCa
             else:
                 existing.result_json = result_json
                 existing.cached_at = datetime.now(timezone.utc)
-        logger.warning("Capital flow monitor cache SET committed for %s", result.module_id)
+        logger.debug("Capital flow monitor cache SET committed for %s", result.module_id)
