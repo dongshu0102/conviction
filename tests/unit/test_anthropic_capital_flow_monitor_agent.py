@@ -127,6 +127,28 @@ def test_fetch_module_tolerates_prose_wrapped_json_realistic_for_web_search() ->
     assert result.headline_value == "271bp"
 
 
+def test_fetch_module_handles_a_fence_and_json_on_the_same_line() -> None:
+    """Regression test for a real, confirmed production failure: the
+    model sometimes emits ```json {...}``` all on one line, with no
+    newline right after the opening fence. A naive split-on-first-
+    newline approach tears the JSON object apart wherever the first
+    newline happens to fall later in the text (e.g. inside the "read"
+    field), rather than at the fence boundary — this must parse
+    correctly instead."""
+    response_text = (
+        '```json {"as_of": "week ended July 29, 2026", "headline_value": '
+        '"$18.30 billion inflow", "headline_direction": "inflow", '
+        '"headline_label": "Domestic equity funds (week)", "details": [], '
+        '"read": "Line one.\\nLine two.", "source_note": "ici.org"}```'
+    )
+    client = _FakeAnthropicClient(response_text)
+    agent = AnthropicCapitalFlowMonitorAgent(_settings(), client=client)
+
+    result = agent.fetch_module(_etf_module_def())
+    assert result.headline_value == "$18.30 billion inflow"
+    assert result.as_of == "week ended July 29, 2026"
+
+
 def test_synthesize_parses_a_real_shaped_response() -> None:
     response_json = (
         '{"regime": "Cautious risk-on", "stance": "mixed", '

@@ -40,29 +40,30 @@ def _extract_text(response) -> str:
 
 
 def _parse_json_object(raw_text: str, context: str) -> dict:
-    """Strips markdown fences if present and parses the first {...}
-    object found — mirrors this codebase's established
-    Claude-JSON-response parsing convention (see
-    anthropic_theme_synthesis_generator.py), extended slightly to also
-    tolerate leading/trailing prose around the JSON, since a
-    web_search-enabled response is more likely to include a short
-    preamble than a plain structured-output call."""
-    clean = raw_text.strip()
-    if clean.startswith("```"):
-        clean = clean.split("\n", 1)[1] if "\n" in clean else clean
-        clean = clean.removesuffix("```").strip()
-        if clean.startswith("json"):
-            clean = clean[4:].strip()
+    """Locates and parses the {...} JSON object anywhere in raw_text —
+    robust to markdown fences, a preamble, or trailing commentary
+    around it, all in one pass, regardless of newline placement.
 
+    Deliberately does NOT special-case markdown fences with a
+    newline-dependent split: a real production failure showed the
+    model sometimes emits ```json {...}``` all on one line (no
+    newline right after the fence) rather than the tidier
+    ```json\\n{...}\\n``` shape a naive split assumes — splitting on
+    "the first newline anywhere in the string" in that case tears the
+    JSON object apart wherever a newline happens to occur later in the
+    text, not at the fence boundary. find/rfind sidesteps this
+    entirely by locating the actual braces directly, no matter what
+    surrounds them."""
+    clean = raw_text.strip()
     start = clean.find("{")
     end = clean.rfind("}")
     if start == -1 or end == -1 or end < start:
-        raise CapitalFlowMonitorAgentError(f"{context}: no JSON object found in response: {raw_text[:200]}")
+        raise CapitalFlowMonitorAgentError(f"{context}: no JSON object found in response: {raw_text[:500]}")
 
     try:
         return json.loads(clean[start : end + 1])
     except json.JSONDecodeError as exc:
-        raise CapitalFlowMonitorAgentError(f"{context}: response was not valid JSON: {raw_text[:200]}") from exc
+        raise CapitalFlowMonitorAgentError(f"{context}: response was not valid JSON: {raw_text[:500]}") from exc
 
 
 class AnthropicCapitalFlowMonitorAgent(CapitalFlowMonitorAgent):
@@ -82,7 +83,7 @@ class AnthropicCapitalFlowMonitorAgent(CapitalFlowMonitorAgent):
 Respond with ONLY a single valid JSON object, no markdown fences, no preamble, no commentary. Use exactly this shape:
 {module_def.schema}
 
-Rules: every string must be short and display-ready. If an exact figure can't be found, give the most recent figure you CAN verify and say the period in "as_of". Never invent precise numbers — if genuinely nothing is found, set "headline_value" to "unavailable" and explain briefly in "read"."""
+Rules: every string must be short and display-ready, and must be a single line — never include a literal line break inside a string value, since that breaks JSON parsing. If an exact figure can't be found, give the most recent figure you CAN verify and say the period in "as_of". Never invent precise numbers — if genuinely nothing is found, set "headline_value" to "unavailable" and explain briefly in "read"."""
 
         try:
             response = self._client.messages.create(
