@@ -696,3 +696,30 @@ class FakeCapitalFlowMonitorSnapshotRepository:
     def list_recent(self, user_id: str, limit: int = 14) -> list:
         mine = [s for (u, _), s in self._snapshots.items() if u == user_id]
         return sorted(mine, key=lambda s: s.snapshot_date, reverse=True)[:limit]
+
+
+class FakeCapitalFlowMonitorAgentCacheRepository:
+    """Matches the real repository's semantics: a shared, GLOBAL cache
+    (module_id only, no user scoping) with an age-based TTL check."""
+
+    def __init__(self) -> None:
+        self._cache: dict = {}  # module_id -> (result, cached_at)
+        self.get_calls: list = []
+        self.set_calls: list = []
+
+    def get_cached(self, module_id: str, max_age_seconds: float):
+        from datetime import datetime, timezone
+        self.get_calls.append(module_id)
+        entry = self._cache.get(module_id)
+        if entry is None:
+            return None
+        result, cached_at = entry
+        age_seconds = (datetime.now(timezone.utc) - cached_at).total_seconds()
+        if age_seconds > max_age_seconds:
+            return None
+        return result
+
+    def set_cached(self, result) -> None:
+        from datetime import datetime, timezone
+        self.set_calls.append(result.module_id)
+        self._cache[result.module_id] = (result, datetime.now(timezone.utc))

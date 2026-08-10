@@ -409,3 +409,21 @@ class CapitalFlowMonitorSnapshotModel(Base):
     signals: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     regime_label: Mapped[str | None] = mapped_column(String, nullable=True)
     regime_stance: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
+
+class CapitalFlowMonitorAgentCacheModel(Base):
+    """A shared, GLOBAL cache (module_id is the primary key — no
+    user_id at all) for the Capital Flow Monitor's 9 agent-backed
+    module results. Deliberately a separate table from
+    CapitalFlowMonitorSnapshotModel, which is per-user history — this
+    is a different concern (shared cost-saving cache), not a personal
+    record."""
+
+    __tablename__ = "capital_flow_monitor_agent_cache"
+
+    module_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    # The full CapitalFlowMonitorModuleResult, serialized — see
+    # capital_flow_monitor_repository_impl.py's _result_to_json /
+    # _json_to_result for the exact shape.
+    result_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    cached_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)

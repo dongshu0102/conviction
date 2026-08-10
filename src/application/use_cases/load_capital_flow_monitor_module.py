@@ -3,12 +3,20 @@
 Dispatches to one of 3 real data-sourcing paths based on module_id:
 - "credit" -> a real FRED call (capital_flow_monitor_math.py)
 - "liquidity" -> 4 real FRED calls (capital_flow_monitor_math.py)
-- anything else -> the Claude + web_search agent
+- anything else -> the Claude + web_search agent, behind a shared,
+  GLOBAL cache (see AGENT_CACHE_TTL_SECONDS below) — the underlying
+  real-world data (ETF flows, Fed expectations, etc.) is the same for
+  every user, so one real, costly web_search call can serve every
+  user's load within the cache window instead of each triggering its
+  own. The 2 real-FRED modules never use this cache — FRED calls are
+  free and fast, nothing worth caching against.
 
 Every successful load also saves a snapshot for that one module,
 matching the original artifact's "every successful load persists
 immediately" behavior — history accumulates module-by-module, not
-only when synthesis runs.
+only when synthesis runs. This happens on a cache hit too: the user
+genuinely did load the module, just served from cache rather than a
+fresh agent call.
 """
 from __future__ import annotations
 
@@ -27,6 +35,9 @@ from src.domain.entities.capital_flow_monitor import (
     CapitalFlowMonitorModuleResult,
     CapitalFlowMonitorSnapshot,
 )
+from src.domain.repositories.capital_flow_monitor_agent_cache_repository import (
+    CapitalFlowMonitorAgentCacheRepository,
+)
 from src.domain.repositories.capital_flow_monitor_repository import (
     CapitalFlowMonitorSnapshotRepository,
 )
@@ -38,6 +49,14 @@ from src.domain.services.capital_flow_monitor_math import (
 )
 
 _MODULES_BY_ID = {m.id: m for m in CAPITAL_FLOW_MONITOR_MODULES}
+
+# 1 hour: frequent enough that even the "Daily"/"Live" cadence modules
+# (ETF Flows, Fed Expectations) still get reasonably fresh data within
+# a trading day, but long enough to meaningfully absorb the realistic
+# waste case — a user clicking refresh repeatedly, or multiple users
+# loading the same module within a short window — without adding a
+# forced-refresh bypass that would undermine the whole point.
+AGENT_CACHE_TTL_SECONDS = 60 * 60
 
 
 class LoadCapitalFlowMonitorModuleError(Exception):
@@ -52,10 +71,12 @@ class LoadCapitalFlowMonitorModuleUseCase:
         agent: CapitalFlowMonitorAgent,
         macro_history_provider: MacroHistoryProvider,
         snapshot_repo: CapitalFlowMonitorSnapshotRepository,
+        agent_cache_repo: CapitalFlowMonitorAgentCacheRepository,
     ) -> None:
         self._agent = agent
         self._macro_history_provider = macro_history_provider
         self._snapshot_repo = snapshot_repo
+        self._agent_cache_repo = agent_cache_repo
 
     def execute(self, user_id: str, module_id: str) -> CapitalFlowMonitorModuleResult:
         module_def = _MODULES_BY_ID.get(module_id)
@@ -67,12 +88,22 @@ class LoadCapitalFlowMonitorModuleUseCase:
         elif module_id == "liquidity":
             result = self._load_liquidity()
         else:
-            try:
-                result = self._agent.fetch_module(module_def)
-            except CapitalFlowMonitorAgentError as exc:
-                raise LoadCapitalFlowMonitorModuleError(str(exc)) from exc
+            result = self._load_agent_backed(module_def)
 
         self._save_single_module_snapshot(user_id, result)
+        return result
+
+    def _load_agent_backed(self, module_def) -> CapitalFlowMonitorModuleResult:
+        cached = self._agent_cache_repo.get_cached(module_def.id, max_age_seconds=AGENT_CACHE_TTL_SECONDS)
+        if cached is not None:
+            return cached
+
+        try:
+            result = self._agent.fetch_module(module_def)
+        except CapitalFlowMonitorAgentError as exc:
+            raise LoadCapitalFlowMonitorModuleError(str(exc)) from exc
+
+        self._agent_cache_repo.set_cached(result)
         return result
 
     def _load_credit(self) -> CapitalFlowMonitorModuleResult:

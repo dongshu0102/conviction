@@ -6,6 +6,8 @@ existing watchlist/alerts pattern, not a shared global one.
 """
 from __future__ import annotations
 
+from functools import lru_cache
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from src.api.auth import get_authenticated_user_id
@@ -34,9 +36,13 @@ from src.infrastructure.data_providers.fred_provider import FredProvider
 from src.infrastructure.llm_providers.anthropic_capital_flow_monitor_agent import (
     AnthropicCapitalFlowMonitorAgent,
 )
+from src.infrastructure.persistence.capital_flow_monitor_agent_cache_repository_impl import (
+    SqlAlchemyCapitalFlowMonitorAgentCacheRepository,
+)
 from src.infrastructure.persistence.capital_flow_monitor_repository_impl import (
     SqlAlchemyCapitalFlowMonitorSnapshotRepository,
 )
+from src.infrastructure.rate_limit.in_memory_rate_limiter import InMemoryRateLimiter
 
 router = APIRouter(prefix="/capital-flow-monitor", tags=["capital-flow-monitor"])
 
@@ -53,12 +59,29 @@ def get_capital_flow_monitor_snapshot_repository() -> SqlAlchemyCapitalFlowMonit
     return SqlAlchemyCapitalFlowMonitorSnapshotRepository()
 
 
+def get_capital_flow_monitor_agent_cache_repository() -> SqlAlchemyCapitalFlowMonitorAgentCacheRepository:
+    return SqlAlchemyCapitalFlowMonitorAgentCacheRepository()
+
+
+@lru_cache
+def get_load_module_rate_limiter() -> InMemoryRateLimiter:
+    # 30 requests per 15 minutes per user — generous enough for a
+    # couple of full "Load all" cycles (11 modules each) plus manual
+    # refreshes, while still bounding a runaway loop. This limits how
+    # often the USE CASE can be invoked at all; the agent cache above
+    # separately bounds how often that invocation actually reaches a
+    # real, costly Anthropic call — the two guard different things and
+    # both matter (a cache hit is still a real request worth capping).
+    return InMemoryRateLimiter(max_requests=30, window_seconds=15 * 60)
+
+
 def get_load_module_use_case(
     agent: AnthropicCapitalFlowMonitorAgent = Depends(get_capital_flow_monitor_agent),
     fred: FredProvider = Depends(get_fred_provider_for_monitor),
     repo: SqlAlchemyCapitalFlowMonitorSnapshotRepository = Depends(get_capital_flow_monitor_snapshot_repository),
+    cache_repo: SqlAlchemyCapitalFlowMonitorAgentCacheRepository = Depends(get_capital_flow_monitor_agent_cache_repository),
 ) -> LoadCapitalFlowMonitorModuleUseCase:
-    return LoadCapitalFlowMonitorModuleUseCase(agent, fred, repo)
+    return LoadCapitalFlowMonitorModuleUseCase(agent, fred, repo, cache_repo)
 
 
 def get_synthesize_use_case(
@@ -102,7 +125,13 @@ def load_module(
     module_id: str,
     user_id: str = Depends(get_authenticated_user_id),
     use_case: LoadCapitalFlowMonitorModuleUseCase = Depends(get_load_module_use_case),
+    rate_limiter: InMemoryRateLimiter = Depends(get_load_module_rate_limiter),
 ) -> CapitalFlowMonitorModuleResultSchema:
+    if not rate_limiter.allow(user_id):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many module loads — please wait a few minutes and try again.",
+        )
     try:
         result = use_case.execute(user_id, module_id)
     except LoadCapitalFlowMonitorModuleError as exc:
