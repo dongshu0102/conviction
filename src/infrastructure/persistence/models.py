@@ -12,6 +12,7 @@ from datetime import date, datetime
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     Date,
     DateTime,
@@ -476,7 +477,14 @@ class InstitutionalHoldingModel(Base):
     can legitimately report the same CUSIP more than once (e.g. split
     across different investment_discretion or put_call rows) -- a
     surrogate primary key is the honest choice here, not an assumed
-    uniqueness that might not hold."""
+    uniqueness that might not hold.
+
+    value_usd, shares_or_principal_amount, and voting_authority_* are
+    BigInteger, not Integer -- confirmed as a real, necessary fix
+    against actual production data: a single mega-fund's position in
+    a mega-cap stock genuinely exceeds standard 32-bit INTEGER's
+    ~2.147 billion range (a real ingestion run hit
+    psycopg2.errors.NumericValueOutOfRange on exactly this)."""
 
     __tablename__ = "institutional_holdings"
 
@@ -488,12 +496,12 @@ class InstitutionalHoldingModel(Base):
     issuer_name: Mapped[str] = mapped_column(String(255), nullable=False)
     title_of_class: Mapped[str] = mapped_column(String(150), nullable=False)
     cusip: Mapped[str] = mapped_column(String(9), nullable=False, index=True)
-    value_usd: Mapped[int] = mapped_column(Integer, nullable=False)
-    shares_or_principal_amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    value_usd: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    shares_or_principal_amount: Mapped[int] = mapped_column(BigInteger, nullable=False)
     share_type: Mapped[str] = mapped_column(String(10), nullable=False)
     put_call: Mapped[str | None] = mapped_column(String(10), nullable=True)
     investment_discretion: Mapped[str] = mapped_column(String(20), nullable=False)
-    voting_authority_sole: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    voting_authority_shared: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    voting_authority_none: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    voting_authority_sole: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    voting_authority_shared: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    voting_authority_none: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     ingested_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
