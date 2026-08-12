@@ -756,6 +756,9 @@ class FakeInstitutionalHoldingRepository:
         self._holdings = [h for h in self._holdings if h.period_of_report != period_of_report]
         return before - len(self._holdings)
 
+    def get_existing_accession_numbers(self, period_of_report):
+        return {h.accession_number for h in self._holdings if h.period_of_report == period_of_report}
+
     def get_by_cusip(self, cusip: str, period_of_report):
         return [h for h in self._holdings if h.cusip == cusip and h.period_of_report == period_of_report]
 

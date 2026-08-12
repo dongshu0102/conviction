@@ -10,15 +10,24 @@ class InstitutionalHoldingRepository(ABC):
     @abstractmethod
     def bulk_save(self, holdings: list[InstitutionalHolding]) -> int:
         """Inserts every holding, returns the count actually inserted.
-        Callers are expected to delete_period first when re-running an
-        ingestion for a period already loaded — this does not
-        deduplicate against existing rows itself."""
+        Callers are expected to have already filtered out holdings for
+        accession numbers returned by get_existing_accession_numbers —
+        this does not deduplicate against existing rows itself."""
 
     @abstractmethod
     def delete_period(self, period_of_report: date) -> int:
         """Deletes every row for the given quarter, returns the count
-        deleted. Makes re-running the ingestion for an already-loaded
-        period idempotent rather than accumulating duplicate rows."""
+        deleted. Only used for an explicit full re-ingest — normal
+        re-runs after an interruption resume via
+        get_existing_accession_numbers instead of deleting anything."""
+
+    @abstractmethod
+    def get_existing_accession_numbers(self, period_of_report: date) -> set[str]:
+        """Every accession_number already stored for this quarter —
+        lets a re-run after an interrupted ingestion skip
+        already-inserted filings and resume from where it left off,
+        rather than re-downloading correctly but then discarding
+        real, already-committed progress."""
 
     @abstractmethod
     def get_by_cusip(self, cusip: str, period_of_report: date) -> list[InstitutionalHolding]:

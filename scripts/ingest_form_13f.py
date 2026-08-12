@@ -2,8 +2,14 @@
 
 Deliberately NOT an API endpoint: a single quarter's zip is 90+ MB and
 the information table alone can run into the hundreds of thousands of
-rows across thousands of filers — well past any sane HTTP request
+rows across thousands of filers -- well past any sane HTTP request
 timeout, exactly the same reasoning as scripts/ingest_sp500.py.
+
+Resumable by default: re-running this for a period that was partially
+loaded (e.g. interrupted by a dropped connection partway through)
+skips whatever's already stored and only inserts what's missing,
+rather than deleting everything and starting over. See
+--force-full-reingest to explicitly wipe and reload from scratch.
 
 Usage:
     python scripts/ingest_form_13f.py --period-label 2026q1 --period-of-report 2026-03-31
@@ -54,9 +60,10 @@ def main() -> int:
         help='The actual quarter-end date this data represents, YYYY-MM-DD, e.g. "2026-03-31".',
     )
     parser.add_argument(
-        "--no-replace", action="store_true",
-        help="Skip deleting existing rows for this period first (default: replace, "
-        "so re-running an already-loaded period is idempotent rather than duplicating rows).",
+        "--force-full-reingest", action="store_true",
+        help="Delete every existing row for this period first, then re-insert everything "
+        "from scratch. The rare, explicit case (e.g. SEC issues a correction) -- default "
+        "behavior instead resumes from whatever's already stored, skipping it.",
     )
     args = parser.parse_args()
 
@@ -75,19 +82,21 @@ def main() -> int:
 
     try:
         result = use_case.execute(
-            args.period_label, period_of_report, replace_existing=not args.no_replace,
+            args.period_label, period_of_report, force_full_reingest=args.force_full_reingest,
         )
-    except Exception as exc:  # noqa: BLE001 — top-level script boundary, must report clearly
+    except Exception as exc:  # noqa: BLE001 -- top-level script boundary, must report clearly
         print(f"\nINGESTION FAILED: {exc}")
+        print("Re-run the exact same command to resume -- already-inserted holdings will be skipped.")
         return 1
 
     print(f"\n{'='*60}")
     print("FORM 13F INGESTION COMPLETE")
-    print(f"  Period:              {result.period_label} ({result.period_of_report})")
-    print(f"  Submissions parsed:  {result.submissions_parsed}")
-    print(f"  Submissions kept:    {result.submissions_kept} (after de-duplicating amendments, excluding 13F-NT)")
-    print(f"  Existing rows deleted: {result.holdings_deleted}")
-    print(f"  Holdings inserted:   {result.holdings_inserted}")
+    print(f"  Period:                    {result.period_label} ({result.period_of_report})")
+    print(f"  Submissions parsed:        {result.submissions_parsed}")
+    print(f"  Submissions kept:          {result.submissions_kept} (after de-duplicating amendments, excluding 13F-NT)")
+    print(f"  Existing rows deleted:     {result.holdings_deleted}")
+    print(f"  Already present (skipped): {result.holdings_already_present}")
+    print(f"  Holdings inserted:         {result.holdings_inserted}")
 
     return 0
 
