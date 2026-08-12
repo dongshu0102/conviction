@@ -579,11 +579,57 @@ async def get_next_13f_deadline() -> str:
     from the SEC's own published FAQ table (sec.gov, not computed —
     the real deadline rule rolls forward past both weekends and
     federal holidays, complex enough that a from-scratch
-    implementation risked silently drifting wrong). Honest caveat:
-    13F holdings data itself is not currently accessible on this
-    platform's FMP plan tier (confirmed HTTP 402) — this tells you
-    WHEN the next deadline is, not what any manager actually holds."""
+    implementation risked silently drifting wrong). This tells you
+    WHEN the next deadline is — see get_institutional_holders /
+    get_institutional_portfolio / get_position_changes for what
+    managers actually hold and how their holdings have changed."""
     return await _request("GET", "/capital-flow/13f-deadline")
+
+
+@mcp.tool()
+async def get_institutional_holders(issuer: str, limit: int = 20) -> str:
+    """Every institutional manager's reported position in one
+    security, for the latest quarter actually loaded — biggest
+    holders first. Real data, sourced directly from SEC's own free,
+    official Form 13F bulk data sets (not a paid vendor). Search by
+    issuer name (e.g. "Apple"), not ticker — the raw SEC data has no
+    ticker symbol at all, only CUSIP and the issuer name exactly as
+    the filer typed it. Honest caveats: 13F only covers U.S.
+    exchange-listed equity long positions above a size threshold — no
+    short positions, no non-equity holdings, and reported ~45 days
+    after quarter-end, so this is never real-time."""
+    return await _request("GET", "/institutional-holdings/holders", params={"issuer": issuer, "limit": limit})
+
+
+@mcp.tool()
+async def get_institutional_portfolio(filer: str, limit: int = 50) -> str:
+    """One institutional manager's full reported portfolio, for the
+    latest quarter actually loaded — largest positions first. Real
+    data from SEC's own free Form 13F bulk data sets. Search by filer
+    name (e.g. "Berkshire"), not CIK. Same honest caveats as
+    get_institutional_holders: equity-only, size-thresholded, and
+    reported ~45 days after quarter-end."""
+    return await _request("GET", "/institutional-holdings/portfolio", params={"filer": filer, "limit": limit})
+
+
+@mcp.tool()
+async def get_position_changes(filer: str, min_pct_change: float = 0.0) -> str:
+    """Real, detected changes (new positions, closed positions,
+    increased, decreased) in one institutional manager's holdings
+    between the two most recent 13F quarters actually loaded. Based
+    on SHARE COUNT changes only, not dollar value — a position's
+    value can change purely from the security's price moving, with
+    zero actual trading, confirmed directly against real ingested
+    data (Berkshire Hathaway's Apple stake held an identical share
+    count across two real quarters while its dollar value changed by
+    billions). Requires at least 2 quarters ingested; fails clearly
+    if only 1 is available. min_pct_change (default 0.0) filters out
+    increased/decreased changes below this fraction — new/closed
+    positions are always included regardless."""
+    return await _request(
+        "GET", "/institutional-holdings/position-changes",
+        params={"filer": filer, "min_pct_change": min_pct_change},
+    )
 
 
 @mcp.tool()

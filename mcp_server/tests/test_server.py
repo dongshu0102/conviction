@@ -468,3 +468,51 @@ async def test_get_stock_news_uppercases_ticker_and_passes_limit():
     with patch("server._request", new=AsyncMock(return_value="[]")) as mock_req:
         await server.get_stock_news("aapl", limit=5)
     mock_req.assert_called_once_with("GET", "/companies/AAPL/news", params={"limit": 5})
+
+
+@pytest.mark.asyncio
+async def test_get_institutional_holders_passes_issuer_and_default_limit():
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.get_institutional_holders("Apple")
+    mock_req.assert_called_once_with(
+        "GET", "/institutional-holdings/holders", params={"issuer": "Apple", "limit": 20},
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_institutional_holders_passes_explicit_limit():
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.get_institutional_holders("Apple", limit=5)
+    mock_req.assert_called_once_with(
+        "GET", "/institutional-holdings/holders", params={"issuer": "Apple", "limit": 5},
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_institutional_portfolio_passes_filer_and_default_limit():
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.get_institutional_portfolio("Berkshire")
+    mock_req.assert_called_once_with(
+        "GET", "/institutional-holdings/portfolio", params={"filer": "Berkshire", "limit": 50},
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_position_changes_defaults_min_pct_change_to_zero():
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.get_position_changes("Berkshire")
+    mock_req.assert_called_once_with(
+        "GET", "/institutional-holdings/position-changes",
+        params={"filer": "Berkshire", "min_pct_change": 0.0},
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_position_changes_passes_explicit_min_pct_change():
+    with patch("server._request", new=AsyncMock(return_value="{}")) as mock_req:
+        await server.get_position_changes("Berkshire", min_pct_change=0.05)
+    mock_req.assert_called_once_with(
+        "GET", "/institutional-holdings/position-changes",
+        params={"filer": "Berkshire", "min_pct_change": 0.05},
+    )
+
