@@ -1,6 +1,6 @@
 """widen institutional_holdings numeric columns to BigInteger
 
-Revision ID: 0023_institutional_holdings_bigint
+Revision ID: 0023_holdings_bigint
 Revises: 0022_institutional_holdings
 Create Date: 2026-08-10
 
@@ -12,6 +12,17 @@ Widens value_usd, shares_or_principal_amount, and the three
 voting_authority_* columns to BigInteger, the same real overflow risk
 applying to all of them even though only value_usd was hit in
 practice so far.
+
+Revision id deliberately shortened from an earlier, longer version
+("0023_institutional_holdings_bigint", 35 chars) that silently broke
+every single deploy since it first shipped: confirmed directly from
+real App Runner application logs, alembic's own version_num column
+defaults to VARCHAR(32), and the longer id exceeded that by 3
+characters, causing psycopg2.errors.StringDataRightTruncation right
+after the actual ALTER TABLE statements below succeeded -- App Runner
+then automatically rolled back every affected deployment, which is why
+none of them appeared to take effect despite each one reporting
+"success" in CI.
 """
 from __future__ import annotations
 
@@ -20,7 +31,7 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 
-revision: str = "0023_institutional_holdings_bigint"
+revision: str = "0023_holdings_bigint"
 down_revision: Union[str, None] = "0022_institutional_holdings"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
