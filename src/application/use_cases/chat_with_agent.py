@@ -895,7 +895,13 @@ _TOOLS = [
         "real ingested data (Berkshire Hathaway's Apple stake held an "
         "identical share count across two real quarters while its "
         "dollar value changed by billions). Requires at least 2 "
-        "quarters ingested; fails clearly if only 1 is available.",
+        "quarters ingested; fails clearly if only 1 is available. "
+        "ALWAYS check filer_had_no_prior_period_data before describing "
+        "results: when true, every position shows as \"new\" only "
+        "because the manager has zero 13F on record for the prior "
+        "quarter (e.g. a newly-registered filer) — this is NOT evidence "
+        "of a real buying spree and must not be presented as one; a "
+        "response field will spell out the honest caveat to relay.",
         {
             "type": "object",
             "properties": {
@@ -1946,11 +1952,12 @@ class ChatWithAgentUseCase:
                 )
             except DetectPositionChangesError as exc:
                 return {"error": str(exc)}
-            return {
+            response = {
                 "filer_query": result.filer_query,
                 "filer_name": result.filer_name,
                 "prior_period": result.prior_period.isoformat(),
                 "current_period": result.current_period.isoformat(),
+                "filer_had_no_prior_period_data": result.filer_had_no_prior_period_data,
                 "changes": [
                     {
                         "issuer_name": c.issuer_name, "change_type": c.change_type,
@@ -1964,6 +1971,17 @@ class ChatWithAgentUseCase:
                     "share-count changes only, not dollar value."
                 ),
             }
+            if result.filer_had_no_prior_period_data:
+                response["important_context"] = (
+                    f"{result.filer_name} has NO 13F on record at all for the prior "
+                    f"quarter ({result.prior_period}) — every position below shows as "
+                    "\"new\" only because there is nothing to compare against, most "
+                    "likely because this manager only recently started filing (a real, "
+                    "confirmed scenario, e.g. a newly-registered SEC filer). This is "
+                    "NOT evidence the manager bought their entire portfolio this "
+                    "quarter — do not present it that way."
+                )
+            return response
 
         if tool_name == "ingest_etf":
             try:

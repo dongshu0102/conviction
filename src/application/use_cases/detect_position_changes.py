@@ -28,6 +28,17 @@ class DetectPositionChangesResult:
     prior_period: date
     current_period: date
     changes: tuple[PositionChange, ...]
+    filer_had_no_prior_period_data: bool
+    """True when this filer has ZERO rows anywhere in the prior
+    quarter — a real, confirmed scenario (e.g. a newly-registered
+    manager whose first-ever 13F was this quarter), not a data bug.
+    Distinguishes this from the normal case of individual positions
+    being genuinely new. Every position renders as "new" in both
+    cases, but the honest story behind that is completely different:
+    "this manager started reporting this quarter" is not the same
+    claim as "this manager just bought their whole book" — callers
+    should surface this flag rather than presenting an undifferentiated
+    wall of "new" positions either way."""
 
 
 class DetectPositionChangesUseCase:
@@ -61,4 +72,5 @@ class DetectPositionChangesUseCase:
             filer_query=filer_query, filer_name=filer_name, filer_cik=filer_cik,
             prior_period=prior_period, current_period=current_period,
             changes=tuple(changes),
+            filer_had_no_prior_period_data=(len(prior_portfolio) == 0),
         )

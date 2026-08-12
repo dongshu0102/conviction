@@ -103,6 +103,7 @@ def get_position_changes(
     return PositionChangesResponseSchema(
         filer_query=result.filer_query, filer_name=result.filer_name,
         prior_period=result.prior_period, current_period=result.current_period,
+        filer_had_no_prior_period_data=result.filer_had_no_prior_period_data,
         changes=[
             PositionChangeSchema(
                 cusip=c.cusip, issuer_name=c.issuer_name, change_type=c.change_type,

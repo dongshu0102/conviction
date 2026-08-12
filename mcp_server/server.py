@@ -625,7 +625,12 @@ async def get_position_changes(filer: str, min_pct_change: float = 0.0) -> str:
     billions). Requires at least 2 quarters ingested; fails clearly
     if only 1 is available. min_pct_change (default 0.0) filters out
     increased/decreased changes below this fraction — new/closed
-    positions are always included regardless."""
+    positions are always included regardless. ALWAYS check the
+    returned filer_had_no_prior_period_data field before describing
+    results: when true, every position shows as "new" only because
+    the manager has zero 13F on record for the prior quarter (e.g. a
+    newly-registered filer) — this is NOT evidence of a real buying
+    spree and must not be presented as one."""
     return await _request(
         "GET", "/institutional-holdings/position-changes",
         params={"filer": filer, "min_pct_change": min_pct_change},

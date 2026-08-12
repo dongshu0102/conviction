@@ -9,10 +9,11 @@ from tests.unit.fakes import FakeInstitutionalHoldingRepository
 
 
 def _holding(
-    filer_name, issuer_name, cusip, shares, value, period, accession="0001-26-000001",
+    filer_name, issuer_name, cusip, shares, value, period,
+    accession="0001-26-000001", filer_cik="0001067983",
 ) -> InstitutionalHolding:
     return InstitutionalHolding(
-        accession_number=accession, filer_cik="0001067983", filer_name=filer_name,
+        accession_number=accession, filer_cik=filer_cik, filer_name=filer_name,
         period_of_report=period, issuer_name=issuer_name, title_of_class="COM",
         cusip=cusip, value_usd=value, shares_or_principal_amount=shares, share_type="SH",
         put_call=None, investment_discretion="SOLE", voting_authority_sole=shares,
@@ -105,3 +106,42 @@ def test_execute_detects_a_real_new_position() -> None:
     new_changes = [c for c in result.changes if c.change_type == "new"]
     assert len(new_changes) == 1
     assert new_changes[0].issuer_name == "CHEVRON CORP"
+
+
+def test_execute_flags_when_the_filer_has_no_prior_period_data_at_all() -> None:
+    """Regression guard for a real, confirmed scenario found in
+    production: a filer (a newly-registered manager, high SEC CIK)
+    with data ONLY in the current quarter, zero rows in the prior one.
+    Every position correctly renders as "new" either way, but that's
+    a fundamentally different, less alarming story than an established
+    manager buying their entire book in one quarter -- callers need
+    this flag to tell the two apart honestly."""
+    repo = FakeInstitutionalHoldingRepository()
+    repo.bulk_save([
+        # An unrelated, existing filer so >=2 periods genuinely exist.
+        _holding("Some Other Fund", "MICROSOFT CORP", "594918104", 1000, 500_000, date(2025, 12, 31), filer_cik="0001111111"),
+        _holding("Some Other Fund", "MICROSOFT CORP", "594918104", 1000, 500_000, date(2026, 3, 31), filer_cik="0001111111"),
+        # The newly-registered filer: current quarter only, a genuinely different CIK.
+        _holding("Vanguard Capital Management LLC", "APPLE INC", "037833100", 5000, 1_250_000, date(2026, 3, 31), filer_cik="0002100119"),
+        _holding("Vanguard Capital Management LLC", "MICROSOFT CORP", "594918104", 3000, 1_500_000, date(2026, 3, 31), filer_cik="0002100119"),
+    ])
+    use_case = DetectPositionChangesUseCase(repo)
+
+    result = use_case.execute("Vanguard Capital Management")
+
+    assert result.filer_had_no_prior_period_data is True
+    assert len(result.changes) == 2
+    assert all(c.change_type == "new" for c in result.changes)
+
+
+def test_execute_does_not_flag_a_filer_with_genuine_prior_period_data() -> None:
+    repo = FakeInstitutionalHoldingRepository()
+    repo.bulk_save([
+        _holding("Berkshire Hathaway Inc", "APPLE INC", "037833100", 1000, 250_000, date(2025, 12, 31)),
+        _holding("Berkshire Hathaway Inc", "APPLE INC", "037833100", 1000, 250_000, date(2026, 3, 31)),
+    ])
+    use_case = DetectPositionChangesUseCase(repo)
+
+    result = use_case.execute("Berkshire")
+
+    assert result.filer_had_no_prior_period_data is False

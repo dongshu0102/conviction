@@ -482,6 +482,7 @@ class PositionChangesResponseSchema(BaseModel):
     prior_period: date
     current_period: date
     changes: list[PositionChangeSchema]
+    filer_had_no_prior_period_data: bool
     source_note: str = (
         "SEC EDGAR Form 13F, free official bulk data set. Based on share-count "
         "changes only, not value_usd — a position's dollar value can change "
