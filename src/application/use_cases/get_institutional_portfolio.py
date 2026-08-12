@@ -23,6 +23,7 @@ class GetInstitutionalPortfolioError(Exception):
 @dataclass(frozen=True, slots=True)
 class GetInstitutionalPortfolioResult:
     filer_query: str
+    filer_name: str
     period_of_report: date
     holdings: tuple[InstitutionalHolding, ...]
 
@@ -38,7 +39,30 @@ class GetInstitutionalPortfolioUseCase:
                 "No Form 13F data has been ingested yet — nothing to search."
             )
 
-        holdings = self._repository.search_by_filer_name(filer_query, period, limit=limit)
+        # Real, confirmed bug fix: resolving directly against a broad
+        # name search (e.g. "Vanguard") returned rows blended together
+        # from several genuinely different, unrelated filer entities
+        # that happen to share a name prefix (confirmed directly
+        # against real production data: "Vanguard Capital Management
+        # LLC", "Vanguard Portfolio Management LLC", and "Vanguard
+        # Advisers Inc" all appeared in a single response, presented
+        # as if they were one filer's portfolio). Resolving to ONE
+        # filer's CIK first, then fetching only that CIK's own rows,
+        # makes that impossible -- matches the same pattern already
+        # used correctly in DetectPositionChangesUseCase.
+        matches = self._repository.search_by_filer_name(filer_query, period, limit=1)
+        if not matches:
+            raise GetInstitutionalPortfolioError(
+                f"No filer matching '{filer_query}' found for the latest quarter ({period})."
+            )
+        filer_cik = matches[0].filer_cik
+        filer_name = matches[0].filer_name
+
+        holdings = self._repository.get_by_filer(filer_cik, period)
+        holdings = sorted(holdings, key=lambda h: h.value_usd, reverse=True)[:limit]
+
         return GetInstitutionalPortfolioResult(
-            filer_query=filer_query, period_of_report=period, holdings=tuple(holdings),
+            filer_query=filer_query, filer_name=filer_name,
+            period_of_report=period, holdings=tuple(holdings),
         )
+

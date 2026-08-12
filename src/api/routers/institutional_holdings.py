@@ -81,7 +81,8 @@ def get_portfolio(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     return InstitutionalPortfolioResponseSchema(
-        filer_query=result.filer_query, period_of_report=result.period_of_report,
+        filer_query=result.filer_query, filer_name=result.filer_name,
+        period_of_report=result.period_of_report,
         holdings=[_to_schema(h) for h in result.holdings],
     )
 

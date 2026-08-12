@@ -460,6 +460,7 @@ class InstitutionalHoldersResponseSchema(BaseModel):
 
 class InstitutionalPortfolioResponseSchema(BaseModel):
     filer_query: str
+    filer_name: str
     period_of_report: date
     holdings: list[InstitutionalHoldingSchema]
     source_note: str = "SEC EDGAR Form 13F, free official bulk data set — not a paid vendor."

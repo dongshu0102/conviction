@@ -874,7 +874,15 @@ _TOOLS = [
         "data from SEC's own free Form 13F bulk data sets. Search by "
         "filer name (e.g. \"Berkshire\"), not CIK. Same honest caveats as "
         "get_institutional_holders: equity-only, size-thresholded, and "
-        "reported ~45 days after quarter-end.",
+        "reported ~45 days after quarter-end. Resolves to exactly ONE "
+        "specific filer — the returned resolved_filer_name is the exact "
+        "match used, never a blend of several similarly-named entities. "
+        "When it differs meaningfully from the searched name (e.g. "
+        "confirmed real case: searching \"Vanguard\" resolves to "
+        "\"Vanguard Capital Management LLC\", one of several genuinely "
+        "distinct, unrelated SEC-registered Vanguard entities), say so "
+        "explicitly rather than silently presenting it as if it were "
+        "the entity the person meant.",
         {
             "type": "object",
             "properties": {
@@ -1933,6 +1941,7 @@ class ChatWithAgentUseCase:
                 return {"error": str(exc)}
             return {
                 "filer_query": result.filer_query,
+                "resolved_filer_name": result.filer_name,
                 "period_of_report": result.period_of_report.isoformat(),
                 "holdings": [
                     {
