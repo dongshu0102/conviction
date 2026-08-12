@@ -149,11 +149,21 @@ def parse_infotable(
         if not cusip or not issuer_name:
             continue
 
-        # VALUE is documented by SEC as "Market value (x$1000)" —
-        # confirmed directly from form_13f.pdf's own column
-        # description, not assumed. Multiplying here, once, keeps
-        # every downstream consumer working in real dollars.
-        value_usd = _parse_int(row.get("VALUE", "")) * 1000
+        # Real, confirmed bug fix: the older SEC documentation
+        # (form_13f.pdf) describes VALUE as "Market value (x$1000)",
+        # but the CURRENT bulk data set's raw VALUE column is already
+        # in actual dollars, not thousands -- confirmed directly
+        # against real, external, independently-reported data: summing
+        # every line item for Berkshire Hathaway's Apple position in a
+        # real ingested filing gave $57.84 TRILLION with the old x1000
+        # multiplication, versus a real, independently reported ~$57.9
+        # billion (22% of Berkshire's actual $263B Q1 2026 13F
+        # portfolio) -- an almost exact match with NO multiplication at
+        # all. SEC appears to have changed this column's convention at
+        # some point after the older documentation was written; this
+        # is not assumed, it's confirmed against real, external,
+        # independently-reported figures.
+        value_usd = _parse_int(row.get("VALUE", ""))
 
         holdings.append(InstitutionalHolding(
             accession_number=accession,

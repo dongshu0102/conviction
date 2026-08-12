@@ -75,10 +75,17 @@ def test_parse_infotable_emits_only_kept_accession_rows() -> None:
     assert holdings[0].accession_number == "0001067983-26-000456"
 
 
-def test_parse_infotable_converts_value_from_thousands_to_real_dollars() -> None:
-    """Regression guard for a real, easy-to-get-wrong detail: SEC's own
-    schema documents VALUE as "Market value (x$1000)" -- confirmed
-    directly from form_13f.pdf, not assumed."""
+def test_parse_infotable_uses_the_raw_value_column_without_multiplying() -> None:
+    """Regression guard for a real, confirmed production bug: the
+    older SEC documentation (form_13f.pdf) describes VALUE as "Market
+    value (x$1000)", but the CURRENT bulk data set's raw VALUE column
+    is already in actual dollars -- confirmed directly against real,
+    external, independently-reported figures (summing every line item
+    for a real filer's real position in a real ingested filing gave
+    $57.84 TRILLION with the old x1000 multiplication, versus an
+    independently-reported real total of ~$57.9 billion with none at
+    all -- an almost exact match). SEC appears to have changed this
+    column's convention since the older documentation was written."""
     submission_tsv, coverpage_tsv, infotable_tsv = _sample_dataset()
     submissions = parse_submissions(submission_tsv)
     kept = select_latest_13f_hr_submissions(submissions)
@@ -86,7 +93,7 @@ def test_parse_infotable_converts_value_from_thousands_to_real_dollars() -> None
 
     holdings = parse_infotable(infotable_tsv, kept, submissions, filer_names)
 
-    assert holdings[0].value_usd == 151_000_000
+    assert holdings[0].value_usd == 151_000
 
 
 def test_parse_infotable_fills_in_filer_name_and_period_from_the_join() -> None:
