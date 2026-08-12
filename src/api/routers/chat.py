@@ -87,7 +87,10 @@ from src.application.use_cases.compute_dcf_valuation import (
     ComputeReverseDcfUseCase,
 )
 from src.application.use_cases.compute_investment_irr import ComputeInvestmentIrrUseCase
+from src.application.use_cases.detect_position_changes import DetectPositionChangesUseCase
 from src.application.use_cases.get_capital_flow import GetCapitalFlowUseCase
+from src.application.use_cases.get_institutional_holders import GetInstitutionalHoldersUseCase
+from src.application.use_cases.get_institutional_portfolio import GetInstitutionalPortfolioUseCase
 from src.application.use_cases.get_macro_snapshot import GetMacroSnapshotUseCase
 from src.application.use_cases.get_rate_signals import GetRateSignalsUseCase
 from src.application.use_cases.get_risk_free_rate import GetRiskFreeRateUseCase
@@ -124,6 +127,9 @@ from src.infrastructure.persistence.universe_theme_repository_impl import (
 )
 from src.infrastructure.persistence.capital_flow_repository_impl import (
     SqlAlchemyCapitalFlowRepository,
+)
+from src.infrastructure.persistence.institutional_holding_repository_impl import (
+    SqlAlchemyInstitutionalHoldingRepository,
 )
 from src.infrastructure.persistence.monitoring_repository_impl import (
     SqlAlchemyPriceSnapshotRepository,
@@ -285,6 +291,7 @@ def get_chat_use_case(
         get_capital_flow=GetCapitalFlowUseCase(SqlAlchemyCapitalFlowRepository()),
         get_institutional_holders=GetInstitutionalHoldersUseCase(SqlAlchemyInstitutionalHoldingRepository()),
         get_institutional_portfolio=GetInstitutionalPortfolioUseCase(SqlAlchemyInstitutionalHoldingRepository()),
+        detect_position_changes=DetectPositionChangesUseCase(SqlAlchemyInstitutionalHoldingRepository()),
     )
 
 

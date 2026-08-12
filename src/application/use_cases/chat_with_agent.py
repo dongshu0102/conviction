@@ -79,6 +79,10 @@ from src.application.use_cases.compute_investment_irr import (
     InvalidIrrScenarioError,
 )
 from src.application.use_cases.get_capital_flow import GetCapitalFlowUseCase
+from src.application.use_cases.detect_position_changes import (
+    DetectPositionChangesError,
+    DetectPositionChangesUseCase,
+)
 from src.application.use_cases.get_institutional_holders import (
     GetInstitutionalHoldersError,
     GetInstitutionalHoldersUseCase,
@@ -881,6 +885,30 @@ _TOOLS = [
         },
     ),
     ToolDefinition(
+        "get_position_changes",
+        "Real, detected changes (new positions, closed positions, "
+        "increased, decreased) in one institutional manager's holdings "
+        "between the two most recent 13F quarters actually loaded. "
+        "Based on SHARE COUNT changes only, not dollar value — a "
+        "position's value can change purely from the security's price "
+        "moving, with zero actual trading, confirmed directly against "
+        "real ingested data (Berkshire Hathaway's Apple stake held an "
+        "identical share count across two real quarters while its "
+        "dollar value changed by billions). Requires at least 2 "
+        "quarters ingested; fails clearly if only 1 is available.",
+        {
+            "type": "object",
+            "properties": {
+                "filer": {"type": "string", "description": "Institutional manager name to search for, e.g. \"Berkshire\"."},
+                "min_pct_change": {
+                    "type": "number",
+                    "description": "Optional, default 0.0. Filters out increased/decreased changes below this fraction (e.g. 0.05 for 5%). New/closed positions are always included regardless.",
+                },
+            },
+            "required": ["filer"],
+        },
+    ),
+    ToolDefinition(
         "ingest_etf",
         "Ingest an ETF's profile (name, expense ratio, AUM) so it can be added "
         "to watchlists, themes, and screened/factor-scored. ETFs have no "
@@ -1191,6 +1219,7 @@ class ChatWithAgentUseCase:
         get_capital_flow: GetCapitalFlowUseCase,
         get_institutional_holders: GetInstitutionalHoldersUseCase,
         get_institutional_portfolio: GetInstitutionalPortfolioUseCase,
+        detect_position_changes: DetectPositionChangesUseCase,
     ) -> None:
         self._chat_agent = chat_agent
         self._get_watchlist = get_watchlist
@@ -1249,6 +1278,7 @@ class ChatWithAgentUseCase:
         self._get_capital_flow = get_capital_flow
         self._get_institutional_holders = get_institutional_holders
         self._get_institutional_portfolio = get_institutional_portfolio
+        self._detect_position_changes = detect_position_changes
         self._construct_risk_parity_portfolio = construct_risk_parity_portfolio
         self._user_id: str = ""  # set per-request in execute()
 
@@ -1907,6 +1937,32 @@ class ChatWithAgentUseCase:
                     for h in result.holdings
                 ],
                 "source_note": "SEC EDGAR Form 13F, free official bulk data set.",
+            }
+
+        if tool_name == "get_position_changes":
+            try:
+                result = self._detect_position_changes.execute(
+                    tool_input["filer"], min_pct_change=tool_input.get("min_pct_change", 0.0),
+                )
+            except DetectPositionChangesError as exc:
+                return {"error": str(exc)}
+            return {
+                "filer_query": result.filer_query,
+                "filer_name": result.filer_name,
+                "prior_period": result.prior_period.isoformat(),
+                "current_period": result.current_period.isoformat(),
+                "changes": [
+                    {
+                        "issuer_name": c.issuer_name, "change_type": c.change_type,
+                        "prior_shares": c.prior_shares, "current_shares": c.current_shares,
+                        "pct_change": c.pct_change,
+                    }
+                    for c in result.changes
+                ],
+                "source_note": (
+                    "SEC EDGAR Form 13F, free official bulk data set. Based on "
+                    "share-count changes only, not dollar value."
+                ),
             }
 
         if tool_name == "ingest_etf":

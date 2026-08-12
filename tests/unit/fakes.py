@@ -782,3 +782,28 @@ class FakeInstitutionalHoldingRepository:
     def get_latest_period_of_report(self):
         periods = {h.period_of_report for h in self._holdings}
         return max(periods) if periods else None
+
+    def get_all_periods_of_report(self):
+        periods = {h.period_of_report for h in self._holdings}
+        return sorted(periods, reverse=True)
+
+    def get_aggregated_portfolio(self, filer_cik: str, period_of_report):
+        from src.domain.entities.aggregated_position import AggregatedPosition
+
+        matches = [
+            h for h in self._holdings
+            if h.filer_cik == filer_cik and h.period_of_report == period_of_report
+        ]
+        by_cusip: dict = {}
+        for h in matches:
+            if h.cusip not in by_cusip:
+                by_cusip[h.cusip] = {"issuer_name": h.issuer_name, "shares": 0, "value": 0}
+            by_cusip[h.cusip]["shares"] += h.shares_or_principal_amount
+            by_cusip[h.cusip]["value"] += h.value_usd
+        return [
+            AggregatedPosition(
+                cusip=cusip, issuer_name=data["issuer_name"],
+                total_shares=data["shares"], total_value_usd=data["value"],
+            )
+            for cusip, data in by_cusip.items()
+        ]

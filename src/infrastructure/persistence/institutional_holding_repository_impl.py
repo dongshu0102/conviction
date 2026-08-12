@@ -4,9 +4,10 @@ import logging
 import time
 from datetime import date
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import OperationalError
 
+from src.domain.entities.aggregated_position import AggregatedPosition
 from src.domain.entities.institutional_holding import InstitutionalHolding
 from src.domain.repositories.institutional_holding_repository import (
     InstitutionalHoldingRepository,
@@ -183,3 +184,37 @@ class SqlAlchemyInstitutionalHoldingRepository(InstitutionalHoldingRepository):
                 .order_by(InstitutionalHoldingModel.period_of_report.desc())
                 .limit(1)
             ).scalar_one_or_none()
+
+    def get_all_periods_of_report(self) -> list[date]:
+        with session_scope() as session:
+            rows = session.execute(
+                select(InstitutionalHoldingModel.period_of_report)
+                .distinct()
+                .order_by(InstitutionalHoldingModel.period_of_report.desc())
+            ).scalars().all()
+            return list(rows)
+
+    def get_aggregated_portfolio(
+        self, filer_cik: str, period_of_report: date,
+    ) -> list[AggregatedPosition]:
+        with session_scope() as session:
+            rows = session.execute(
+                select(
+                    InstitutionalHoldingModel.cusip,
+                    func.max(InstitutionalHoldingModel.issuer_name).label("issuer_name"),
+                    func.sum(InstitutionalHoldingModel.shares_or_principal_amount).label("total_shares"),
+                    func.sum(InstitutionalHoldingModel.value_usd).label("total_value_usd"),
+                )
+                .where(
+                    InstitutionalHoldingModel.filer_cik == filer_cik,
+                    InstitutionalHoldingModel.period_of_report == period_of_report,
+                )
+                .group_by(InstitutionalHoldingModel.cusip)
+            ).all()
+            return [
+                AggregatedPosition(
+                    cusip=r.cusip, issuer_name=r.issuer_name,
+                    total_shares=r.total_shares, total_value_usd=r.total_value_usd,
+                )
+                for r in rows
+            ]

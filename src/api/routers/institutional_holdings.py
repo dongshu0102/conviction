@@ -17,6 +17,12 @@ from src.api.schemas import (
     InstitutionalHoldersResponseSchema,
     InstitutionalHoldingSchema,
     InstitutionalPortfolioResponseSchema,
+    PositionChangeSchema,
+    PositionChangesResponseSchema,
+)
+from src.application.use_cases.detect_position_changes import (
+    DetectPositionChangesError,
+    DetectPositionChangesUseCase,
 )
 from src.application.use_cases.get_institutional_holders import (
     GetInstitutionalHoldersError,
@@ -77,4 +83,33 @@ def get_portfolio(
     return InstitutionalPortfolioResponseSchema(
         filer_query=result.filer_query, period_of_report=result.period_of_report,
         holdings=[_to_schema(h) for h in result.holdings],
+    )
+
+
+@router.get("/position-changes", response_model=PositionChangesResponseSchema)
+def get_position_changes(
+    filer: str = Query(..., min_length=1, description="Filer name to search for, e.g. \"Berkshire\"."),
+    min_pct_change: float = Query(
+        0.0, ge=0.0, le=1.0,
+        description="Filters out increased/decreased changes below this fraction (e.g. 0.05 for 5%). New/closed positions are always included.",
+    ),
+) -> PositionChangesResponseSchema:
+    use_case = DetectPositionChangesUseCase(_repository())
+    try:
+        result = use_case.execute(filer, min_pct_change=min_pct_change)
+    except DetectPositionChangesError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return PositionChangesResponseSchema(
+        filer_query=result.filer_query, filer_name=result.filer_name,
+        prior_period=result.prior_period, current_period=result.current_period,
+        changes=[
+            PositionChangeSchema(
+                cusip=c.cusip, issuer_name=c.issuer_name, change_type=c.change_type,
+                prior_shares=c.prior_shares, current_shares=c.current_shares,
+                prior_value_usd=c.prior_value_usd, current_value_usd=c.current_value_usd,
+                pct_change=c.pct_change,
+            )
+            for c in result.changes
+        ],
     )

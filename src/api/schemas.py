@@ -465,6 +465,30 @@ class InstitutionalPortfolioResponseSchema(BaseModel):
     source_note: str = "SEC EDGAR Form 13F, free official bulk data set — not a paid vendor."
 
 
+class PositionChangeSchema(BaseModel):
+    cusip: str
+    issuer_name: str
+    change_type: str
+    prior_shares: int
+    current_shares: int
+    prior_value_usd: int
+    current_value_usd: int
+    pct_change: float | None
+
+
+class PositionChangesResponseSchema(BaseModel):
+    filer_query: str
+    filer_name: str
+    prior_period: date
+    current_period: date
+    changes: list[PositionChangeSchema]
+    source_note: str = (
+        "SEC EDGAR Form 13F, free official bulk data set. Based on share-count "
+        "changes only, not value_usd — a position's dollar value can change "
+        "purely from the security's price moving, with zero actual trading."
+    )
+
+
 class RateSignalsSchema(BaseModel):
     as_of: datetime
     yield_curve: YieldCurveReadingSchema

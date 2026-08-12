@@ -99,6 +99,7 @@ from src.application.use_cases.compute_dcf_valuation import (
 )
 from src.application.use_cases.compute_investment_irr import ComputeInvestmentIrrUseCase
 from src.application.use_cases.get_capital_flow import GetCapitalFlowUseCase
+from src.application.use_cases.detect_position_changes import DetectPositionChangesUseCase
 from src.application.use_cases.get_institutional_holders import GetInstitutionalHoldersUseCase
 from src.application.use_cases.get_institutional_portfolio import GetInstitutionalPortfolioUseCase
 from src.application.use_cases.get_macro_snapshot import GetMacroSnapshotUseCase
@@ -253,6 +254,7 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
         get_capital_flow=GetCapitalFlowUseCase(capital_flow_repo),
         get_institutional_holders=GetInstitutionalHoldersUseCase(institutional_holding_repo),
         get_institutional_portfolio=GetInstitutionalPortfolioUseCase(institutional_holding_repo),
+        detect_position_changes=DetectPositionChangesUseCase(institutional_holding_repo),
     )
     return use_case, fake_agent, portfolio_repo
 

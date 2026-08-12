@@ -3,6 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from datetime import date
 
+from src.domain.entities.aggregated_position import AggregatedPosition
 from src.domain.entities.institutional_holding import InstitutionalHolding
 
 
@@ -64,3 +65,19 @@ class InstitutionalHoldingRepository(ABC):
         """The most recent quarter actually ingested, or None if
         nothing has been loaded yet — so a caller doesn't need to
         already know which period to ask for."""
+
+    @abstractmethod
+    def get_all_periods_of_report(self) -> list[date]:
+        """Every distinct quarter actually ingested, sorted most
+        recent first — lets a caller find "the two most recent
+        periods" for a before/after comparison without needing to
+        already know which quarters have been loaded."""
+
+    @abstractmethod
+    def get_aggregated_portfolio(
+        self, filer_cik: str, period_of_report: date,
+    ) -> list[AggregatedPosition]:
+        """One filer's full portfolio for one quarter, with shares and
+        value SUMMED per (cusip) across every individual holding row —
+        see AggregatedPosition's own docstring for why this aggregation
+        is necessary, not optional, before comparing across quarters."""
