@@ -764,3 +764,21 @@ class FakeInstitutionalHoldingRepository:
 
     def get_by_filer(self, filer_cik: str, period_of_report):
         return [h for h in self._holdings if h.filer_cik == filer_cik and h.period_of_report == period_of_report]
+
+    def search_by_issuer_name(self, name_query: str, period_of_report, limit: int = 50):
+        matches = [
+            h for h in self._holdings
+            if name_query.lower() in h.issuer_name.lower() and h.period_of_report == period_of_report
+        ]
+        return sorted(matches, key=lambda h: h.value_usd, reverse=True)[:limit]
+
+    def search_by_filer_name(self, name_query: str, period_of_report, limit: int = 50):
+        matches = [
+            h for h in self._holdings
+            if name_query.lower() in h.filer_name.lower() and h.period_of_report == period_of_report
+        ]
+        return sorted(matches, key=lambda h: h.value_usd, reverse=True)[:limit]
+
+    def get_latest_period_of_report(self):
+        periods = {h.period_of_report for h in self._holdings}
+        return max(periods) if periods else None

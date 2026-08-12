@@ -79,6 +79,14 @@ from src.application.use_cases.compute_investment_irr import (
     InvalidIrrScenarioError,
 )
 from src.application.use_cases.get_capital_flow import GetCapitalFlowUseCase
+from src.application.use_cases.get_institutional_holders import (
+    GetInstitutionalHoldersError,
+    GetInstitutionalHoldersUseCase,
+)
+from src.application.use_cases.get_institutional_portfolio import (
+    GetInstitutionalPortfolioError,
+    GetInstitutionalPortfolioUseCase,
+)
 from src.application.use_cases.get_macro_snapshot import GetMacroSnapshotUseCase
 from src.application.use_cases.get_rate_signals import GetRateSignalsUseCase
 from src.application.use_cases.get_risk_free_rate import GetRiskFreeRateUseCase
@@ -829,11 +837,48 @@ _TOOLS = [
         "from the SEC's own published FAQ table (sec.gov, not computed "
         "— the real deadline rule rolls forward past both weekends and "
         "federal holidays, complex enough that a from-scratch "
-        "implementation risked silently drifting wrong). Honest caveat: "
-        "13F holdings data itself is not currently accessible on this "
-        "platform's FMP plan tier (confirmed HTTP 402) — this tells you "
-        "WHEN the next deadline is, not what any manager actually holds.",
+        "implementation risked silently drifting wrong). This tells you "
+        "WHEN the next deadline is — see get_institutional_holders / "
+        "get_institutional_portfolio for what managers actually hold.",
         {"type": "object", "properties": {}},
+    ),
+    ToolDefinition(
+        "get_institutional_holders",
+        "Every institutional manager's reported position in one security, "
+        "for the latest quarter actually loaded — biggest holders first. "
+        "Real data, sourced directly from SEC's own free, official Form "
+        "13F bulk data sets (not a paid vendor). Search by issuer name "
+        "(e.g. \"Apple\"), not ticker — the raw SEC data has no ticker "
+        "symbol at all, only CUSIP and the issuer name exactly as the "
+        "filer typed it. Honest caveats: 13F only covers U.S. "
+        "exchange-listed equity long positions above a size threshold — "
+        "no short positions, no non-equity holdings, and reported ~45 "
+        "days after quarter-end, so this is never real-time.",
+        {
+            "type": "object",
+            "properties": {
+                "issuer": {"type": "string", "description": "Issuer/company name to search for, e.g. \"Apple\"."},
+                "limit": {"type": "integer", "description": "Optional, default 20."},
+            },
+            "required": ["issuer"],
+        },
+    ),
+    ToolDefinition(
+        "get_institutional_portfolio",
+        "One institutional manager's full reported portfolio, for the "
+        "latest quarter actually loaded — largest positions first. Real "
+        "data from SEC's own free Form 13F bulk data sets. Search by "
+        "filer name (e.g. \"Berkshire\"), not CIK. Same honest caveats as "
+        "get_institutional_holders: equity-only, size-thresholded, and "
+        "reported ~45 days after quarter-end.",
+        {
+            "type": "object",
+            "properties": {
+                "filer": {"type": "string", "description": "Institutional manager name to search for, e.g. \"Berkshire\"."},
+                "limit": {"type": "integer", "description": "Optional, default 50."},
+            },
+            "required": ["filer"],
+        },
     ),
     ToolDefinition(
         "ingest_etf",
@@ -1144,6 +1189,8 @@ class ChatWithAgentUseCase:
         get_macro_snapshot: GetMacroSnapshotUseCase,
         get_rate_signals: GetRateSignalsUseCase,
         get_capital_flow: GetCapitalFlowUseCase,
+        get_institutional_holders: GetInstitutionalHoldersUseCase,
+        get_institutional_portfolio: GetInstitutionalPortfolioUseCase,
     ) -> None:
         self._chat_agent = chat_agent
         self._get_watchlist = get_watchlist
@@ -1200,6 +1247,8 @@ class ChatWithAgentUseCase:
         self._get_macro_snapshot = get_macro_snapshot
         self._get_rate_signals = get_rate_signals
         self._get_capital_flow = get_capital_flow
+        self._get_institutional_holders = get_institutional_holders
+        self._get_institutional_portfolio = get_institutional_portfolio
         self._construct_risk_parity_portfolio = construct_risk_parity_portfolio
         self._user_id: str = ""  # set per-request in execute()
 
@@ -1813,9 +1862,51 @@ class ChatWithAgentUseCase:
                 "days_until": (deadline - today).days if deadline else None,
                 "source_note": (
                     "From the SEC's own published FAQ table (sec.gov, Form 13F FAQ, "
-                    "Question 25) — not computed. 13F holdings data itself is not "
-                    "currently accessible on this platform's FMP plan tier."
+                    "Question 25) — not computed. See get_institutional_holders / "
+                    "get_institutional_portfolio for what managers actually hold."
                 ),
+            }
+
+        if tool_name == "get_institutional_holders":
+            try:
+                result = self._get_institutional_holders.execute(
+                    tool_input["issuer"], limit=tool_input.get("limit", 20),
+                )
+            except GetInstitutionalHoldersError as exc:
+                return {"error": str(exc)}
+            return {
+                "issuer_query": result.issuer_query,
+                "period_of_report": result.period_of_report.isoformat(),
+                "holders": [
+                    {
+                        "filer_name": h.filer_name, "issuer_name": h.issuer_name,
+                        "value_usd": h.value_usd, "shares": h.shares_or_principal_amount,
+                        "title_of_class": h.title_of_class,
+                    }
+                    for h in result.holders
+                ],
+                "source_note": "SEC EDGAR Form 13F, free official bulk data set.",
+            }
+
+        if tool_name == "get_institutional_portfolio":
+            try:
+                result = self._get_institutional_portfolio.execute(
+                    tool_input["filer"], limit=tool_input.get("limit", 50),
+                )
+            except GetInstitutionalPortfolioError as exc:
+                return {"error": str(exc)}
+            return {
+                "filer_query": result.filer_query,
+                "period_of_report": result.period_of_report.isoformat(),
+                "holdings": [
+                    {
+                        "filer_name": h.filer_name, "issuer_name": h.issuer_name,
+                        "value_usd": h.value_usd, "shares": h.shares_or_principal_amount,
+                        "title_of_class": h.title_of_class,
+                    }
+                    for h in result.holdings
+                ],
+                "source_note": "SEC EDGAR Form 13F, free official bulk data set.",
             }
 
         if tool_name == "ingest_etf":

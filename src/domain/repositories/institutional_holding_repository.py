@@ -38,3 +38,29 @@ class InstitutionalHoldingRepository(ABC):
     def get_by_filer(self, filer_cik: str, period_of_report: date) -> list[InstitutionalHolding]:
         """One filer's full reported portfolio for one quarter —
         "what does this fund hold.\""""
+
+    @abstractmethod
+    def search_by_issuer_name(
+        self, name_query: str, period_of_report: date, limit: int = 50,
+    ) -> list[InstitutionalHolding]:
+        """Case-insensitive partial match against issuer_name, sorted
+        by value_usd descending (biggest holders first). The practical
+        way to answer "who holds X" given the raw SEC data has no
+        ticker symbol at all — only CUSIP and the issuer name exactly
+        as the filer typed it, which varies in formatting across
+        filers (e.g. "APPLE INC" vs "Apple, Inc.")."""
+
+    @abstractmethod
+    def search_by_filer_name(
+        self, name_query: str, period_of_report: date, limit: int = 50,
+    ) -> list[InstitutionalHolding]:
+        """Case-insensitive partial match against filer_name, sorted
+        by value_usd descending (largest positions first) — one
+        filer's portfolio, found by name rather than requiring the
+        caller to already know their CIK."""
+
+    @abstractmethod
+    def get_latest_period_of_report(self) -> date | None:
+        """The most recent quarter actually ingested, or None if
+        nothing has been loaded yet — so a caller doesn't need to
+        already know which period to ask for."""

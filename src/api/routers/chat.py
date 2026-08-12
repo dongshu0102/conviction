@@ -283,6 +283,8 @@ def get_chat_use_case(
         get_macro_snapshot=GetMacroSnapshotUseCase(data_provider),
         get_rate_signals=GetRateSignalsUseCase(data_provider, macro_history_provider=fred_provider),
         get_capital_flow=GetCapitalFlowUseCase(SqlAlchemyCapitalFlowRepository()),
+        get_institutional_holders=GetInstitutionalHoldersUseCase(SqlAlchemyInstitutionalHoldingRepository()),
+        get_institutional_portfolio=GetInstitutionalPortfolioUseCase(SqlAlchemyInstitutionalHoldingRepository()),
     )
 
 

@@ -81,6 +81,7 @@ from tests.unit.fakes import (
     FakeBriefGenerator,
     FakeSpeculativeGrowthCandidateRepository,
     FakeCapitalFlowRepository,
+    FakeInstitutionalHoldingRepository,
 )
 from src.application.use_cases.manage_alerts import GetAlertsUseCase
 from src.application.use_cases.generate_daily_brief import GenerateDailyBriefUseCase
@@ -98,6 +99,8 @@ from src.application.use_cases.compute_dcf_valuation import (
 )
 from src.application.use_cases.compute_investment_irr import ComputeInvestmentIrrUseCase
 from src.application.use_cases.get_capital_flow import GetCapitalFlowUseCase
+from src.application.use_cases.get_institutional_holders import GetInstitutionalHoldersUseCase
+from src.application.use_cases.get_institutional_portfolio import GetInstitutionalPortfolioUseCase
 from src.application.use_cases.get_macro_snapshot import GetMacroSnapshotUseCase
 from src.application.use_cases.get_rate_signals import GetRateSignalsUseCase
 from src.application.use_cases.get_risk_free_rate import GetRiskFreeRateUseCase
@@ -142,7 +145,7 @@ def _company_repo(*tickers: str) -> FakeCompanyRepository:
     return repo
 
 
-def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watchlist_repo=None, provider=None, options_provider=None, theme_repo=None, statement_repo=None, get_factor_scores_override=None, alert_repo=None, candidate_repo=None, macro_history_provider=None, capital_flow_repo=None):
+def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watchlist_repo=None, provider=None, options_provider=None, theme_repo=None, statement_repo=None, get_factor_scores_override=None, alert_repo=None, candidate_repo=None, macro_history_provider=None, capital_flow_repo=None, institutional_holding_repo=None):
     company_repo = company_repo or _company_repo()
     portfolio_repo = portfolio_repo or FakePortfolioRepository()
     watchlist_repo = watchlist_repo or FakeWatchlistRepository()
@@ -150,6 +153,7 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
     alert_repo = alert_repo or FakeAlertRepository()
     candidate_repo = candidate_repo or FakeSpeculativeGrowthCandidateRepository()
     capital_flow_repo = capital_flow_repo or FakeCapitalFlowRepository()
+    institutional_holding_repo = institutional_holding_repo or FakeInstitutionalHoldingRepository()
     provider = provider or FakeDataProvider(company=Company(ticker="X", name="X", sector=Sector.TECHNOLOGY, industry="X", exchange="X", country="US"))
     options_provider = options_provider or FakeOptionsDataProvider()
     research_repo = FakeResearchReportRepository()
@@ -247,6 +251,8 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
         get_macro_snapshot=GetMacroSnapshotUseCase(provider),
         get_rate_signals=GetRateSignalsUseCase(provider, macro_history_provider=macro_history_provider),
         get_capital_flow=GetCapitalFlowUseCase(capital_flow_repo),
+        get_institutional_holders=GetInstitutionalHoldersUseCase(institutional_holding_repo),
+        get_institutional_portfolio=GetInstitutionalPortfolioUseCase(institutional_holding_repo),
     )
     return use_case, fake_agent, portfolio_repo
 

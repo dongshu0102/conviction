@@ -145,3 +145,41 @@ class SqlAlchemyInstitutionalHoldingRepository(InstitutionalHoldingRepository):
                 )
             ).scalars().all()
             return [_to_entity(r) for r in rows]
+
+    def search_by_issuer_name(
+        self, name_query: str, period_of_report: date, limit: int = 50,
+    ) -> list[InstitutionalHolding]:
+        with session_scope() as session:
+            rows = session.execute(
+                select(InstitutionalHoldingModel)
+                .where(
+                    InstitutionalHoldingModel.issuer_name.ilike(f"%{name_query}%"),
+                    InstitutionalHoldingModel.period_of_report == period_of_report,
+                )
+                .order_by(InstitutionalHoldingModel.value_usd.desc())
+                .limit(limit)
+            ).scalars().all()
+            return [_to_entity(r) for r in rows]
+
+    def search_by_filer_name(
+        self, name_query: str, period_of_report: date, limit: int = 50,
+    ) -> list[InstitutionalHolding]:
+        with session_scope() as session:
+            rows = session.execute(
+                select(InstitutionalHoldingModel)
+                .where(
+                    InstitutionalHoldingModel.filer_name.ilike(f"%{name_query}%"),
+                    InstitutionalHoldingModel.period_of_report == period_of_report,
+                )
+                .order_by(InstitutionalHoldingModel.value_usd.desc())
+                .limit(limit)
+            ).scalars().all()
+            return [_to_entity(r) for r in rows]
+
+    def get_latest_period_of_report(self) -> date | None:
+        with session_scope() as session:
+            return session.execute(
+                select(InstitutionalHoldingModel.period_of_report)
+                .order_by(InstitutionalHoldingModel.period_of_report.desc())
+                .limit(1)
+            ).scalar_one_or_none()

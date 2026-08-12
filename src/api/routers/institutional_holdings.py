@@ -1,0 +1,80 @@
+"""Institutional 13F holdings query API routes.
+
+Deliberately platform-wide, not per-user — same rationale as
+capital_flow.py: this is public SEC data, identical for every user, so
+no get_authenticated_user_id() dependency here.
+
+Read-only by design: ingestion happens exclusively via the standalone
+scripts/ingest_form_13f.py batch job (a single quarter's data set is
+90+ MB and can span millions of rows — no HTTP request should ever
+trigger that), never through this router.
+"""
+from __future__ import annotations
+
+from fastapi import APIRouter, HTTPException, Query
+
+from src.api.schemas import (
+    InstitutionalHoldersResponseSchema,
+    InstitutionalHoldingSchema,
+    InstitutionalPortfolioResponseSchema,
+)
+from src.application.use_cases.get_institutional_holders import (
+    GetInstitutionalHoldersError,
+    GetInstitutionalHoldersUseCase,
+)
+from src.application.use_cases.get_institutional_portfolio import (
+    GetInstitutionalPortfolioError,
+    GetInstitutionalPortfolioUseCase,
+)
+from src.infrastructure.persistence.institutional_holding_repository_impl import (
+    SqlAlchemyInstitutionalHoldingRepository,
+)
+
+router = APIRouter(prefix="/institutional-holdings", tags=["institutional-holdings"])
+
+
+def _repository() -> SqlAlchemyInstitutionalHoldingRepository:
+    return SqlAlchemyInstitutionalHoldingRepository()
+
+
+def _to_schema(h) -> InstitutionalHoldingSchema:
+    return InstitutionalHoldingSchema(
+        filer_name=h.filer_name, issuer_name=h.issuer_name, cusip=h.cusip,
+        title_of_class=h.title_of_class, value_usd=h.value_usd,
+        shares_or_principal_amount=h.shares_or_principal_amount, share_type=h.share_type,
+        put_call=h.put_call, investment_discretion=h.investment_discretion,
+    )
+
+
+@router.get("/holders", response_model=InstitutionalHoldersResponseSchema)
+def get_holders(
+    issuer: str = Query(..., min_length=1, description="Issuer name to search for, e.g. \"Apple\"."),
+    limit: int = Query(20, ge=1, le=100),
+) -> InstitutionalHoldersResponseSchema:
+    use_case = GetInstitutionalHoldersUseCase(_repository())
+    try:
+        result = use_case.execute(issuer, limit=limit)
+    except GetInstitutionalHoldersError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return InstitutionalHoldersResponseSchema(
+        issuer_query=result.issuer_query, period_of_report=result.period_of_report,
+        holders=[_to_schema(h) for h in result.holders],
+    )
+
+
+@router.get("/portfolio", response_model=InstitutionalPortfolioResponseSchema)
+def get_portfolio(
+    filer: str = Query(..., min_length=1, description="Filer name to search for, e.g. \"Berkshire\"."),
+    limit: int = Query(50, ge=1, le=200),
+) -> InstitutionalPortfolioResponseSchema:
+    use_case = GetInstitutionalPortfolioUseCase(_repository())
+    try:
+        result = use_case.execute(filer, limit=limit)
+    except GetInstitutionalPortfolioError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return InstitutionalPortfolioResponseSchema(
+        filer_query=result.filer_query, period_of_report=result.period_of_report,
+        holdings=[_to_schema(h) for h in result.holdings],
+    )

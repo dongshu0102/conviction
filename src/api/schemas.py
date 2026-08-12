@@ -439,6 +439,32 @@ class Next13FDeadlineSchema(BaseModel):
     source_note: str
 
 
+class InstitutionalHoldingSchema(BaseModel):
+    filer_name: str
+    issuer_name: str
+    cusip: str
+    title_of_class: str
+    value_usd: int
+    shares_or_principal_amount: int
+    share_type: str
+    put_call: str | None
+    investment_discretion: str
+
+
+class InstitutionalHoldersResponseSchema(BaseModel):
+    issuer_query: str
+    period_of_report: date
+    holders: list[InstitutionalHoldingSchema]
+    source_note: str = "SEC EDGAR Form 13F, free official bulk data set — not a paid vendor."
+
+
+class InstitutionalPortfolioResponseSchema(BaseModel):
+    filer_query: str
+    period_of_report: date
+    holdings: list[InstitutionalHoldingSchema]
+    source_note: str = "SEC EDGAR Form 13F, free official bulk data set — not a paid vendor."
+
+
 class RateSignalsSchema(BaseModel):
     as_of: datetime
     yield_curve: YieldCurveReadingSchema
