@@ -597,7 +597,14 @@ async def get_institutional_holders(issuer: str, limit: int = 20) -> str:
     the filer typed it. Honest caveats: 13F only covers U.S.
     exchange-listed equity long positions above a size threshold — no
     short positions, no non-equity holdings, and reported ~45 days
-    after quarter-end, so this is never real-time."""
+    after quarter-end, so this is never real-time. Resolves to
+    exactly ONE specific security — the returned resolved_issuer_name
+    is the exact match used, never a blend of several similarly-named
+    companies (confirmed real case: searching "American" resolves to
+    one company, e.g. American Express, not a mix of American
+    Express / American Electric Power / American Tower). When the
+    resolved name differs meaningfully from what was searched, say so
+    explicitly."""
     return await _request("GET", "/institutional-holdings/holders", params={"issuer": issuer, "limit": limit})
 
 

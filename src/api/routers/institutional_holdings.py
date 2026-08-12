@@ -64,7 +64,8 @@ def get_holders(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     return InstitutionalHoldersResponseSchema(
-        issuer_query=result.issuer_query, period_of_report=result.period_of_report,
+        issuer_query=result.issuer_query, issuer_name=result.issuer_name,
+        period_of_report=result.period_of_report,
         holders=[_to_schema(h) for h in result.holders],
     )
 
