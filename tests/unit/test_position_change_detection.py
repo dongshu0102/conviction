@@ -115,3 +115,46 @@ def test_handles_multiple_simultaneous_changes_of_different_types() -> None:
     change_types = {c.cusip: c.change_type for c in changes}
     assert change_types == {"AAA": "increased", "BBB": "decreased", "CCC": "closed", "EEE": "new"}
     assert "DDD" not in change_types
+
+
+def test_prior_total_shares_of_exactly_zero_does_not_crash_and_counts_as_new() -> None:
+    """Regression guard for a real, confirmed production bug: FMR LLC
+    (Fidelity's parent company) genuinely has real positions where the
+    prior quarter's aggregated share count sums to exactly zero, even
+    though the cusip is present in that quarter's raw data (confirmed
+    directly against real production data -- not hypothetical). The
+    original code divided by prior.total_shares unconditionally,
+    crashing with a real ZeroDivisionError the moment a real user
+    asked about this real filer. Economically this IS a new position
+    -- the filer effectively held zero of this security before."""
+    prior = [AggregatedPosition(cusip="921935706", issuer_name="SOME ISSUER", total_shares=0, total_value_usd=5000)]
+    current = [AggregatedPosition(cusip="921935706", issuer_name="SOME ISSUER", total_shares=10000, total_value_usd=2_500_000)]
+
+    changes = detect_position_changes(prior, current)
+
+    assert len(changes) == 1
+    assert changes[0].change_type == "new"
+    assert changes[0].prior_shares == 0
+    assert changes[0].current_shares == 10000
+    assert changes[0].pct_change is None
+
+
+def test_both_periods_zero_shares_produces_no_change() -> None:
+    prior = [AggregatedPosition(cusip="X", issuer_name="X CO", total_shares=0, total_value_usd=0)]
+    current = [AggregatedPosition(cusip="X", issuer_name="X CO", total_shares=0, total_value_usd=0)]
+
+    assert detect_position_changes(prior, current) == []
+
+
+def test_current_total_shares_of_zero_with_nonzero_prior_is_a_clean_hundred_percent_decrease() -> None:
+    """The mirror-image case: this one was already safe (dividing by a
+    non-zero prior.total_shares), but worth a permanent regression test
+    given how close it sits to the actual bug."""
+    prior = [AggregatedPosition(cusip="Y", issuer_name="Y CO", total_shares=5000, total_value_usd=1_000_000)]
+    current = [AggregatedPosition(cusip="Y", issuer_name="Y CO", total_shares=0, total_value_usd=0)]
+
+    changes = detect_position_changes(prior, current)
+
+    assert len(changes) == 1
+    assert changes[0].change_type == "decreased"
+    assert changes[0].pct_change == -1.0

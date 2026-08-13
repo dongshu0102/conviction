@@ -40,7 +40,26 @@ def detect_position_changes(
             continue
 
         if prior.total_shares == current.total_shares:
-            continue  # genuinely unchanged — not a "change" at all
+            continue  # genuinely unchanged — not a "change" at all (this also
+            # correctly catches prior==current==0, so no division-by-zero risk below)
+
+        if prior.total_shares == 0:
+            # Real, confirmed scenario, not hypothetical: FMR LLC (Fidelity's
+            # parent) genuinely has real positions where every individual
+            # line item's shares sum to exactly zero for a quarter, even
+            # though the cusip is present in that quarter's raw data
+            # (confirmed directly against real production data). Economically
+            # this IS a new position -- the filer effectively held zero of
+            # this security before -- so classify it that way rather than
+            # dividing by zero to compute a percent change that has no
+            # meaningful denominator.
+            changes.append(PositionChange(
+                cusip=cusip, issuer_name=current.issuer_name, change_type="new",
+                prior_shares=0, current_shares=current.total_shares,
+                prior_value_usd=prior.total_value_usd, current_value_usd=current.total_value_usd,
+                pct_change=None,
+            ))
+            continue
 
         pct_change = (current.total_shares - prior.total_shares) / prior.total_shares
         if abs(pct_change) < min_pct_change:
