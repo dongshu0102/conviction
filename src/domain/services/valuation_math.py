@@ -130,10 +130,28 @@ def solve_reverse_dcf(
     Returns None, honestly, if no growth rate in [low, high] (default
     -50% to +200% annual) produces that price — rather than returning
     a number outside any economically meaningful range. per_share_value
-    is monotonically increasing in growth_rate for growth_rate >
-    terminal_growth_rate (holding every other assumption fixed), which
-    is what makes binary search valid here.
+    is monotonically increasing in growth_rate ONLY when base_fcf is
+    positive (holding every other assumption fixed) — with a positive
+    base, a higher growth rate compounds every projected year's cash
+    flow upward. With a NEGATIVE base_fcf this inverts: a higher growth
+    rate makes an already-negative number more negative, so
+    per_share_value actually DECREASES as growth_rate increases —
+    confirmed directly, not assumed: base_fcf=-100 with growth_rate
+    0.1/0.3/0.5/1.0 produced per_share_value -13.75/-16.25/-18.75/-25.00,
+    monotonically decreasing. Binary search over an inverted function
+    would either wrongly return None for valid inputs or silently
+    converge to the wrong rate, so this is refused outright rather than
+    risking either.
     """
+    if base_fcf <= 0:
+        raise DcfAssumptionError(
+            f"solve_reverse_dcf requires a positive base_fcf ({base_fcf} given) — "
+            "the growth-rate search relies on per_share_value increasing as "
+            "growth_rate increases, which only holds for a positive base; a "
+            "negative base_fcf inverts this and the search would silently "
+            "converge to a meaningless answer, not a real, valid growth rate."
+        )
+
     def per_share_at(rate: float) -> float | None:
         result = compute_dcf(
             base_fcf, rate, discount_rate, terminal_growth_rate, years,

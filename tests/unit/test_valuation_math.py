@@ -95,6 +95,36 @@ def test_reverse_dcf_returns_none_for_a_price_outside_any_reasonable_growth_rang
     assert implied is None
 
 
+def test_reverse_dcf_refuses_a_negative_base_fcf() -> None:
+    """Regression guard for a real, confirmed bug: with a negative
+    base_fcf, per_share_value actually DECREASES as growth_rate
+    increases (confirmed directly by hand: base_fcf=-100 with
+    growth_rate 0.1/0.3/0.5/1.0 produced per_share_value
+    -13.75/-16.25/-18.75/-25.00, monotonically decreasing) -- the
+    exact opposite of what the binary search assumes. Must refuse
+    outright rather than silently returning a wrong or missing
+    answer."""
+    try:
+        solve_reverse_dcf(
+            target_price=10, base_fcf=-100, discount_rate=0.10,
+            terminal_growth_rate=0.02, years=5, net_debt=0, shares_outstanding=100,
+        )
+        assert False, "expected DcfAssumptionError"
+    except DcfAssumptionError:
+        pass
+
+
+def test_reverse_dcf_refuses_a_zero_base_fcf() -> None:
+    try:
+        solve_reverse_dcf(
+            target_price=10, base_fcf=0, discount_rate=0.10,
+            terminal_growth_rate=0.02, years=5, net_debt=0, shares_outstanding=100,
+        )
+        assert False, "expected DcfAssumptionError"
+    except DcfAssumptionError:
+        pass
+
+
 def test_irr_simple_single_period_case() -> None:
     # -100 today, +110 in one year: IRR is exactly 10% by construction.
     irr = compute_irr([-100, 110])
