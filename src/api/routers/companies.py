@@ -656,6 +656,8 @@ def get_reverse_dcf(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except InsufficientDataError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except DcfAssumptionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except DataProviderError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
