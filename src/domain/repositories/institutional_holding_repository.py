@@ -103,6 +103,14 @@ class InstitutionalHoldingRepository(ABC):
         already know which quarters have been loaded."""
 
     @abstractmethod
+    def get_all_distinct_cusips(self) -> list[str]:
+        """Every distinct CUSIP across the entire, whole institutional_holdings
+        table, regardless of period — the real, actionable work list for a
+        one-time ticker backfill (see resolve_cusip_ticker's own docstring):
+        far fewer distinct securities than holding rows, so this is the
+        right level to resolve at, not per-row."""
+
+    @abstractmethod
     def get_aggregated_portfolio(
         self, filer_cik: str, period_of_report: date,
     ) -> list[AggregatedPosition]:

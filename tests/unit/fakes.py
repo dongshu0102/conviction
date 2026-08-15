@@ -821,6 +821,9 @@ class FakeInstitutionalHoldingRepository:
         periods = {h.period_of_report for h in self._holdings}
         return sorted(periods, reverse=True)
 
+    def get_all_distinct_cusips(self):
+        return list({h.cusip for h in self._holdings})
+
     def get_aggregated_portfolio(self, filer_cik: str, period_of_report):
         from src.domain.entities.aggregated_position import AggregatedPosition
 

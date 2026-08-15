@@ -270,6 +270,13 @@ class SqlAlchemyInstitutionalHoldingRepository(InstitutionalHoldingRepository):
             ).scalars().all()
             return list(rows)
 
+    def get_all_distinct_cusips(self) -> list[str]:
+        with session_scope() as session:
+            rows = session.execute(
+                select(InstitutionalHoldingModel.cusip).distinct()
+            ).scalars().all()
+            return list(rows)
+
     def get_aggregated_portfolio(
         self, filer_cik: str, period_of_report: date,
     ) -> list[AggregatedPosition]:
