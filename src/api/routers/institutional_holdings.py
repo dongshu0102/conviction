@@ -32,8 +32,12 @@ from src.application.use_cases.get_institutional_portfolio import (
     GetInstitutionalPortfolioError,
     GetInstitutionalPortfolioUseCase,
 )
+from src.application.use_cases.resolve_cusip_ticker import ResolveCusipTickerUseCase
 from src.infrastructure.config import get_settings
 from src.infrastructure.data_providers.fmp_provider import FinancialModelingPrepProvider
+from src.infrastructure.persistence.cusip_ticker_map_repository_impl import (
+    SqlAlchemyCusipTickerMapRepository,
+)
 from src.infrastructure.persistence.institutional_holding_repository_impl import (
     SqlAlchemyInstitutionalHoldingRepository,
 )
@@ -59,6 +63,12 @@ def get_data_provider() -> FinancialModelingPrepProvider:
     return FinancialModelingPrepProvider(settings=get_settings())
 
 
+def get_ticker_resolver() -> ResolveCusipTickerUseCase:
+    return ResolveCusipTickerUseCase(
+        SqlAlchemyCusipTickerMapRepository(), FinancialModelingPrepProvider(settings=get_settings()),
+    )
+
+
 def _to_schema(h) -> InstitutionalHoldingSchema:
     return InstitutionalHoldingSchema(
         filer_name=h.filer_name, issuer_name=h.issuer_name, cusip=h.cusip,
@@ -72,8 +82,10 @@ def _to_schema(h) -> InstitutionalHoldingSchema:
 def get_holders(
     issuer: str = Query(..., min_length=1, description="Issuer name to search for, e.g. \"Apple\"."),
     limit: int = Query(20, ge=1, le=100),
+    provider: FinancialModelingPrepProvider = Depends(get_data_provider),
+    ticker_resolver: ResolveCusipTickerUseCase = Depends(get_ticker_resolver),
 ) -> InstitutionalHoldersResponseSchema:
-    use_case = GetInstitutionalHoldersUseCase(_repository())
+    use_case = GetInstitutionalHoldersUseCase(_repository(), provider, ticker_resolver)
     try:
         result = use_case.execute(issuer, limit=limit)
     except GetInstitutionalHoldersError as exc:
@@ -83,6 +95,7 @@ def get_holders(
         issuer_query=result.issuer_query, issuer_name=result.issuer_name,
         period_of_report=result.period_of_report,
         holders=[_to_schema(h) for h in result.holders],
+        source=result.source, source_note=_SOURCE_NOTES[result.source],
     )
 
 

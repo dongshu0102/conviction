@@ -366,6 +366,59 @@ class FinancialModelingPrepProvider(FinancialDataProvider):
             ))
         return holdings
 
+    def get_institutional_holders_by_symbol(
+        self, symbol: str, year: int, quarter: int, limit: int = 20,
+    ) -> list[InstitutionalHolding]:
+        """Every institutional filer's reported position in one
+        security for one quarter, sourced live from FMP -- the
+        symbol-based sibling of get_institutional_holdings_by_filer,
+        for "who holds X" rather than "what does Y hold." Confirmed
+        directly against real data (Roblox, Q2 2026): matches the
+        known real CUSIP (771049103) exactly, and marketValue is
+        already in real dollars, not thousands -- confirmed directly,
+        market_value / shares == the response's own quarterEndPrice
+        exactly (54.37999990040604 vs 54.38).
+
+        Genuinely richer than get_institutional_holdings_by_filer's
+        response shape: investorName (filer name) and
+        investmentDiscretion are both given directly here, so neither
+        needs an "UNKNOWN" placeholder or a caller-supplied name the
+        way the filer-side method does.
+
+        putCallShare is "Share" for an ordinary equity position (FMP's
+        own convention, confirmed directly) -- mapped to None here,
+        not passed through literally, since that's the same real-world
+        meaning ("not an option") this app's own SEC-sourced put_call
+        field already uses an empty-string-to-None mapping for.
+        """
+        payload = self._get(
+            "/institutional-ownership/extract-analytics/holder",
+            symbol=symbol, year=year, quarter=quarter, page=0, limit=limit,
+        )
+        holdings = []
+        for row in payload:
+            put_call = row.get("putCallShare")
+            if put_call not in ("Put", "Call"):
+                put_call = None
+            holdings.append(InstitutionalHolding(
+                accession_number="",  # genuinely not provided by this endpoint
+                filer_cik=row["cik"],
+                filer_name=row["investorName"],
+                period_of_report=date.fromisoformat(row["date"]),
+                issuer_name=row["securityName"],
+                title_of_class=row["typeOfSecurity"],
+                cusip=row["securityCusip"],
+                value_usd=int(row["marketValue"]),
+                shares_or_principal_amount=int(row["sharesNumber"]),
+                share_type=row["sharesType"],
+                put_call=put_call,
+                investment_discretion=row["investmentDiscretion"],
+                voting_authority_sole=0,
+                voting_authority_shared=0,
+                voting_authority_none=0,
+            ))
+        return holdings
+
     def get_daily_closes(self, ticker: str, limit: int = 30) -> list[PriceBar]:
         payload = self._get("/historical-price-eod/light", symbol=ticker)
         return parse_eod_light(payload, ticker)[:limit]

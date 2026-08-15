@@ -82,6 +82,18 @@ class FinancialDataProvider(ABC):
             "This data provider does not support get_institutional_holdings_by_filer"
         )
 
+    def get_institutional_holders_by_symbol(
+        self, symbol: str, year: int, quarter: int, limit: int = 20,
+    ) -> list:
+        """Every institutional filer's reported position in one
+        security for one quarter, live from this provider — the
+        symbol-based sibling of get_institutional_holdings_by_filer,
+        for "who holds X" rather than "what does Y hold." FMP-specific
+        capability."""
+        raise NotImplementedError(
+            "This data provider does not support get_institutional_holders_by_symbol"
+        )
+
     def get_daily_closes(self, ticker: str, limit: int = 30) -> list[PriceBar]:
         """Most-recent-first end-of-day closes."""
         raise NotImplementedError("This data provider does not support get_daily_closes")

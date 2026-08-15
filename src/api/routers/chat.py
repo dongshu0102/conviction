@@ -91,6 +91,7 @@ from src.application.use_cases.detect_position_changes import DetectPositionChan
 from src.application.use_cases.get_capital_flow import GetCapitalFlowUseCase
 from src.application.use_cases.get_institutional_holders import GetInstitutionalHoldersUseCase
 from src.application.use_cases.get_institutional_portfolio import GetInstitutionalPortfolioUseCase
+from src.application.use_cases.resolve_cusip_ticker import ResolveCusipTickerUseCase
 from src.application.use_cases.get_macro_snapshot import GetMacroSnapshotUseCase
 from src.application.use_cases.get_rate_signals import GetRateSignalsUseCase
 from src.application.use_cases.get_risk_free_rate import GetRiskFreeRateUseCase
@@ -127,6 +128,9 @@ from src.infrastructure.persistence.universe_theme_repository_impl import (
 )
 from src.infrastructure.persistence.capital_flow_repository_impl import (
     SqlAlchemyCapitalFlowRepository,
+)
+from src.infrastructure.persistence.cusip_ticker_map_repository_impl import (
+    SqlAlchemyCusipTickerMapRepository,
 )
 from src.infrastructure.persistence.institutional_holding_repository_impl import (
     SqlAlchemyInstitutionalHoldingRepository,
@@ -289,7 +293,10 @@ def get_chat_use_case(
         get_macro_snapshot=GetMacroSnapshotUseCase(data_provider),
         get_rate_signals=GetRateSignalsUseCase(data_provider, macro_history_provider=fred_provider),
         get_capital_flow=GetCapitalFlowUseCase(SqlAlchemyCapitalFlowRepository()),
-        get_institutional_holders=GetInstitutionalHoldersUseCase(SqlAlchemyInstitutionalHoldingRepository()),
+        get_institutional_holders=GetInstitutionalHoldersUseCase(
+            SqlAlchemyInstitutionalHoldingRepository(), data_provider,
+            ResolveCusipTickerUseCase(SqlAlchemyCusipTickerMapRepository(), data_provider),
+        ),
         get_institutional_portfolio=GetInstitutionalPortfolioUseCase(SqlAlchemyInstitutionalHoldingRepository(), data_provider),
         detect_position_changes=DetectPositionChangesUseCase(SqlAlchemyInstitutionalHoldingRepository()),
     )

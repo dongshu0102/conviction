@@ -874,16 +874,28 @@ class FakeCusipSearchProvider:
 
 
 class FakeFreshnessFallbackProvider:
-    """Stands in for FinancialDataProvider — only the one method this
-    use case's freshness fallback actually calls."""
+    """Stands in for FinancialDataProvider — the two methods the
+    portfolio and holders freshness fallbacks actually call."""
 
-    def __init__(self, holdings_by_cik_quarter: dict | None = None, raise_error: Exception | None = None):
+    def __init__(
+        self, holdings_by_cik_quarter: dict | None = None,
+        holders_by_symbol_quarter: dict | None = None,
+        raise_error: Exception | None = None,
+    ):
         self._holdings_by_cik_quarter = holdings_by_cik_quarter or {}
+        self._holders_by_symbol_quarter = holders_by_symbol_quarter or {}
         self._raise_error = raise_error
         self.calls = []
+        self.symbol_calls = []
 
     def get_institutional_holdings_by_filer(self, cik, year, quarter, filer_name):
         self.calls.append((cik, year, quarter, filer_name))
         if self._raise_error is not None:
             raise self._raise_error
         return self._holdings_by_cik_quarter.get((cik, year, quarter), [])
+
+    def get_institutional_holders_by_symbol(self, symbol, year, quarter, limit=20):
+        self.symbol_calls.append((symbol, year, quarter, limit))
+        if self._raise_error is not None:
+            raise self._raise_error
+        return self._holders_by_symbol_quarter.get((symbol, year, quarter), [])
