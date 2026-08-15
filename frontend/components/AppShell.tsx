@@ -32,6 +32,7 @@ const NAV_ITEMS = [
   { href: "/valuation", label: "Valuation", icon: "◇" },
   { href: "/capital-flow", label: "Capital Flow", icon: "⇄" },
   { href: "/capital-flow-monitor", label: "Flow Monitor", icon: "▦" },
+  { href: "/institutional-holdings", label: "13F Holdings", icon: "▥" },
   { href: "/alerts", label: "Alerts", icon: "◉" },
 ];
 

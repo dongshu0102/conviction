@@ -526,6 +526,63 @@ export interface Next13FDeadline {
   source_note: string;
 }
 
+// Institutional 13F holdings — mirrors src/api/schemas.py exactly.
+// The raw SEC data has no ticker symbol at all, only CUSIP and issuer
+// name as filed, so these are searched by name, not ticker.
+export interface InstitutionalHolding {
+  filer_name: string;
+  issuer_name: string;
+  cusip: string;
+  title_of_class: string;
+  value_usd: number;
+  shares_or_principal_amount: number;
+  share_type: string;
+  put_call: string | null;
+  investment_discretion: string;
+}
+
+export interface InstitutionalHoldersResponse {
+  issuer_query: string;
+  issuer_name: string;
+  period_of_report: string;
+  holders: InstitutionalHolding[];
+  source_note: string;
+}
+
+export interface InstitutionalPortfolioResponse {
+  filer_query: string;
+  filer_name: string;
+  period_of_report: string;
+  holdings: InstitutionalHolding[];
+  source_note: string;
+}
+
+export interface PositionChange {
+  cusip: string;
+  issuer_name: string;
+  change_type: "new" | "increased" | "decreased" | "closed";
+  prior_shares: number;
+  current_shares: number;
+  prior_value_usd: number;
+  current_value_usd: number;
+  pct_change: number | null;
+}
+
+export interface PositionChangesResponse {
+  filer_query: string;
+  filer_name: string;
+  prior_period: string;
+  current_period: string;
+  changes: PositionChange[];
+  // Real, confirmed distinction, not cosmetic: true when the filer has
+  // ZERO rows anywhere in the prior quarter (e.g. a newly-registered
+  // manager). Every position renders as "new" either way, but that's a
+  // fundamentally different, less alarming story than an established
+  // manager buying their entire book in one quarter.
+  filer_had_no_prior_period_data: boolean;
+  source_note: string;
+}
+
 export interface CapitalFlowMonitorModuleDef {
   id: string;
   group: string;
@@ -954,5 +1011,21 @@ export const api = {
     const params = new URLSearchParams({ lookahead_days: String(lookaheadDays) });
     if (listName) params.set("list_name", listName);
     return request<UpcomingEarningsResponse>(`/watchlist/earnings?${params.toString()}`);
+  },
+
+  // Institutional 13F holdings — free SEC EDGAR bulk data set, not a
+  // paid vendor. Searched by issuer/filer name, not ticker or CIK: the
+  // raw SEC data has no ticker symbol at all.
+  getInstitutionalHolders: (issuer: string, limit = 20) => {
+    const params = new URLSearchParams({ issuer, limit: String(limit) });
+    return request<InstitutionalHoldersResponse>(`/institutional-holdings/holders?${params.toString()}`);
+  },
+  getInstitutionalPortfolio: (filer: string, limit = 50) => {
+    const params = new URLSearchParams({ filer, limit: String(limit) });
+    return request<InstitutionalPortfolioResponse>(`/institutional-holdings/portfolio?${params.toString()}`);
+  },
+  getPositionChanges: (filer: string, minPctChange = 0) => {
+    const params = new URLSearchParams({ filer, min_pct_change: String(minPctChange) });
+    return request<PositionChangesResponse>(`/institutional-holdings/position-changes?${params.toString()}`);
   },
 };
