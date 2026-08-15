@@ -807,3 +807,33 @@ class FakeInstitutionalHoldingRepository:
             )
             for cusip, data in by_cusip.items()
         ]
+
+
+class FakeCusipTickerMapRepository:
+    def __init__(self):
+        self._mappings = {}
+
+    def get(self, cusip: str):
+        return self._mappings.get(cusip)
+
+    def get_many(self, cusips: list):
+        return {c: self._mappings[c] for c in cusips if c in self._mappings}
+
+    def save(self, mapping) -> None:
+        self._mappings[mapping.cusip] = mapping
+
+    def get_unresolved(self, cusips: list) -> list:
+        return [c for c in cusips if c not in self._mappings]
+
+
+class FakeCusipSearchProvider:
+    """Stands in for FinancialModelingPrepProvider — only the
+    search_cusip method this use case actually calls."""
+
+    def __init__(self, results_by_cusip: dict | None = None):
+        self._results_by_cusip = results_by_cusip or {}
+        self.search_cusip_calls = []
+
+    def search_cusip(self, cusip: str):
+        self.search_cusip_calls.append(cusip)
+        return self._results_by_cusip.get(cusip, [])

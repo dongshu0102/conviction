@@ -17,6 +17,7 @@ from src.application.interfaces.data_provider import (
     FinancialDataProvider,
 )
 from src.domain.entities.company import Company, Sector
+from src.domain.services.cusip_ticker_resolution import CusipSearchResult
 from src.domain.entities.capital_flow import InsiderTrade, PoliticianTrade
 from src.domain.entities.financial_statement import (
     BalanceSheet,
@@ -257,6 +258,25 @@ class FinancialModelingPrepProvider(FinancialDataProvider):
     def get_stock_news(self, ticker: str, limit: int = 10) -> list[NewsArticle]:
         payload = self._get("/news/stock", symbols=ticker, limit=limit)
         return parse_stock_news(payload, ticker)
+
+    def search_cusip(self, cusip: str) -> list[CusipSearchResult]:
+        """Confirmed newly accessible on the Ultimate plan tonight
+        (previously blocked/legacy on lower tiers). Can legitimately
+        return several rows for one CUSIP — one per exchange listing
+        of the same underlying company (confirmed directly against
+        real data: Apple's CUSIP returns "AAPL" plus three foreign
+        listings). Disambiguation happens in the domain layer
+        (pick_primary_us_ticker), not here — this method's only job is
+        translating FMP's raw JSON shape faithfully."""
+        payload = self._get("/search-cusip", cusip=cusip)
+        return [
+            CusipSearchResult(
+                symbol=row["symbol"],
+                company_name=row.get("companyName", ""),
+                market_cap=row.get("marketCap"),
+            )
+            for row in payload
+        ]
 
     def get_daily_closes(self, ticker: str, limit: int = 30) -> list[PriceBar]:
         payload = self._get("/historical-price-eod/light", symbol=ticker)

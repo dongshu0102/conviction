@@ -65,6 +65,12 @@ class FinancialDataProvider(ABC):
     def get_stock_news(self, ticker: str, limit: int = 10) -> list[NewsArticle]:
         raise NotImplementedError("This data provider does not support get_stock_news")
 
+    def search_cusip(self, cusip: str) -> list:
+        """Real ticker resolution for a CUSIP — FMP-specific
+        capability (confirmed newly accessible on the Ultimate plan),
+        not assumed available on every provider."""
+        raise NotImplementedError("This data provider does not support search_cusip")
+
     def get_daily_closes(self, ticker: str, limit: int = 30) -> list[PriceBar]:
         """Most-recent-first end-of-day closes."""
         raise NotImplementedError("This data provider does not support get_daily_closes")

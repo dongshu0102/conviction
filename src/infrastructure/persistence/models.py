@@ -505,3 +505,27 @@ class InstitutionalHoldingModel(Base):
     voting_authority_shared: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     voting_authority_none: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     ingested_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+
+class CusipTickerMapModel(Base):
+    """A resolved (or genuinely attempted-and-failed) CUSIP-to-ticker
+    mapping. Supplements the free, bulk-ingested SEC 13F pipeline,
+    which has no ticker at all in its own raw data, with real ticker
+    symbols from FMP's Ultimate-tier search-cusip endpoint. One row
+    per unique CUSIP, resolved once and cached — not re-queried on
+    every read, since there are far fewer distinct CUSIPs than
+    institutional_holdings rows.
+
+    ticker is nullable, and a NULL value is a real, meaningful,
+    different state from no row existing at all: it means resolution
+    was genuinely attempted and no US-listed ticker was found (see
+    pick_primary_us_ticker's own docstring), so it will not be
+    silently retried on every future ingestion run."""
+
+    __tablename__ = "cusip_ticker_map"
+
+    cusip: Mapped[str] = mapped_column(String(9), primary_key=True, nullable=False)
+    ticker: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    company_name: Mapped[str | None] = mapped_column(String(), nullable=True)
+    resolved_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
