@@ -329,6 +329,17 @@ class FinancialModelingPrepProvider(FinancialDataProvider):
         implied price-per-share worked out to exactly $150.00,
         genuinely plausible, not the ~1000x-inflated number tonight's
         earlier SEC-parsing bug would have produced.
+
+        Also confirmed directly, and deliberately NOT replicated here:
+        unlike this app's own raw SEC-sourced data (where a single
+        CUSIP can genuinely span several line items -- e.g. different
+        voting-authority categories -- that must be summed before
+        comparing), FMP's response already has exactly one row per
+        distinct CUSIP. Checked directly against Berkshire's real Q2
+        2026 response: 29 rows, 29 distinct CUSIPs, zero duplicates.
+        This method intentionally does no aggregation of its own;
+        adding one would silently double-count real FMP data that is
+        already clean.
         """
         payload = self._get(
             "/institutional-ownership/extract", cik=cik, year=year, quarter=quarter,
