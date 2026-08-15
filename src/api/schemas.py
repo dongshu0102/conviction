@@ -526,6 +526,35 @@ class BeneficialOwnershipDisclosuresResponseSchema(BaseModel):
     )
 
 
+class InsiderTransactionSchema(BaseModel):
+    filing_date: date
+    transaction_date: date
+    reporting_cik: str
+    company_cik: str
+    reporting_name: str
+    type_of_owner: str
+    transaction_type: str
+    acquisition_or_disposition: str
+    direct_or_indirect: str
+    security_name: str
+    securities_transacted: float
+    securities_owned: float
+    price: float
+    source_url: str
+
+
+class InsiderTransactionsResponseSchema(BaseModel):
+    ticker: str
+    transactions: list[InsiderTransactionSchema]
+    source_note: str = (
+        "Form 3/4/5 insider transactions, live from FMP — no free, structured "
+        "SEC bulk data set exists for these forms (unlike Form 13F). price can "
+        "be genuinely 0 for option exercises and RSU vesting (routine "
+        "compensation events, not open-market trades) — a real, honest "
+        "reflection of the transaction, not missing data."
+    )
+
+
 class RateSignalsSchema(BaseModel):
     as_of: datetime
     yield_curve: YieldCurveReadingSchema

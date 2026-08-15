@@ -33,6 +33,7 @@ from src.domain.entities.etf import EtfProfile
 from src.domain.entities.general_news import GeneralNewsHeadline
 from src.domain.entities.institutional_holding import InstitutionalHolding
 from src.domain.entities.beneficial_ownership_disclosure import BeneficialOwnershipDisclosure
+from src.domain.entities.insider_transaction import InsiderTransaction
 from src.domain.entities.market_quote import MarketQuote, PriceBar
 from src.domain.entities.market_risk_premium import MarketRiskPremium
 from src.domain.entities.news import NewsArticle
@@ -480,6 +481,43 @@ class FinancialModelingPrepProvider(FinancialDataProvider):
                     "Skipping malformed beneficial-ownership row %d for %s: %s", i, symbol, exc,
                 )
         return disclosures
+
+    def get_insider_transactions(self, symbol: str) -> list[InsiderTransaction]:
+        """Every reported Form 3/4/5 transaction for one company's
+        insiders -- officers, directors, and 10%+ owners. Confirmed
+        directly against real data: a real Apple SVP/GC's real, recent
+        open-market sale at a genuine, non-zero price (307.75), and a
+        real, paired M-Exempt option-exercise event (one "D" row for
+        the option/RSU, one "A" row for the resulting common stock,
+        both at price=0, a real, honest reflection of a routine
+        compensation event, not missing data).
+        """
+        payload = self._get("/insider-trading/search", symbol=symbol)
+        transactions = []
+        for i, row in enumerate(payload):
+            try:
+                transactions.append(InsiderTransaction(
+                    symbol=row.get("symbol", symbol),
+                    filing_date=date.fromisoformat(row["filingDate"]),
+                    transaction_date=date.fromisoformat(row["transactionDate"]),
+                    reporting_cik=row.get("reportingCik", ""),
+                    company_cik=row.get("companyCik", ""),
+                    reporting_name=row.get("reportingName") or "UNKNOWN",
+                    type_of_owner=row.get("typeOfOwner") or "",
+                    transaction_type=row.get("transactionType") or "",
+                    acquisition_or_disposition=row.get("acquisitionOrDisposition") or "",
+                    direct_or_indirect=row.get("directOrIndirect") or "",
+                    security_name=row.get("securityName") or "",
+                    securities_transacted=_safe_float(row.get("securitiesTransacted")),
+                    securities_owned=_safe_float(row.get("securitiesOwned")),
+                    price=_safe_float(row.get("price")),
+                    source_url=row.get("url", ""),
+                ))
+            except (KeyError, ValueError, TypeError) as exc:
+                logger.warning(
+                    "Skipping malformed insider-transaction row %d for %s: %s", i, symbol, exc,
+                )
+        return transactions
 
     def get_daily_closes(self, ticker: str, limit: int = 30) -> list[PriceBar]:
         payload = self._get("/historical-price-eod/light", symbol=ticker)

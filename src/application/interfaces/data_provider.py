@@ -103,6 +103,16 @@ class FinancialDataProvider(ABC):
             "This data provider does not support get_beneficial_ownership_disclosures"
         )
 
+    def get_insider_transactions(self, symbol: str) -> list:
+        """Every reported Form 3/4/5 transaction for one company's
+        insiders — officers, directors, and 10%+ owners. Form 4 is
+        filed within 2 business days of the transaction, the fastest
+        of the SEC filings covered by this platform. FMP-specific
+        capability."""
+        raise NotImplementedError(
+            "This data provider does not support get_insider_transactions"
+        )
+
     def get_daily_closes(self, ticker: str, limit: int = 30) -> list[PriceBar]:
         """Most-recent-first end-of-day closes."""
         raise NotImplementedError("This data provider does not support get_daily_closes")
