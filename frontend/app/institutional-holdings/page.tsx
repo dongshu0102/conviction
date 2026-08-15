@@ -37,6 +37,14 @@ function fmtUsd(v: number): string {
   return `$${v.toLocaleString()}`;
 }
 
+// Most people recognize a ticker far more readily than a raw CUSIP,
+// but the ticker is a real, separate backfill (not every CUSIP has
+// one resolved yet) -- shown alongside the CUSIP, never in place of
+// it, so the underlying identifier is always still visible.
+function fmtCusipSublabel(cusip: string, ticker: string | null): string {
+  return ticker ? `${ticker} · CUSIP ${cusip}` : `CUSIP ${cusip}`;
+}
+
 const CHANGE_ORDER = ["new", "increased", "decreased", "closed"] as const;
 
 const CHANGE_LABEL: Record<string, string> = {
@@ -200,7 +208,7 @@ export default function InstitutionalHoldingsPage() {
                     <LedgerRow
                       key={c.cusip}
                       label={c.issuer_name}
-                      sublabel={`CUSIP ${c.cusip}`}
+                      sublabel={fmtCusipSublabel(c.cusip, c.ticker)}
                       value={fmtUsd(c.current_value_usd || c.prior_value_usd)}
                       changePct={c.pct_change}
                     />
@@ -214,7 +222,7 @@ export default function InstitutionalHoldingsPage() {
         {mode === "holders" && holders && (
           <div className="card">
             <p className="eyebrow" style={{ fontSize: "0.68rem", marginBottom: "0.5rem" }}>
-              {holders.issuer_name} · {holders.period_of_report}
+              {`${holders.issuer_name}${holders.holders[0]?.ticker ? ` (${holders.holders[0].ticker})` : ""} · ${holders.period_of_report}`}
             </p>
             {holders.holders.length === 0 ? (
               <p style={{ margin: 0, color: "var(--text-soft)" }}>No holders found.</p>
@@ -238,7 +246,7 @@ export default function InstitutionalHoldingsPage() {
                 <LedgerRow
                   key={`${h.cusip}-${i}`}
                   label={h.issuer_name}
-                  sublabel={`CUSIP ${h.cusip}`}
+                  sublabel={fmtCusipSublabel(h.cusip, h.ticker)}
                   value={fmtUsd(h.value_usd)}
                 />
               ))

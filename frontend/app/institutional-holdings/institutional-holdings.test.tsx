@@ -28,17 +28,17 @@ const SAMPLE_CHANGES: PositionChangesResponse = {
   filer_had_no_prior_period_data: false,
   changes: [
     {
-      cusip: "02079K107", issuer_name: "Alphabet Inc", change_type: "new",
+      cusip: "02079K107", ticker: "GOOGL", issuer_name: "Alphabet Inc", change_type: "new",
       prior_shares: 0, current_shares: 3585215,
       prior_value_usd: 0, current_value_usd: 1028454775, pct_change: null,
     },
     {
-      cusip: "166764100", issuer_name: "Chevron Corporation", change_type: "decreased",
+      cusip: "166764100", ticker: "CVX", issuer_name: "Chevron Corporation", change_type: "decreased",
       prior_shares: 130156362, current_shares: 84375856,
       prior_value_usd: 19837131131, current_value_usd: 17457364606, pct_change: -0.3517346774,
     },
     {
-      cusip: "57636Q104", issuer_name: "Mastercard Incorporated", change_type: "closed",
+      cusip: "57636Q104", ticker: "MA", issuer_name: "Mastercard Incorporated", change_type: "closed",
       prior_shares: 3986648, current_shares: 0,
       prior_value_usd: 2275897610, current_value_usd: 0, pct_change: null,
     },
@@ -51,7 +51,7 @@ const SAMPLE_HOLDERS: InstitutionalHoldersResponse = {
   issuer_name: "APPLE INC",
   period_of_report: "2026-03-31",
   holders: [
-    { filer_name: "VANGUARD CAPITAL MANAGEMENT LLC", issuer_name: "APPLE INC", cusip: "037833100", title_of_class: "COM", value_usd: 242076924860, shares_or_principal_amount: 953847648, share_type: "SH", put_call: null, investment_discretion: "DFND" },
+    { filer_name: "VANGUARD CAPITAL MANAGEMENT LLC", issuer_name: "APPLE INC", cusip: "037833100", ticker: "AAPL", title_of_class: "COM", value_usd: 242076924860, shares_or_principal_amount: 953847648, share_type: "SH", put_call: null, investment_discretion: "DFND" },
   ],
   source_note: "SEC EDGAR Form 13F, free official bulk data set.",
 };
@@ -61,7 +61,7 @@ const SAMPLE_PORTFOLIO: InstitutionalPortfolioResponse = {
   filer_name: "Berkshire Hathaway Inc",
   period_of_report: "2026-03-31",
   holdings: [
-    { filer_name: "Berkshire Hathaway Inc", issuer_name: "AMERICAN EXPRESS CO", cusip: "025816109", title_of_class: "COM", value_usd: 45087984892, shares_or_principal_amount: 149061045, share_type: "SH", put_call: null, investment_discretion: "SOLE" },
+    { filer_name: "Berkshire Hathaway Inc", issuer_name: "AMERICAN EXPRESS CO", cusip: "025816109", ticker: "AXP", title_of_class: "COM", value_usd: 45087984892, shares_or_principal_amount: 149061045, share_type: "SH", put_call: null, investment_discretion: "SOLE" },
   ],
   source_note: "SEC EDGAR Form 13F, free official bulk data set.",
 };
@@ -144,6 +144,36 @@ describe("Institutional Holdings page", () => {
 
     const pct = screen.getByText("-35.2%");
     expect(pct).toHaveClass("loss");
+  });
+
+  it("shows the real ticker alongside the CUSIP when one has been resolved", async () => {
+    vi.spyOn(api, "getPositionChanges").mockResolvedValue(SAMPLE_CHANGES);
+    render(<InstitutionalHoldingsPage />);
+
+    fireEvent.click(screen.getByText("Search"));
+    await waitFor(() => screen.getByText("GOOGL · CUSIP 02079K107"));
+  });
+
+  it("falls back to showing just the CUSIP, honestly, when no ticker has been resolved yet", async () => {
+    vi.spyOn(api, "getPositionChanges").mockResolvedValue({
+      ...SAMPLE_CHANGES,
+      changes: [{ ...SAMPLE_CHANGES.changes[0], ticker: null }],
+    });
+    render(<InstitutionalHoldingsPage />);
+
+    fireEvent.click(screen.getByText("Search"));
+    await waitFor(() => screen.getByText("CUSIP 02079K107"));
+    expect(screen.queryByText(/GOOGL/)).not.toBeInTheDocument();
+  });
+
+  it("shows the ticker once in the header for 'Who holds this' mode, not repeated per row", async () => {
+    vi.spyOn(api, "getInstitutionalHolders").mockResolvedValue(SAMPLE_HOLDERS);
+    render(<InstitutionalHoldingsPage />);
+
+    fireEvent.click(screen.getByText("Who holds this"));
+    fireEvent.click(screen.getByText("Search"));
+
+    await waitFor(() => screen.getByText("APPLE INC (AAPL)", { exact: false }));
   });
 
   it("switching to 'Who holds this' mode changes the placeholder and search target", async () => {

@@ -443,6 +443,7 @@ class InstitutionalHoldingSchema(BaseModel):
     filer_name: str
     issuer_name: str
     cusip: str
+    ticker: str | None
     title_of_class: str
     value_usd: int
     shares_or_principal_amount: int
@@ -471,6 +472,7 @@ class InstitutionalPortfolioResponseSchema(BaseModel):
 
 class PositionChangeSchema(BaseModel):
     cusip: str
+    ticker: str | None
     issuer_name: str
     change_type: str
     prior_shares: int

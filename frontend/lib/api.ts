@@ -533,6 +533,7 @@ export interface InstitutionalHolding {
   filer_name: string;
   issuer_name: string;
   cusip: string;
+  ticker: string | null;
   title_of_class: string;
   value_usd: number;
   shares_or_principal_amount: number;
@@ -559,6 +560,7 @@ export interface InstitutionalPortfolioResponse {
 
 export interface PositionChange {
   cusip: string;
+  ticker: string | null;
   issuer_name: string;
   change_type: "new" | "increased" | "decreased" | "closed";
   prior_shares: number;
