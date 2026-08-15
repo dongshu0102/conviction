@@ -149,7 +149,7 @@ def _company_repo(*tickers: str) -> FakeCompanyRepository:
     return repo
 
 
-def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watchlist_repo=None, provider=None, options_provider=None, theme_repo=None, statement_repo=None, get_factor_scores_override=None, alert_repo=None, candidate_repo=None, macro_history_provider=None, capital_flow_repo=None, institutional_holding_repo=None):
+def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watchlist_repo=None, provider=None, options_provider=None, theme_repo=None, statement_repo=None, get_factor_scores_override=None, alert_repo=None, candidate_repo=None, macro_history_provider=None, capital_flow_repo=None, institutional_holding_repo=None, get_institutional_holders_override=None):
     company_repo = company_repo or _company_repo()
     portfolio_repo = portfolio_repo or FakePortfolioRepository()
     watchlist_repo = watchlist_repo or FakeWatchlistRepository()
@@ -255,7 +255,7 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
         get_macro_snapshot=GetMacroSnapshotUseCase(provider),
         get_rate_signals=GetRateSignalsUseCase(provider, macro_history_provider=macro_history_provider),
         get_capital_flow=GetCapitalFlowUseCase(capital_flow_repo),
-        get_institutional_holders=GetInstitutionalHoldersUseCase(institutional_holding_repo),
+        get_institutional_holders=get_institutional_holders_override or GetInstitutionalHoldersUseCase(institutional_holding_repo),
         get_institutional_portfolio=GetInstitutionalPortfolioUseCase(institutional_holding_repo),
         detect_position_changes=DetectPositionChangesUseCase(institutional_holding_repo),
         get_beneficial_ownership_disclosures=GetBeneficialOwnershipDisclosuresUseCase(provider),
@@ -384,6 +384,63 @@ def test_get_beneficial_ownership_disclosures_error_surfaces_cleanly() -> None:
 
     result = fake_agent.dispatch_results[0]
     assert "error" in result
+
+
+def test_get_institutional_holders_source_note_reflects_sec_bulk() -> None:
+    """Baseline, unchanged behavior: the default, local-pipeline case."""
+    from datetime import date
+
+    from src.application.use_cases.get_institutional_holders import (
+        GetInstitutionalHoldersResult,
+    )
+
+    class FakeLocalResultUseCase:
+        def execute(self, issuer, limit=20):
+            return GetInstitutionalHoldersResult(
+                issuer_query=issuer, issuer_name="APPLE INC",
+                period_of_report=date(2026, 3, 31), holders=(), source="sec_bulk",
+            )
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("get_institutional_holders", {"issuer": "Apple"})],
+        get_institutional_holders_override=FakeLocalResultUseCase(),
+    )
+    use_case.execute("alice", "who holds Apple", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["source"] == "sec_bulk"
+    assert "free official bulk data set" in result["source_note"]
+    assert "Live from FMP" not in result["source_note"]
+
+
+def test_get_institutional_holders_source_note_reflects_fmp_live() -> None:
+    """Regression guard for a real, confirmed honesty gap: the chat
+    tool's source_note used to be hardcoded to always claim "SEC
+    EDGAR... free official bulk data set" even when the freshness
+    fallback had actually served the request live from FMP. The
+    assistant must say so, not silently repeat the wrong claim."""
+    from datetime import date
+
+    from src.application.use_cases.get_institutional_holders import (
+        GetInstitutionalHoldersResult,
+    )
+
+    class FakeFreshResultUseCase:
+        def execute(self, issuer, limit=20):
+            return GetInstitutionalHoldersResult(
+                issuer_query=issuer, issuer_name="ROBLOX CORP",
+                period_of_report=date(2026, 6, 30), holders=(), source="fmp_live",
+            )
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("get_institutional_holders", {"issuer": "Roblox"})],
+        get_institutional_holders_override=FakeFreshResultUseCase(),
+    )
+    use_case.execute("alice", "who holds Roblox", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["source"] == "fmp_live"
+    assert "Live from FMP" in result["source_note"]
 
 
 def test_get_daily_brief_dispatches_correctly() -> None:

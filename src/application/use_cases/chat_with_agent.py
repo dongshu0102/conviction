@@ -260,6 +260,41 @@ or add_ticker_to_theme after a suggestion without the user confirming they \
 want it — that confirmation is what keeps this a suggestion, not an action \
 taken on the user's behalf without being asked."""
 
+# Mirrors institutional_holdings.py's own _SOURCE_NOTES /
+# _POSITION_CHANGES_SOURCE_NOTES exactly, kept as a separate copy
+# here rather than a cross-layer import (this application-layer
+# module should not depend on the api layer). Real, honest source
+# attribution matters here just as much as in the REST responses --
+# when the freshness fallback fires (source == "fmp_live"), the
+# assistant must say so, not silently repeat "SEC EDGAR... free
+# official bulk data set" as if the local pipeline had actually
+# served the request.
+_13F_SOURCE_NOTES = {
+    "sec_bulk": "SEC EDGAR Form 13F, free official bulk data set — not a paid vendor.",
+    "fmp_live": (
+        "Live from FMP — the free SEC bulk data set for this quarter isn't "
+        "published yet (SEC publishes it once, closely after the filing "
+        "deadline, not continuously), so this one filer's freshest quarter "
+        "was fetched live instead of showing stale data."
+    ),
+}
+
+_POSITION_CHANGES_SOURCE_NOTES = {
+    "sec_bulk": (
+        "SEC EDGAR Form 13F, free official bulk data set. Based on share-count "
+        "changes only, not value_usd — a position's dollar value can change "
+        "purely from the security's price moving, with zero actual trading."
+    ),
+    "fmp_live": (
+        "The current period is live from FMP — the free SEC bulk data set for "
+        "this quarter isn't published yet, so it was fetched live instead of "
+        "comparing against stale data. The prior period is always from the "
+        "free, local bulk data set. Based on share-count changes only, not "
+        "value_usd — a position's dollar value can change purely from the "
+        "security's price moving, with zero actual trading."
+    ),
+}
+
 _TOOLS = [
     ToolDefinition(
         "get_watchlist",
@@ -1975,7 +2010,8 @@ class ChatWithAgentUseCase:
                     }
                     for h in result.holders
                 ],
-                "source_note": "SEC EDGAR Form 13F, free official bulk data set.",
+                "source": result.source,
+                "source_note": _13F_SOURCE_NOTES[result.source],
             }
 
         if tool_name == "get_institutional_portfolio":
@@ -1997,7 +2033,8 @@ class ChatWithAgentUseCase:
                     }
                     for h in result.holdings
                 ],
-                "source_note": "SEC EDGAR Form 13F, free official bulk data set.",
+                "source": result.source,
+                "source_note": _13F_SOURCE_NOTES[result.source],
             }
 
         if tool_name == "get_position_changes":
@@ -2021,10 +2058,8 @@ class ChatWithAgentUseCase:
                     }
                     for c in result.changes
                 ],
-                "source_note": (
-                    "SEC EDGAR Form 13F, free official bulk data set. Based on "
-                    "share-count changes only, not dollar value."
-                ),
+                "source": result.source,
+                "source_note": _POSITION_CHANGES_SOURCE_NOTES[result.source],
             }
             if result.filer_had_no_prior_period_data:
                 response["important_context"] = (
