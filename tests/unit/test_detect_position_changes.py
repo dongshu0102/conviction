@@ -145,3 +145,25 @@ def test_execute_does_not_flag_a_filer_with_genuine_prior_period_data() -> None:
     result = use_case.execute("Berkshire")
 
     assert result.filer_had_no_prior_period_data is False
+
+
+def test_execute_resolves_filer_by_total_value_not_a_single_largest_row() -> None:
+    """The same real, confirmed production bug fixed in
+    GetInstitutionalPortfolioUseCase and GetInstitutionalHoldersUseCase,
+    guarded here too since this use case resolves filers independently."""
+    repo = FakeInstitutionalHoldingRepository()
+    repo.bulk_save([
+        # Prior period, needed so at least 2 quarters exist at all.
+        _holding("Vanguard Capital Management LLC", "OLD POSITION", "037833100", 1000, 100_000_000, date(2025, 12, 31)),
+        # Current period -- the real target: several smaller positions, large total.
+        _holding("Vanguard Capital Management LLC", "POSITION A", "037833100", 1000, 500_000_000, date(2026, 3, 31)),
+        _holding("Vanguard Capital Management LLC", "POSITION B", "594918104", 1000, 500_000_000, date(2026, 3, 31)),
+        # An unrelated decoy filer with one huge single row that would
+        # win a naive "largest single row" sort, despite a smaller own total.
+        _holding("Vanguard Decoy Advisors LLC", "POSITION X", "025816109", 1000, 900_000_000, date(2026, 3, 31), filer_cik="0009999999"),
+    ])
+    use_case = DetectPositionChangesUseCase(repo)
+
+    result = use_case.execute("Vanguard")
+
+    assert result.filer_name == "Vanguard Capital Management LLC"

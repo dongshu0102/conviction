@@ -50,13 +50,25 @@ class GetInstitutionalHoldersUseCase:
         # response, with no indication which holder owned which
         # security). Resolving to ONE security's CUSIP first, then
         # fetching only that CUSIP's own rows, makes that impossible.
-        matches = self._repository.search_by_issuer_name(issuer_query, period, limit=1)
-        if not matches:
+        #
+        # A second, separate real bug was found and fixed here too:
+        # resolving to "whichever single row has the largest
+        # value_usd" is NOT the same as resolving to "whichever
+        # security has the largest TOTAL value" -- confirmed directly
+        # against real production data, searching "Circle" resolved to
+        # "ADVISORS INNER CIRCLE FD III" (an unrelated mutual fund, 9
+        # holders, $1.43B total) instead of the real Circle Internet
+        # Group (535 holders, $14.36B total), because one single row
+        # within that smaller, less-diversified fund happened to be
+        # larger than any single row within Circle's own, more
+        # evenly-distributed holder base. resolve_issuer_by_name sums
+        # by cusip first, so this can't happen.
+        resolved = self._repository.resolve_issuer_by_name(issuer_query, period)
+        if resolved is None:
             raise GetInstitutionalHoldersError(
                 f"No security matching '{issuer_query}' found for the latest quarter ({period})."
             )
-        cusip = matches[0].cusip
-        issuer_name = matches[0].issuer_name
+        cusip, issuer_name = resolved
 
         holders = self._repository.get_by_cusip(cusip, period)
         holders = sorted(holders, key=lambda h: h.value_usd, reverse=True)[:limit]

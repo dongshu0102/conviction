@@ -162,6 +162,46 @@ class SqlAlchemyInstitutionalHoldingRepository(InstitutionalHoldingRepository):
             ).scalars().all()
             return [_to_entity(r) for r in rows]
 
+    def resolve_issuer_by_name(
+        self, name_query: str, period_of_report: date,
+    ) -> tuple[str, str] | None:
+        with session_scope() as session:
+            best_cusip_row = session.execute(
+                select(
+                    InstitutionalHoldingModel.cusip,
+                    func.sum(InstitutionalHoldingModel.value_usd).label("total_value"),
+                )
+                .where(
+                    InstitutionalHoldingModel.issuer_name.ilike(f"%{name_query}%"),
+                    InstitutionalHoldingModel.period_of_report == period_of_report,
+                )
+                .group_by(InstitutionalHoldingModel.cusip)
+                .order_by(func.sum(InstitutionalHoldingModel.value_usd).desc())
+                .limit(1)
+            ).first()
+            if best_cusip_row is None:
+                return None
+            cusip = best_cusip_row[0]
+
+            # Most commonly-used name variant for this cusip -- a
+            # sensible, representative display name rather than an
+            # arbitrary one, given the same real security's name is
+            # recorded inconsistently across different filers.
+            name_row = session.execute(
+                select(
+                    InstitutionalHoldingModel.issuer_name,
+                    func.count().label("cnt"),
+                )
+                .where(
+                    InstitutionalHoldingModel.cusip == cusip,
+                    InstitutionalHoldingModel.period_of_report == period_of_report,
+                )
+                .group_by(InstitutionalHoldingModel.issuer_name)
+                .order_by(func.count().desc())
+                .limit(1)
+            ).first()
+            return (cusip, name_row[0])
+
     def search_by_filer_name(
         self, name_query: str, period_of_report: date, limit: int = 50,
     ) -> list[InstitutionalHolding]:
@@ -176,6 +216,42 @@ class SqlAlchemyInstitutionalHoldingRepository(InstitutionalHoldingRepository):
                 .limit(limit)
             ).scalars().all()
             return [_to_entity(r) for r in rows]
+
+    def resolve_filer_by_name(
+        self, name_query: str, period_of_report: date,
+    ) -> tuple[str, str] | None:
+        with session_scope() as session:
+            best_filer_row = session.execute(
+                select(
+                    InstitutionalHoldingModel.filer_cik,
+                    func.sum(InstitutionalHoldingModel.value_usd).label("total_value"),
+                )
+                .where(
+                    InstitutionalHoldingModel.filer_name.ilike(f"%{name_query}%"),
+                    InstitutionalHoldingModel.period_of_report == period_of_report,
+                )
+                .group_by(InstitutionalHoldingModel.filer_cik)
+                .order_by(func.sum(InstitutionalHoldingModel.value_usd).desc())
+                .limit(1)
+            ).first()
+            if best_filer_row is None:
+                return None
+            filer_cik = best_filer_row[0]
+
+            name_row = session.execute(
+                select(
+                    InstitutionalHoldingModel.filer_name,
+                    func.count().label("cnt"),
+                )
+                .where(
+                    InstitutionalHoldingModel.filer_cik == filer_cik,
+                    InstitutionalHoldingModel.period_of_report == period_of_report,
+                )
+                .group_by(InstitutionalHoldingModel.filer_name)
+                .order_by(func.count().desc())
+                .limit(1)
+            ).first()
+            return (filer_cik, name_row[0])
 
     def get_latest_period_of_report(self) -> date | None:
         with session_scope() as session:

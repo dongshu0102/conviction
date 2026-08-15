@@ -194,3 +194,27 @@ def test_execute_with_no_provider_configured_uses_local_data_even_when_stale() -
 
     assert result.source == "sec_bulk"
     assert result.period_of_report == date(2026, 3, 31)
+
+
+def test_execute_resolves_filer_by_total_value_not_a_single_largest_row() -> None:
+    """The filer-side sibling of the same real, confirmed production
+    bug found in GetInstitutionalHoldersUseCase: resolving to
+    "whichever single row has the largest value_usd" is not the same
+    as "whichever filer has the largest TOTAL portfolio value"."""
+    repo = FakeInstitutionalHoldingRepository()
+    repo.bulk_save([
+        # The real target: several smaller positions, large total.
+        _holding("Vanguard Capital Management LLC", "POSITION A", 500_000_000, filer_cik="0002100119"),
+        _holding("Vanguard Capital Management LLC", "POSITION B", 500_000_000, filer_cik="0002100119"),
+        _holding("Vanguard Capital Management LLC", "POSITION C", 400_000_000, filer_cik="0002100119"),
+        # An unrelated decoy filer that also matches "Vanguard": fewer
+        # positions but one huge single row that would win a naive
+        # "largest single row" sort, despite a smaller own total.
+        _holding("Vanguard Decoy Advisors LLC", "POSITION X", 900_000_000, filer_cik="0009999999"),
+    ])
+    use_case = GetInstitutionalPortfolioUseCase(repo)
+
+    result = use_case.execute("Vanguard", limit=200)
+
+    assert result.filer_name == "Vanguard Capital Management LLC"
+    assert len(result.holdings) == 3

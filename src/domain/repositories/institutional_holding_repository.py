@@ -52,6 +52,24 @@ class InstitutionalHoldingRepository(ABC):
         filers (e.g. "APPLE INC" vs "Apple, Inc.")."""
 
     @abstractmethod
+    def resolve_issuer_by_name(
+        self, name_query: str, period_of_report: date,
+    ) -> tuple[str, str] | None:
+        """Returns (cusip, issuer_name) for whichever CUSIP matching
+        name_query has the largest TOTAL value across all its rows —
+        never just the single largest individual row. Real, confirmed
+        bug fix: searching "Circle" previously resolved to "ADVISORS
+        INNER CIRCLE FD III" (an unrelated mutual fund, 9 holders,
+        $1.43B total) instead of the real Circle Internet Group (535
+        holders, $14.36B total), because one single row within that
+        smaller fund happened to be larger than any single row within
+        Circle's more evenly-distributed holder base — confirmed
+        directly against real production data, not a hypothetical.
+        Ordering by a single row's value can never substitute for
+        ordering by each candidate's own summed total. Returns None if
+        nothing matches."""
+
+    @abstractmethod
     def search_by_filer_name(
         self, name_query: str, period_of_report: date, limit: int = 50,
     ) -> list[InstitutionalHolding]:
@@ -59,6 +77,17 @@ class InstitutionalHoldingRepository(ABC):
         by value_usd descending (largest positions first) — one
         filer's portfolio, found by name rather than requiring the
         caller to already know their CIK."""
+
+    @abstractmethod
+    def resolve_filer_by_name(
+        self, name_query: str, period_of_report: date,
+    ) -> tuple[str, str] | None:
+        """Returns (filer_cik, filer_name) for whichever filer_cik
+        matching name_query has the largest TOTAL portfolio value
+        across all its rows — the filer-side sibling of
+        resolve_issuer_by_name, fixing the identical class of bug for
+        filer resolution rather than issuer resolution. Returns None
+        if nothing matches."""
 
     @abstractmethod
     def get_latest_period_of_report(self) -> date | None:

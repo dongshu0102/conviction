@@ -103,3 +103,54 @@ def test_execute_never_blends_holders_from_multiple_different_securities() -> No
     assert len(issuer_names) == 1, f"expected exactly one issuer, got: {issuer_names}"
     assert issuer_names == {"AMERICAN EXPRESS CO"}
     assert result.issuer_name == "AMERICAN EXPRESS CO"
+
+
+def test_execute_resolves_by_total_value_not_a_single_largest_row() -> None:
+    """Regression guard for a real, confirmed production bug: searching
+    "Circle" resolved to "ADVISORS INNER CIRCLE FD III" (an unrelated
+    mutual fund with only 2 holders but one very large individual
+    position) instead of the real Circle Internet Group (3 holders,
+    smaller individual positions, but a much larger TOTAL across all
+    of them) -- confirmed directly against real production data.
+    Ordering by a single row's value can never substitute for ordering
+    by each candidate's own summed total."""
+    repo = FakeInstitutionalHoldingRepository()
+    repo.bulk_save([
+        # The real target: many smaller holders, large total ($1.4B).
+        _holding("FUND A", "CIRCLE INTERNET GROUP INC", 500_000_000, cusip="172573107"),
+        _holding("FUND B", "CIRCLE INTERNET GROUP INC", 500_000_000, cusip="172573107"),
+        _holding("FUND C", "CIRCLE INTERNET GROUP INC", 400_000_000, cusip="172573107"),
+        # The unrelated decoy: fewer holders, but one huge single row
+        # ($900M) that would win a naive "largest single row" sort,
+        # despite its own total ($950M) being smaller than the real
+        # target's total ($1.4B).
+        _holding("DECOY FUND A", "ADVISORS INNER CIRCLE FD III", 900_000_000, cusip="00775Y322"),
+        _holding("DECOY FUND B", "ADVISORS INNER CIRCLE FD III", 50_000_000, cusip="00775Y322"),
+    ])
+    use_case = GetInstitutionalHoldersUseCase(repo)
+
+    result = use_case.execute("Circle", limit=200)
+
+    assert result.issuer_name == "CIRCLE INTERNET GROUP INC"
+    assert len(result.holders) == 3
+    assert {h.filer_name for h in result.holders} == {"FUND A", "FUND B", "FUND C"}
+
+
+def test_execute_picks_the_most_common_name_variant_for_display() -> None:
+    """The resolved issuer_name shown to the user should be the most
+    commonly-used real variant, not an arbitrary or rare one, given the
+    same real security's name is recorded inconsistently across
+    different filers (confirmed directly: Roblox alone had 20+ raw
+    text variants for the same real CUSIP in production data)."""
+    repo = FakeInstitutionalHoldingRepository()
+    repo.bulk_save([
+        _holding("FUND A", "ROBLOX CORP", 100_000_000, cusip="771049103"),
+        _holding("FUND B", "ROBLOX CORP", 100_000_000, cusip="771049103"),
+        _holding("FUND C", "ROBLOX CORP", 100_000_000, cusip="771049103"),
+        _holding("FUND D", "Roblox Corp -Class A", 100_000_000, cusip="771049103"),
+    ])
+    use_case = GetInstitutionalHoldersUseCase(repo)
+
+    result = use_case.execute("Roblox")
+
+    assert result.issuer_name == "ROBLOX CORP"

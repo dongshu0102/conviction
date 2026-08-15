@@ -88,13 +88,21 @@ class GetInstitutionalPortfolioUseCase:
         # filer's CIK first, then fetching only that CIK's own rows,
         # makes that impossible -- matches the same pattern already
         # used correctly in DetectPositionChangesUseCase.
-        matches = self._repository.search_by_filer_name(filer_query, period, limit=1)
-        if not matches:
+        #
+        # A second, separate real bug fixed here too: resolving to
+        # "whichever single row has the largest value_usd" is not the
+        # same as "whichever filer has the largest TOTAL portfolio
+        # value" -- confirmed directly with the sibling issuer-side bug
+        # (searching "Circle" wrongly resolved to an unrelated mutual
+        # fund with fewer, larger individual rows instead of the real
+        # company with many more, smaller ones). resolve_filer_by_name
+        # sums by filer_cik first, so this can't happen here either.
+        resolved = self._repository.resolve_filer_by_name(filer_query, period)
+        if resolved is None:
             raise GetInstitutionalPortfolioError(
                 f"No filer matching '{filer_query}' found for the latest quarter ({period})."
             )
-        filer_cik = matches[0].filer_cik
-        filer_name = matches[0].filer_name
+        filer_cik, filer_name = resolved
 
         if as_of is None:
             as_of = datetime.now(timezone.utc).date()

@@ -772,12 +772,46 @@ class FakeInstitutionalHoldingRepository:
         ]
         return sorted(matches, key=lambda h: h.value_usd, reverse=True)[:limit]
 
+    def resolve_issuer_by_name(self, name_query: str, period_of_report):
+        matches = [
+            h for h in self._holdings
+            if name_query.lower() in h.issuer_name.lower() and h.period_of_report == period_of_report
+        ]
+        if not matches:
+            return None
+        totals_by_cusip: dict = {}
+        for h in matches:
+            totals_by_cusip[h.cusip] = totals_by_cusip.get(h.cusip, 0) + h.value_usd
+        best_cusip = max(totals_by_cusip, key=lambda c: totals_by_cusip[c])
+
+        from collections import Counter
+        name_counts = Counter(h.issuer_name for h in matches if h.cusip == best_cusip)
+        best_name = name_counts.most_common(1)[0][0]
+        return (best_cusip, best_name)
+
     def search_by_filer_name(self, name_query: str, period_of_report, limit: int = 50):
         matches = [
             h for h in self._holdings
             if name_query.lower() in h.filer_name.lower() and h.period_of_report == period_of_report
         ]
         return sorted(matches, key=lambda h: h.value_usd, reverse=True)[:limit]
+
+    def resolve_filer_by_name(self, name_query: str, period_of_report):
+        matches = [
+            h for h in self._holdings
+            if name_query.lower() in h.filer_name.lower() and h.period_of_report == period_of_report
+        ]
+        if not matches:
+            return None
+        totals_by_cik: dict = {}
+        for h in matches:
+            totals_by_cik[h.filer_cik] = totals_by_cik.get(h.filer_cik, 0) + h.value_usd
+        best_cik = max(totals_by_cik, key=lambda c: totals_by_cik[c])
+
+        from collections import Counter
+        name_counts = Counter(h.filer_name for h in matches if h.filer_cik == best_cik)
+        best_name = name_counts.most_common(1)[0][0]
+        return (best_cik, best_name)
 
     def get_latest_period_of_report(self):
         periods = {h.period_of_report for h in self._holdings}

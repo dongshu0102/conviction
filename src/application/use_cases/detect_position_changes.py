@@ -55,13 +55,20 @@ class DetectPositionChangesUseCase:
             )
         current_period, prior_period = periods[0], periods[1]
 
-        matches = self._repository.search_by_filer_name(filer_query, current_period, limit=1)
-        if not matches:
+        # Same real bug fix applied in GetInstitutionalPortfolioUseCase:
+        # resolving to "whichever single row has the largest value_usd"
+        # is not the same as "whichever filer has the largest TOTAL
+        # portfolio value" -- confirmed directly (searching "Circle"
+        # wrongly resolved to an unrelated mutual fund with fewer,
+        # larger individual rows instead of the real company).
+        # resolve_filer_by_name sums by filer_cik first, so this can't
+        # happen here either.
+        resolved = self._repository.resolve_filer_by_name(filer_query, current_period)
+        if resolved is None:
             raise DetectPositionChangesError(
                 f"No filer matching '{filer_query}' found for the latest quarter ({current_period})."
             )
-        filer_cik = matches[0].filer_cik
-        filer_name = matches[0].filer_name
+        filer_cik, filer_name = resolved
 
         prior_portfolio = self._repository.get_aggregated_portfolio(filer_cik, prior_period)
         current_portfolio = self._repository.get_aggregated_portfolio(filer_cik, current_period)
