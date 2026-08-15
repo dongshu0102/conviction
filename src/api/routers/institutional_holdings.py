@@ -11,7 +11,7 @@ trigger that), never through this router.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.api.schemas import (
     InstitutionalHoldersResponseSchema,
@@ -32,15 +32,31 @@ from src.application.use_cases.get_institutional_portfolio import (
     GetInstitutionalPortfolioError,
     GetInstitutionalPortfolioUseCase,
 )
+from src.infrastructure.config import get_settings
+from src.infrastructure.data_providers.fmp_provider import FinancialModelingPrepProvider
 from src.infrastructure.persistence.institutional_holding_repository_impl import (
     SqlAlchemyInstitutionalHoldingRepository,
 )
 
 router = APIRouter(prefix="/institutional-holdings", tags=["institutional-holdings"])
 
+_SOURCE_NOTES = {
+    "sec_bulk": "SEC EDGAR Form 13F, free official bulk data set — not a paid vendor.",
+    "fmp_live": (
+        "Live from FMP — the free SEC bulk data set for this quarter isn't "
+        "published yet (SEC publishes it once, closely after the filing "
+        "deadline, not continuously), so this one filer's freshest quarter "
+        "was fetched live instead of showing stale data."
+    ),
+}
+
 
 def _repository() -> SqlAlchemyInstitutionalHoldingRepository:
     return SqlAlchemyInstitutionalHoldingRepository()
+
+
+def get_data_provider() -> FinancialModelingPrepProvider:
+    return FinancialModelingPrepProvider(settings=get_settings())
 
 
 def _to_schema(h) -> InstitutionalHoldingSchema:
@@ -74,8 +90,9 @@ def get_holders(
 def get_portfolio(
     filer: str = Query(..., min_length=1, description="Filer name to search for, e.g. \"Berkshire\"."),
     limit: int = Query(50, ge=1, le=200),
+    provider: FinancialModelingPrepProvider = Depends(get_data_provider),
 ) -> InstitutionalPortfolioResponseSchema:
-    use_case = GetInstitutionalPortfolioUseCase(_repository())
+    use_case = GetInstitutionalPortfolioUseCase(_repository(), provider)
     try:
         result = use_case.execute(filer, limit=limit)
     except GetInstitutionalPortfolioError as exc:
@@ -85,6 +102,7 @@ def get_portfolio(
         filer_query=result.filer_query, filer_name=result.filer_name,
         period_of_report=result.period_of_report,
         holdings=[_to_schema(h) for h in result.holdings],
+        source=result.source, source_note=_SOURCE_NOTES[result.source],
     )
 
 
