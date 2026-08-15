@@ -103,6 +103,7 @@ from src.application.use_cases.detect_position_changes import DetectPositionChan
 from src.application.use_cases.get_beneficial_ownership_disclosures import (
     GetBeneficialOwnershipDisclosuresUseCase,
 )
+from src.application.use_cases.get_insider_transactions import GetInsiderTransactionsUseCase
 from src.application.use_cases.get_institutional_holders import GetInstitutionalHoldersUseCase
 from src.application.use_cases.get_institutional_portfolio import GetInstitutionalPortfolioUseCase
 from src.application.use_cases.get_macro_snapshot import GetMacroSnapshotUseCase
@@ -259,6 +260,7 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
         get_institutional_portfolio=GetInstitutionalPortfolioUseCase(institutional_holding_repo),
         detect_position_changes=DetectPositionChangesUseCase(institutional_holding_repo),
         get_beneficial_ownership_disclosures=GetBeneficialOwnershipDisclosuresUseCase(provider),
+        get_insider_transactions=GetInsiderTransactionsUseCase(provider),
     )
     return use_case, fake_agent, portfolio_repo
 
@@ -386,7 +388,85 @@ def test_get_beneficial_ownership_disclosures_error_surfaces_cleanly() -> None:
     assert "error" in result
 
 
-def test_get_institutional_holders_source_note_reflects_sec_bulk() -> None:
+def test_get_insider_transactions_dispatches_correctly() -> None:
+    from datetime import date
+
+    from src.domain.entities.insider_transaction import InsiderTransaction
+
+    transaction = InsiderTransaction(
+        symbol="AAPL", filing_date=date(2026, 8, 13), transaction_date=date(2026, 8, 11),
+        reporting_cik="0001780525", company_cik="0000320193",
+        reporting_name="Newstead Jennifer", type_of_owner="officer: SVP, GC and Secretary",
+        transaction_type="S-Sale", acquisition_or_disposition="D", direct_or_indirect="D",
+        security_name="Common Stock", securities_transacted=1439.0, securities_owned=40107.0,
+        price=307.75, source_url="https://example.com/filing.htm",
+    )
+    provider = FakeDataProvider(
+        company=Company(ticker="X", name="X", sector=Sector.TECHNOLOGY, industry="X", exchange="X", country="US"),
+        insider_transactions=[transaction],
+    )
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("get_insider_transactions", {"ticker": "aapl"})], provider=provider,
+    )
+    use_case.execute("alice", "any recent insider selling at Apple?", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["ticker"] == "AAPL"
+    assert len(result["transactions"]) == 1
+    assert result["transactions"][0]["reporting_name"] == "Newstead Jennifer"
+    assert result["transactions"][0]["transaction_type"] == "S-Sale"
+    assert result["transactions"][0]["price"] == 307.75
+
+
+def test_get_insider_transactions_preserves_a_genuine_zero_price() -> None:
+    """Real, confirmed scenario: option-exercise/RSU-vesting events
+    report price=0, a real, honest reflection of a routine
+    compensation event, not missing data -- the assistant must never
+    treat this as a discretionary trade."""
+    from datetime import date
+
+    from src.domain.entities.insider_transaction import InsiderTransaction
+
+    transaction = InsiderTransaction(
+        symbol="AAPL", filing_date=date(2026, 6, 17), transaction_date=date(2026, 6, 15),
+        reporting_cik="0001780525", company_cik="0000320193",
+        reporting_name="Newstead Jennifer", type_of_owner="officer: SVP, GC and Secretary",
+        transaction_type="M-Exempt", acquisition_or_disposition="D", direct_or_indirect="D",
+        security_name="Restricted Stock Unit", securities_transacted=30104.0, securities_owned=210728.0,
+        price=0.0, source_url="https://example.com/filing.htm",
+    )
+    provider = FakeDataProvider(
+        company=Company(ticker="X", name="X", sector=Sector.TECHNOLOGY, industry="X", exchange="X", country="US"),
+        insider_transactions=[transaction],
+    )
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("get_insider_transactions", {"ticker": "AAPL"})], provider=provider,
+    )
+    use_case.execute("alice", "any recent insider activity at Apple?", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["transactions"][0]["price"] == 0.0
+    assert result["transactions"][0]["transaction_type"] == "M-Exempt"
+
+
+def test_get_insider_transactions_error_surfaces_cleanly() -> None:
+    class NotImplementedProvider:
+        def get_insider_transactions(self, symbol):
+            raise NotImplementedError("not supported")
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("get_insider_transactions", {"ticker": "AAPL"})],
+        provider=NotImplementedProvider(),
+    )
+    use_case.execute("alice", "any recent insider activity at Apple?", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert "error" in result
+
+
+
     """Baseline, unchanged behavior: the default, local-pipeline case."""
     from datetime import date
 

@@ -98,6 +98,7 @@ class FakeDataProvider(FinancialDataProvider):
         quote=None,
         quotes_by_ticker: dict | None = None,
         beneficial_ownership_disclosures: list | None = None,
+        insider_transactions: list | None = None,
     ) -> None:
         self._company = company
         self._income_statements = income_statements or []
@@ -107,6 +108,7 @@ class FakeDataProvider(FinancialDataProvider):
         self._quote = quote
         self._quotes_by_ticker = quotes_by_ticker or {}
         self._beneficial_ownership_disclosures = beneficial_ownership_disclosures or []
+        self._insider_transactions = insider_transactions or []
 
     def get_company_profile(self, ticker: str) -> Company:
         return self._company
@@ -138,6 +140,9 @@ class FakeDataProvider(FinancialDataProvider):
 
     def get_beneficial_ownership_disclosures(self, symbol: str):
         return self._beneficial_ownership_disclosures
+
+    def get_insider_transactions(self, symbol: str):
+        return self._insider_transactions
 
 
 class FakeResearchReportRepository:

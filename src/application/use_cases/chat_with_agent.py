@@ -87,6 +87,10 @@ from src.application.use_cases.get_beneficial_ownership_disclosures import (
     GetBeneficialOwnershipDisclosuresError,
     GetBeneficialOwnershipDisclosuresUseCase,
 )
+from src.application.use_cases.get_insider_transactions import (
+    GetInsiderTransactionsError,
+    GetInsiderTransactionsUseCase,
+)
 from src.application.use_cases.get_institutional_holders import (
     GetInstitutionalHoldersError,
     GetInstitutionalHoldersUseCase,
@@ -1001,6 +1005,37 @@ _TOOLS = [
         },
     ),
     ToolDefinition(
+        "get_insider_transactions",
+        "Every reported Form 3/4/5 transaction for one company's insiders "
+        "— officers, directors, and 10%+ owners buying, selling, or "
+        "otherwise changing their reported holdings in their own "
+        "company's stock, most recent first. Form 4 is filed within 2 "
+        "business days of the transaction, the fastest of the SEC "
+        "filings this platform covers — genuinely closer to real-time "
+        "than 13F (up to 45 days late) or even 13D/13G (up to 5 "
+        "business days). price can be genuinely 0 — this is NOT missing "
+        "data. A real, confirmed pattern: option-exercise and "
+        "RSU-vesting events (\"M-Exempt\") report price=0 because "
+        "they're routine, scheduled compensation events, not "
+        "discretionary trades — materially weaker signal than a real "
+        "purchase (\"P-Purchase\") or sale (\"S-Sale\") at a genuine, "
+        "non-zero price. Never present a price=0 transaction as if it "
+        "were a discretionary buy or sell decision. transaction_type is "
+        "the raw, as-filed SEC code (e.g. \"P-Purchase\", \"S-Sale\", "
+        "\"M-Exempt\", \"F-InKind\", \"A-Award\", and others) — treat "
+        "unfamiliar codes honestly rather than guessing their meaning. "
+        "No free, structured SEC bulk data set exists for these forms "
+        "(unlike Form 13F), so this is always live from FMP, never "
+        "stale. Takes a ticker directly.",
+        {
+            "type": "object",
+            "properties": {
+                "ticker": {"type": "string", "description": "Ticker symbol, e.g. \"AAPL\"."},
+            },
+            "required": ["ticker"],
+        },
+    ),
+    ToolDefinition(
         "ingest_etf",
         "Ingest an ETF's profile (name, expense ratio, AUM) so it can be added "
         "to watchlists, themes, and screened/factor-scored. ETFs have no "
@@ -1313,6 +1348,7 @@ class ChatWithAgentUseCase:
         get_institutional_portfolio: GetInstitutionalPortfolioUseCase,
         detect_position_changes: DetectPositionChangesUseCase,
         get_beneficial_ownership_disclosures: GetBeneficialOwnershipDisclosuresUseCase,
+        get_insider_transactions: GetInsiderTransactionsUseCase,
     ) -> None:
         self._chat_agent = chat_agent
         self._get_watchlist = get_watchlist
@@ -1373,6 +1409,7 @@ class ChatWithAgentUseCase:
         self._get_institutional_portfolio = get_institutional_portfolio
         self._detect_position_changes = detect_position_changes
         self._get_beneficial_ownership_disclosures = get_beneficial_ownership_disclosures
+        self._get_insider_transactions = get_insider_transactions
         self._construct_risk_parity_portfolio = construct_risk_parity_portfolio
         self._user_id: str = ""  # set per-request in execute()
 
@@ -2096,6 +2133,38 @@ class ChatWithAgentUseCase:
                     "exists for these schedules. form_type is 13D (possible activist "
                     "intent) or 13G (passive investor, no such stated intent) — always "
                     "distinguish these explicitly."
+                ),
+            }
+
+        if tool_name == "get_insider_transactions":
+            try:
+                result = self._get_insider_transactions.execute(tool_input["ticker"])
+            except GetInsiderTransactionsError as exc:
+                return {"error": str(exc)}
+            return {
+                "ticker": result.ticker,
+                "transactions": [
+                    {
+                        "filing_date": t.filing_date.isoformat(),
+                        "transaction_date": t.transaction_date.isoformat(),
+                        "reporting_name": t.reporting_name,
+                        "type_of_owner": t.type_of_owner,
+                        "transaction_type": t.transaction_type,
+                        "acquisition_or_disposition": t.acquisition_or_disposition,
+                        "security_name": t.security_name,
+                        "securities_transacted": t.securities_transacted,
+                        "securities_owned": t.securities_owned,
+                        "price": t.price,
+                    }
+                    for t in result.transactions
+                ],
+                "source_note": (
+                    "Form 3/4/5 insider transactions, live from FMP — no free, "
+                    "structured SEC bulk data set exists for these forms. price can be "
+                    "genuinely 0 for option exercises and RSU vesting (routine "
+                    "compensation events, not open-market trades) — a real, honest "
+                    "reflection of the transaction, not missing data. Never present a "
+                    "price=0 transaction as a discretionary buy or sell decision."
                 ),
             }
 
