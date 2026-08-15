@@ -619,6 +619,43 @@ export interface BeneficialOwnershipDisclosuresResponse {
   source_note: string;
 }
 
+// Form 3/4/5 insider transactions — genuinely different from 13D/13G:
+// this is an insider's own trading activity, not a separate party
+// crossing 5% ownership, and Form 4 is filed within 2 business days
+// of the transaction -- the fastest of the SEC filings this platform
+// covers. Always live from FMP; no free, structured SEC bulk data
+// set exists for these forms.
+export interface InsiderTransaction {
+  filing_date: string;
+  transaction_date: string;
+  reporting_cik: string;
+  company_cik: string;
+  reporting_name: string;
+  type_of_owner: string;
+  // Raw, as-filed SEC code, e.g. "P-Purchase", "S-Sale", "M-Exempt",
+  // "F-InKind", "A-Award" — never a fixed enum, since real, confirmed
+  // data has shown types not previously seen or anticipated.
+  transaction_type: string;
+  acquisition_or_disposition: string;
+  direct_or_indirect: string;
+  security_name: string;
+  securities_transacted: number;
+  securities_owned: number;
+  // Can be genuinely 0 -- not missing data. Confirmed directly: option
+  // exercises and RSU vesting ("M-Exempt") are real, routine
+  // compensation events reported at price=0, materially different
+  // from a real, discretionary purchase or sale at a genuine,
+  // non-zero price.
+  price: number;
+  source_url: string;
+}
+
+export interface InsiderTransactionsResponse {
+  ticker: string;
+  transactions: InsiderTransaction[];
+  source_note: string;
+}
+
 export interface CapitalFlowMonitorModuleDef {
   id: string;
   group: string;
@@ -1071,5 +1108,12 @@ export const api = {
   getBeneficialOwnershipDisclosures: (ticker: string) => {
     const params = new URLSearchParams({ ticker });
     return request<BeneficialOwnershipDisclosuresResponse>(`/beneficial-ownership/disclosures?${params.toString()}`);
+  },
+
+  // Form 3/4/5 — always live from FMP, no free, structured SEC bulk
+  // data set exists for these forms. Takes a ticker directly.
+  getInsiderTransactions: (ticker: string) => {
+    const params = new URLSearchParams({ ticker });
+    return request<InsiderTransactionsResponse>(`/insider-transactions?${params.toString()}`);
   },
 };
