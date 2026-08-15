@@ -547,6 +547,7 @@ export interface InstitutionalHoldersResponse {
   issuer_name: string;
   period_of_report: string;
   holders: InstitutionalHolding[];
+  source: string;
   source_note: string;
 }
 
@@ -555,6 +556,7 @@ export interface InstitutionalPortfolioResponse {
   filer_name: string;
   period_of_report: string;
   holdings: InstitutionalHolding[];
+  source: string;
   source_note: string;
 }
 
@@ -582,6 +584,38 @@ export interface PositionChangesResponse {
   // fundamentally different, less alarming story than an established
   // manager buying their entire book in one quarter.
   filer_had_no_prior_period_data: boolean;
+  source: string;
+  source_note: string;
+}
+
+// Schedule 13D/13G beneficial ownership disclosures — genuinely
+// different from the Form 13F types above: security-level, not
+// manager-level, and within days of a 5%-ownership-crossing event
+// rather than up to 45 days late. Always live from FMP; no free SEC
+// bulk data set exists for these schedules the way it does for 13F.
+export interface BeneficialOwnershipDisclosure {
+  cik: string;
+  filing_date: string;
+  accepted_date: string;
+  cusip: string;
+  name_of_reporting_person: string;
+  citizenship_or_place_of_organization: string | null;
+  sole_voting_power: number;
+  shared_voting_power: number;
+  sole_dispositive_power: number;
+  shared_dispositive_power: number;
+  amount_beneficially_owned: number;
+  percent_of_class: number;
+  type_of_reporting_person: string | null;
+  // "13D" (possible activist intent) or "13G" (passive investor, no
+  // such stated intent) — the single most important field here.
+  form_type: string;
+  source_url: string;
+}
+
+export interface BeneficialOwnershipDisclosuresResponse {
+  ticker: string;
+  disclosures: BeneficialOwnershipDisclosure[];
   source_note: string;
 }
 
@@ -1029,5 +1063,13 @@ export const api = {
   getPositionChanges: (filer: string, minPctChange = 0) => {
     const params = new URLSearchParams({ filer, min_pct_change: String(minPctChange) });
     return request<PositionChangesResponse>(`/institutional-holdings/position-changes?${params.toString()}`);
+  },
+
+  // Schedule 13D/13G — always live from FMP, no free SEC bulk data
+  // set exists for these schedules. Takes a ticker directly, unlike
+  // the 13F methods above (raw 13F data has no ticker at all).
+  getBeneficialOwnershipDisclosures: (ticker: string) => {
+    const params = new URLSearchParams({ ticker });
+    return request<BeneficialOwnershipDisclosuresResponse>(`/beneficial-ownership/disclosures?${params.toString()}`);
   },
 };

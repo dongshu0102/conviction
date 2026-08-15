@@ -43,6 +43,7 @@ const SAMPLE_CHANGES: PositionChangesResponse = {
       prior_value_usd: 2275897610, current_value_usd: 0, pct_change: null,
     },
   ],
+  source: "sec_bulk",
   source_note: "SEC EDGAR Form 13F, free official bulk data set.",
 };
 
@@ -53,6 +54,7 @@ const SAMPLE_HOLDERS: InstitutionalHoldersResponse = {
   holders: [
     { filer_name: "VANGUARD CAPITAL MANAGEMENT LLC", issuer_name: "APPLE INC", cusip: "037833100", ticker: "AAPL", title_of_class: "COM", value_usd: 242076924860, shares_or_principal_amount: 953847648, share_type: "SH", put_call: null, investment_discretion: "DFND" },
   ],
+  source: "sec_bulk",
   source_note: "SEC EDGAR Form 13F, free official bulk data set.",
 };
 
@@ -63,6 +65,7 @@ const SAMPLE_PORTFOLIO: InstitutionalPortfolioResponse = {
   holdings: [
     { filer_name: "Berkshire Hathaway Inc", issuer_name: "AMERICAN EXPRESS CO", cusip: "025816109", ticker: "AXP", title_of_class: "COM", value_usd: 45087984892, shares_or_principal_amount: 149061045, share_type: "SH", put_call: null, investment_discretion: "SOLE" },
   ],
+  source: "sec_bulk",
   source_note: "SEC EDGAR Form 13F, free official bulk data set.",
 };
 
