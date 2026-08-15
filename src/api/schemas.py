@@ -495,6 +495,35 @@ class PositionChangesResponseSchema(BaseModel):
     )
 
 
+class BeneficialOwnershipDisclosureSchema(BaseModel):
+    cik: str
+    filing_date: date
+    accepted_date: date
+    cusip: str
+    name_of_reporting_person: str
+    citizenship_or_place_of_organization: str | None
+    sole_voting_power: int
+    shared_voting_power: int
+    sole_dispositive_power: int
+    shared_dispositive_power: int
+    amount_beneficially_owned: int
+    percent_of_class: float
+    type_of_reporting_person: str | None
+    form_type: str
+    source_url: str
+
+
+class BeneficialOwnershipDisclosuresResponseSchema(BaseModel):
+    ticker: str
+    disclosures: list[BeneficialOwnershipDisclosureSchema]
+    source_note: str = (
+        "Schedule 13D/13G filings, live from FMP — no free SEC bulk data set "
+        "exists for these schedules (unlike Form 13F). form_type is 13D "
+        "(possible activist intent, an Item 4 purpose statement was filed) "
+        "or 13G (passive investor, no such stated intent)."
+    )
+
+
 class RateSignalsSchema(BaseModel):
     as_of: datetime
     yield_curve: YieldCurveReadingSchema

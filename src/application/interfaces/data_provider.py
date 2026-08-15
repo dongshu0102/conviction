@@ -94,6 +94,15 @@ class FinancialDataProvider(ABC):
             "This data provider does not support get_institutional_holders_by_symbol"
         )
 
+    def get_beneficial_ownership_disclosures(self, symbol: str) -> list:
+        """Every reporting person's Schedule 13D/13G disclosure for one
+        security — genuinely different from 13F: security-level, not
+        manager-level, and within days of a 5%-ownership-crossing
+        event rather than up to 45 days late. FMP-specific capability."""
+        raise NotImplementedError(
+            "This data provider does not support get_beneficial_ownership_disclosures"
+        )
+
     def get_daily_closes(self, ticker: str, limit: int = 30) -> list[PriceBar]:
         """Most-recent-first end-of-day closes."""
         raise NotImplementedError("This data provider does not support get_daily_closes")
