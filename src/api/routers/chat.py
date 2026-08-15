@@ -298,7 +298,7 @@ def get_chat_use_case(
             ResolveCusipTickerUseCase(SqlAlchemyCusipTickerMapRepository(), data_provider),
         ),
         get_institutional_portfolio=GetInstitutionalPortfolioUseCase(SqlAlchemyInstitutionalHoldingRepository(), data_provider),
-        detect_position_changes=DetectPositionChangesUseCase(SqlAlchemyInstitutionalHoldingRepository()),
+        detect_position_changes=DetectPositionChangesUseCase(SqlAlchemyInstitutionalHoldingRepository(), data_provider),
     )
 
 

@@ -54,6 +54,22 @@ _SOURCE_NOTES = {
     ),
 }
 
+_POSITION_CHANGES_SOURCE_NOTES = {
+    "sec_bulk": (
+        "SEC EDGAR Form 13F, free official bulk data set. Based on share-count "
+        "changes only, not value_usd — a position's dollar value can change "
+        "purely from the security's price moving, with zero actual trading."
+    ),
+    "fmp_live": (
+        "The current period is live from FMP — the free SEC bulk data set for "
+        "this quarter isn't published yet, so it was fetched live instead of "
+        "comparing against stale data. The prior period is always from the "
+        "free, local bulk data set. Based on share-count changes only, not "
+        "value_usd — a position's dollar value can change purely from the "
+        "security's price moving, with zero actual trading."
+    ),
+}
+
 
 def _repository() -> SqlAlchemyInstitutionalHoldingRepository:
     return SqlAlchemyInstitutionalHoldingRepository()
@@ -126,8 +142,9 @@ def get_position_changes(
         0.0, ge=0.0, le=1.0,
         description="Filters out increased/decreased changes below this fraction (e.g. 0.05 for 5%). New/closed positions are always included.",
     ),
+    provider: FinancialModelingPrepProvider = Depends(get_data_provider),
 ) -> PositionChangesResponseSchema:
-    use_case = DetectPositionChangesUseCase(_repository())
+    use_case = DetectPositionChangesUseCase(_repository(), provider)
     try:
         result = use_case.execute(filer, min_pct_change=min_pct_change)
     except DetectPositionChangesError as exc:
@@ -137,6 +154,7 @@ def get_position_changes(
         filer_query=result.filer_query, filer_name=result.filer_name,
         prior_period=result.prior_period, current_period=result.current_period,
         filer_had_no_prior_period_data=result.filer_had_no_prior_period_data,
+        source=result.source, source_note=_POSITION_CHANGES_SOURCE_NOTES[result.source],
         changes=[
             PositionChangeSchema(
                 cusip=c.cusip, issuer_name=c.issuer_name, change_type=c.change_type,
