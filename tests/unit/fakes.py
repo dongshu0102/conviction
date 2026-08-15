@@ -837,3 +837,19 @@ class FakeCusipSearchProvider:
     def search_cusip(self, cusip: str):
         self.search_cusip_calls.append(cusip)
         return self._results_by_cusip.get(cusip, [])
+
+
+class FakeFreshnessFallbackProvider:
+    """Stands in for FinancialDataProvider — only the one method this
+    use case's freshness fallback actually calls."""
+
+    def __init__(self, holdings_by_cik_quarter: dict | None = None, raise_error: Exception | None = None):
+        self._holdings_by_cik_quarter = holdings_by_cik_quarter or {}
+        self._raise_error = raise_error
+        self.calls = []
+
+    def get_institutional_holdings_by_filer(self, cik, year, quarter, filer_name):
+        self.calls.append((cik, year, quarter, filer_name))
+        if self._raise_error is not None:
+            raise self._raise_error
+        return self._holdings_by_cik_quarter.get((cik, year, quarter), [])

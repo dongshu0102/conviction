@@ -71,6 +71,17 @@ class FinancialDataProvider(ABC):
         not assumed available on every provider."""
         raise NotImplementedError("This data provider does not support search_cusip")
 
+    def get_institutional_holdings_by_filer(
+        self, cik: str, year: int, quarter: int, filer_name: str,
+    ) -> list:
+        """One filer's 13F portfolio for one quarter, live from this
+        provider — a freshness fallback for a quarter the app's own
+        free, bulk-ingested SEC pipeline hasn't caught up to yet, not
+        the primary source. FMP-specific capability."""
+        raise NotImplementedError(
+            "This data provider does not support get_institutional_holdings_by_filer"
+        )
+
     def get_daily_closes(self, ticker: str, limit: int = 30) -> list[PriceBar]:
         """Most-recent-first end-of-day closes."""
         raise NotImplementedError("This data provider does not support get_daily_closes")

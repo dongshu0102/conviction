@@ -5,7 +5,7 @@ from src.application.use_cases.get_institutional_portfolio import (
     GetInstitutionalPortfolioUseCase,
 )
 from src.domain.entities.institutional_holding import InstitutionalHolding
-from tests.unit.fakes import FakeInstitutionalHoldingRepository
+from tests.unit.fakes import FakeInstitutionalHoldingRepository, FakeFreshnessFallbackProvider
 
 
 def _holding(
@@ -102,3 +102,95 @@ def test_execute_never_blends_holdings_from_multiple_different_filers() -> None:
     assert len(filer_names) == 1, f"expected exactly one filer, got: {filer_names}"
     assert filer_names == {"Vanguard Capital Management LLC"}
     assert result.filer_name == "Vanguard Capital Management LLC"
+
+
+def test_execute_uses_local_data_when_it_is_already_as_fresh_as_expected() -> None:
+    """as_of is deliberately fixed/injected here, not real 'today' --
+    this test must stay correct regardless of when it actually runs."""
+    repo = FakeInstitutionalHoldingRepository()
+    repo.bulk_save([
+        _holding("Berkshire Hathaway Inc", "APPLE INC", 500_000_000, period=date(2026, 3, 31)),
+    ])
+    provider = FakeFreshnessFallbackProvider()
+    use_case = GetInstitutionalPortfolioUseCase(repo, provider)
+
+    # as_of the day BEFORE the Q2 2026 deadline -- Q1 2026 (what's
+    # locally stored) is still the expected-latest quarter.
+    result = use_case.execute("Berkshire", as_of=date(2026, 8, 13))
+
+    assert result.source == "sec_bulk"
+    assert result.period_of_report == date(2026, 3, 31)
+    assert provider.calls == [], "FMP should never be called when local data is already fresh enough"
+
+
+def test_execute_falls_back_to_fmp_when_local_data_is_stale_and_fmp_has_fresher_data() -> None:
+    repo = FakeInstitutionalHoldingRepository()
+    repo.bulk_save([
+        _holding("Berkshire Hathaway Inc", "OLD STALE POSITION", 500_000_000, period=date(2026, 3, 31)),
+    ])
+    fresher_holding = _holding(
+        "Berkshire Hathaway Inc", "CHEVRON CORPORATION", 13_986_141_890, period=date(2026, 6, 30),
+    )
+    provider = FakeFreshnessFallbackProvider(
+        holdings_by_cik_quarter={("0001067983", 2026, 2): [fresher_holding]},
+    )
+    use_case = GetInstitutionalPortfolioUseCase(repo, provider)
+
+    # as_of ON the Q2 2026 deadline itself -- Q2 now counts as expected-complete.
+    result = use_case.execute("Berkshire", as_of=date(2026, 8, 14))
+
+    assert result.source == "fmp_live"
+    assert result.period_of_report == date(2026, 6, 30)
+    assert len(result.holdings) == 1
+    assert result.holdings[0].issuer_name == "CHEVRON CORPORATION"
+    assert provider.calls == [("0001067983", 2026, 2, "Berkshire Hathaway Inc")]
+
+
+def test_execute_falls_back_to_local_data_when_fmp_has_nothing_for_this_filer_yet() -> None:
+    """A real, honest degradation -- the local pipeline is stale, but
+    this specific filer genuinely hasn't filed for the fresher
+    quarter on FMP either yet. Must not silently show nothing."""
+    repo = FakeInstitutionalHoldingRepository()
+    repo.bulk_save([
+        _holding("Berkshire Hathaway Inc", "OLD POSITION", 500_000_000, period=date(2026, 3, 31)),
+    ])
+    provider = FakeFreshnessFallbackProvider(holdings_by_cik_quarter={})  # empty for everyone
+    use_case = GetInstitutionalPortfolioUseCase(repo, provider)
+
+    result = use_case.execute("Berkshire", as_of=date(2026, 8, 14))
+
+    assert result.source == "sec_bulk"
+    assert result.period_of_report == date(2026, 3, 31)
+    assert result.holdings[0].issuer_name == "OLD POSITION"
+
+
+def test_execute_falls_back_to_local_data_when_fmp_raises_an_error() -> None:
+    """A live-data hiccup must never take down a feature the free,
+    local pipeline already serves correctly on its own."""
+    repo = FakeInstitutionalHoldingRepository()
+    repo.bulk_save([
+        _holding("Berkshire Hathaway Inc", "OLD POSITION", 500_000_000, period=date(2026, 3, 31)),
+    ])
+    provider = FakeFreshnessFallbackProvider(raise_error=ConnectionError("network is down"))
+    use_case = GetInstitutionalPortfolioUseCase(repo, provider)
+
+    result = use_case.execute("Berkshire", as_of=date(2026, 8, 14))
+
+    assert result.source == "sec_bulk"
+    assert result.period_of_report == date(2026, 3, 31)
+
+
+def test_execute_with_no_provider_configured_uses_local_data_even_when_stale() -> None:
+    """The most common real deployment case until this is fully wired
+    in: provider=None entirely, matching every existing caller of this
+    use case before tonight -- must behave exactly as it always has."""
+    repo = FakeInstitutionalHoldingRepository()
+    repo.bulk_save([
+        _holding("Berkshire Hathaway Inc", "OLD POSITION", 500_000_000, period=date(2026, 3, 31)),
+    ])
+    use_case = GetInstitutionalPortfolioUseCase(repo)  # no provider passed at all
+
+    result = use_case.execute("Berkshire", as_of=date(2026, 8, 14))
+
+    assert result.source == "sec_bulk"
+    assert result.period_of_report == date(2026, 3, 31)
