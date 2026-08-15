@@ -88,6 +88,9 @@ from src.application.use_cases.compute_dcf_valuation import (
 )
 from src.application.use_cases.compute_investment_irr import ComputeInvestmentIrrUseCase
 from src.application.use_cases.detect_position_changes import DetectPositionChangesUseCase
+from src.application.use_cases.get_beneficial_ownership_disclosures import (
+    GetBeneficialOwnershipDisclosuresUseCase,
+)
 from src.application.use_cases.get_capital_flow import GetCapitalFlowUseCase
 from src.application.use_cases.get_institutional_holders import GetInstitutionalHoldersUseCase
 from src.application.use_cases.get_institutional_portfolio import GetInstitutionalPortfolioUseCase
@@ -299,6 +302,7 @@ def get_chat_use_case(
         ),
         get_institutional_portfolio=GetInstitutionalPortfolioUseCase(SqlAlchemyInstitutionalHoldingRepository(), data_provider),
         detect_position_changes=DetectPositionChangesUseCase(SqlAlchemyInstitutionalHoldingRepository(), data_provider),
+        get_beneficial_ownership_disclosures=GetBeneficialOwnershipDisclosuresUseCase(data_provider),
     )
 
 

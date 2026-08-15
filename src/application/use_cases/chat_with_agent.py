@@ -83,6 +83,10 @@ from src.application.use_cases.detect_position_changes import (
     DetectPositionChangesError,
     DetectPositionChangesUseCase,
 )
+from src.application.use_cases.get_beneficial_ownership_disclosures import (
+    GetBeneficialOwnershipDisclosuresError,
+    GetBeneficialOwnershipDisclosuresUseCase,
+)
 from src.application.use_cases.get_institutional_holders import (
     GetInstitutionalHoldersError,
     GetInstitutionalHoldersUseCase,
@@ -930,6 +934,38 @@ _TOOLS = [
         },
     ),
     ToolDefinition(
+        "get_beneficial_ownership_disclosures",
+        "Every reporting person's Schedule 13D/13G disclosure for one "
+        "security — who has crossed 5% beneficial ownership, and "
+        "whether they stated activist intent or not. Genuinely "
+        "different from the Form 13F tools above: 13F reports at the "
+        "MANAGER level across their whole portfolio, quarterly, up to "
+        "45 days late; this reports at the SECURITY level the moment "
+        "one specific holder crosses (or amends) a 5% stake, within "
+        "days (5 business days for the initial filing, 2 business "
+        "days for a material amendment, per the SEC's 2023 "
+        "amendments). form_type is the single most important field: "
+        "\"13D\" means the filer stated a purpose that could include "
+        "influencing management or control (Item 4) — real, possible "
+        "activist intent; \"13G\" is the shorter form for passive "
+        "investors, index funds, and qualified institutions with no "
+        "such stated intent — most large index managers' routine "
+        "stakes (e.g. Vanguard, BlackRock) file as 13G, not 13D. "
+        "Always distinguish these explicitly rather than treating "
+        "every disclosure as activist. No free, official SEC bulk "
+        "data set exists for these schedules (unlike Form 13F), so "
+        "this is always live from FMP, never stale. Takes a ticker "
+        "directly (this data is already ticker-based at the source, "
+        "unlike raw 13F data which has no ticker at all).",
+        {
+            "type": "object",
+            "properties": {
+                "ticker": {"type": "string", "description": "Ticker symbol, e.g. \"AAPL\"."},
+            },
+            "required": ["ticker"],
+        },
+    ),
+    ToolDefinition(
         "ingest_etf",
         "Ingest an ETF's profile (name, expense ratio, AUM) so it can be added "
         "to watchlists, themes, and screened/factor-scored. ETFs have no "
@@ -1241,6 +1277,7 @@ class ChatWithAgentUseCase:
         get_institutional_holders: GetInstitutionalHoldersUseCase,
         get_institutional_portfolio: GetInstitutionalPortfolioUseCase,
         detect_position_changes: DetectPositionChangesUseCase,
+        get_beneficial_ownership_disclosures: GetBeneficialOwnershipDisclosuresUseCase,
     ) -> None:
         self._chat_agent = chat_agent
         self._get_watchlist = get_watchlist
@@ -1300,6 +1337,7 @@ class ChatWithAgentUseCase:
         self._get_institutional_holders = get_institutional_holders
         self._get_institutional_portfolio = get_institutional_portfolio
         self._detect_position_changes = detect_position_changes
+        self._get_beneficial_ownership_disclosures = get_beneficial_ownership_disclosures
         self._construct_risk_parity_portfolio = construct_risk_parity_portfolio
         self._user_id: str = ""  # set per-request in execute()
 
@@ -1999,6 +2037,32 @@ class ChatWithAgentUseCase:
                     "quarter — do not present it that way."
                 )
             return response
+
+        if tool_name == "get_beneficial_ownership_disclosures":
+            try:
+                result = self._get_beneficial_ownership_disclosures.execute(tool_input["ticker"])
+            except GetBeneficialOwnershipDisclosuresError as exc:
+                return {"error": str(exc)}
+            return {
+                "ticker": result.ticker,
+                "disclosures": [
+                    {
+                        "name_of_reporting_person": d.name_of_reporting_person,
+                        "form_type": d.form_type,
+                        "filing_date": d.filing_date.isoformat(),
+                        "percent_of_class": d.percent_of_class,
+                        "amount_beneficially_owned": d.amount_beneficially_owned,
+                        "type_of_reporting_person": d.type_of_reporting_person,
+                    }
+                    for d in result.disclosures
+                ],
+                "source_note": (
+                    "Schedule 13D/13G filings, live from FMP — no free SEC bulk data set "
+                    "exists for these schedules. form_type is 13D (possible activist "
+                    "intent) or 13G (passive investor, no such stated intent) — always "
+                    "distinguish these explicitly."
+                ),
+            }
 
         if tool_name == "ingest_etf":
             try:

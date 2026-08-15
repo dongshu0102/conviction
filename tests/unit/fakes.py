@@ -97,6 +97,7 @@ class FakeDataProvider(FinancialDataProvider):
         sp500_tickers: list[str] | None = None,
         quote=None,
         quotes_by_ticker: dict | None = None,
+        beneficial_ownership_disclosures: list | None = None,
     ) -> None:
         self._company = company
         self._income_statements = income_statements or []
@@ -105,6 +106,7 @@ class FakeDataProvider(FinancialDataProvider):
         self._sp500_tickers = sp500_tickers or []
         self._quote = quote
         self._quotes_by_ticker = quotes_by_ticker or {}
+        self._beneficial_ownership_disclosures = beneficial_ownership_disclosures or []
 
     def get_company_profile(self, ticker: str) -> Company:
         return self._company
@@ -133,6 +135,9 @@ class FakeDataProvider(FinancialDataProvider):
         if self._quote is None:
             raise AssertionError("FakeDataProvider.get_quote called without a quote configured")
         return self._quote
+
+    def get_beneficial_ownership_disclosures(self, symbol: str):
+        return self._beneficial_ownership_disclosures
 
 
 class FakeResearchReportRepository:

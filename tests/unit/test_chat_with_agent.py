@@ -100,6 +100,9 @@ from src.application.use_cases.compute_dcf_valuation import (
 from src.application.use_cases.compute_investment_irr import ComputeInvestmentIrrUseCase
 from src.application.use_cases.get_capital_flow import GetCapitalFlowUseCase
 from src.application.use_cases.detect_position_changes import DetectPositionChangesUseCase
+from src.application.use_cases.get_beneficial_ownership_disclosures import (
+    GetBeneficialOwnershipDisclosuresUseCase,
+)
 from src.application.use_cases.get_institutional_holders import GetInstitutionalHoldersUseCase
 from src.application.use_cases.get_institutional_portfolio import GetInstitutionalPortfolioUseCase
 from src.application.use_cases.get_macro_snapshot import GetMacroSnapshotUseCase
@@ -255,6 +258,7 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
         get_institutional_holders=GetInstitutionalHoldersUseCase(institutional_holding_repo),
         get_institutional_portfolio=GetInstitutionalPortfolioUseCase(institutional_holding_repo),
         detect_position_changes=DetectPositionChangesUseCase(institutional_holding_repo),
+        get_beneficial_ownership_disclosures=GetBeneficialOwnershipDisclosuresUseCase(provider),
     )
     return use_case, fake_agent, portfolio_repo
 
@@ -333,6 +337,53 @@ def test_get_alerts_dispatches_correctly() -> None:
     assert len(result["alerts"]) == 1
     assert result["alerts"][0]["ticker"] == "NVDA"
     assert result["alerts"][0]["change_pct"] == 0.07
+
+
+def test_get_beneficial_ownership_disclosures_dispatches_correctly() -> None:
+    from datetime import date
+
+    from src.domain.entities.beneficial_ownership_disclosure import BeneficialOwnershipDisclosure
+
+    disclosure = BeneficialOwnershipDisclosure(
+        cik="0000320193", symbol="AAPL", filing_date=date(2026, 4, 29), accepted_date=date(2026, 4, 29),
+        cusip="037833100", name_of_reporting_person="Vanguard Capital Management",
+        citizenship_or_place_of_organization="PENNSYLVANIA",
+        sole_voting_power=0, shared_voting_power=0, sole_dispositive_power=0, shared_dispositive_power=0,
+        amount_beneficially_owned=1_099_168_953, percent_of_class=0.0748,
+        type_of_reporting_person="IA", form_type="13G",
+        source_url="https://www.sec.gov/Archives/edgar/data/320193/000210011926000139/xslSCHEDULE_13G_X02/primary_doc.xml",
+    )
+    provider = FakeDataProvider(
+        company=Company(ticker="X", name="X", sector=Sector.TECHNOLOGY, industry="X", exchange="X", country="US"),
+        beneficial_ownership_disclosures=[disclosure],
+    )
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("get_beneficial_ownership_disclosures", {"ticker": "aapl"})], provider=provider,
+    )
+    use_case.execute("alice", "who has filed 13D/13G on Apple?", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["ticker"] == "AAPL"
+    assert len(result["disclosures"]) == 1
+    assert result["disclosures"][0]["name_of_reporting_person"] == "Vanguard Capital Management"
+    assert result["disclosures"][0]["form_type"] == "13G"
+    assert result["disclosures"][0]["percent_of_class"] == 0.0748
+
+
+def test_get_beneficial_ownership_disclosures_error_surfaces_cleanly() -> None:
+    class NotImplementedProvider:
+        def get_beneficial_ownership_disclosures(self, symbol):
+            raise NotImplementedError("not supported")
+
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("get_beneficial_ownership_disclosures", {"ticker": "AAPL"})],
+        provider=NotImplementedProvider(),
+    )
+    use_case.execute("alice", "who has filed 13D/13G on Apple?", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert "error" in result
 
 
 def test_get_daily_brief_dispatches_correctly() -> None:
