@@ -30,6 +30,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from src.application.use_cases.caching_detect_position_changes import (
+    CachingDetectPositionChangesUseCase,
+)
 from src.application.use_cases.detect_position_changes import DetectPositionChangesUseCase
 from src.application.use_cases.get_beneficial_ownership_disclosures import (
     GetBeneficialOwnershipDisclosuresUseCase,
@@ -71,9 +74,18 @@ def main() -> int:
     company_repo = SqlAlchemyCompanyRepository()
     holding_repo = SqlAlchemyInstitutionalHoldingRepository()
 
+    # Caching wrapper, screener-only -- see its own docstring for the
+    # real, confirmed motivation (the same large index managers appear
+    # as top-5 holders across most of the S&P 500, so re-fetching an
+    # identical, expensive 13F filing hundreds of times per scan was
+    # confirmed as the dominant cost behind this script's own,
+    # measured ~15 hour full-run estimate before this fix).
+    cached_position_changes = CachingDetectPositionChangesUseCase(
+        DetectPositionChangesUseCase(holding_repo, provider)
+    )
     get_conviction_summary = GetConvictionSummaryUseCase(
         get_institutional_holders=GetInstitutionalHoldersUseCase(holding_repo, provider),
-        detect_position_changes=DetectPositionChangesUseCase(holding_repo, provider),
+        detect_position_changes=cached_position_changes,
         get_beneficial_ownership_disclosures=GetBeneficialOwnershipDisclosuresUseCase(provider),
         get_insider_transactions=GetInsiderTransactionsUseCase(provider),
         company_repository=company_repo,
@@ -112,6 +124,9 @@ def main() -> int:
     print(f"  Succeeded:         {result.succeeded}")
     print(f"  Failed:            {len(result.failed)}")
     print(f"  Elapsed:           {elapsed_minutes:.1f} minutes")
+    print(f"  Filer cache hits:  {cached_position_changes.cache_hits} "
+          f"(misses: {cached_position_changes.cache_misses}) -- "
+          f"each hit avoided a real, repeat 13F filing fetch")
     if result.failed:
         print("\n  Failures:")
         for f in result.failed[:20]:

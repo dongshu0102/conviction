@@ -47,6 +47,9 @@ from src.api.schemas import (
     InstitutionalHolderSignalSchema,
     ScreenForConvictionResponseSchema,
 )
+from src.application.use_cases.caching_detect_position_changes import (
+    CachingDetectPositionChangesUseCase,
+)
 from src.application.use_cases.detect_position_changes import DetectPositionChangesUseCase
 from src.application.use_cases.get_beneficial_ownership_disclosures import (
     GetBeneficialOwnershipDisclosuresUseCase,
@@ -154,9 +157,15 @@ def _run_conviction_screen(
     in logs, never to the caller, correct for a job this long-running."""
     try:
         holding_repo = SqlAlchemyInstitutionalHoldingRepository()
+        # Caching wrapper, same real, confirmed rationale as the
+        # standalone script -- see CachingDetectPositionChangesUseCase's
+        # own docstring.
+        cached_position_changes = CachingDetectPositionChangesUseCase(
+            DetectPositionChangesUseCase(holding_repo, provider)
+        )
         get_conviction_summary = GetConvictionSummaryUseCase(
             get_institutional_holders=GetInstitutionalHoldersUseCase(holding_repo, provider),
-            detect_position_changes=DetectPositionChangesUseCase(holding_repo, provider),
+            detect_position_changes=cached_position_changes,
             get_beneficial_ownership_disclosures=GetBeneficialOwnershipDisclosuresUseCase(provider),
             get_insider_transactions=GetInsiderTransactionsUseCase(provider),
             company_repository=company_repo,
