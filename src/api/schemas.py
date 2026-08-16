@@ -585,6 +585,30 @@ class ConvictionSummaryResponseSchema(BaseModel):
     )
 
 
+class ConvictionScreenerResultSchema(BaseModel):
+    ticker: str
+    institutional_signal: bool
+    activist_signal: bool
+    insider_signal: bool
+    signal_count: int
+    as_of: datetime
+
+
+class ConvictionScreenerResultsResponseSchema(BaseModel):
+    results: list[ConvictionScreenerResultSchema]
+    source_note: str = (
+        "Stored results from the most recent full-universe scan, not computed "
+        "live — trigger POST /conviction-summary/screen to refresh. Each row is "
+        "a lightweight summary (no holder/disclosure/transaction detail); call "
+        "GET /conviction-summary?ticker=X for a specific ticker's full detail."
+    )
+
+
+class ScreenForConvictionResponseSchema(BaseModel):
+    status: str
+    message: str
+
+
 class PlaceOrderRequestSchema(BaseModel):
     ticker: str
     side: str  # "buy" or "sell"

@@ -529,3 +529,24 @@ class CusipTickerMapModel(Base):
     company_name: Mapped[str | None] = mapped_column(String(), nullable=True)
     resolved_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
+
+class ConvictionScreenerResultModel(Base):
+    """Latest-only cache, same pattern as FactorScoreModel: one row per
+    ticker, overwritten on each full-universe screener run, with a
+    shared as_of timestamp so staleness is honestly knowable from any
+    single row. Lightweight by design -- only the three booleans and
+    the tally, not the full holder/disclosure/transaction detail
+    (which stays live-only, fetched fresh from GetConvictionSummaryUseCase
+    when a single ticker's full detail is actually requested)."""
+
+    __tablename__ = "conviction_screener_results"
+
+    ticker: Mapped[str] = mapped_column(ForeignKey("companies.ticker"), primary_key=True)
+    as_of: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+
+    institutional_signal: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    activist_signal: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    insider_signal: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    signal_count: Mapped[int] = mapped_column(nullable=False, index=True)
+
+

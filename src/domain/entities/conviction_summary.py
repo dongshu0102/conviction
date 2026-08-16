@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,3 +39,22 @@ class ConvictionSummary:
     insider_purchases: tuple  # tuple[InsiderTransaction, ...], genuine P-Purchase at non-zero price only
     insider_signal: bool  # True if a real, discretionary insider purchase exists
     signal_count: int  # 0-3, the honest tally of the three booleans above
+
+
+@dataclass(frozen=True, slots=True)
+class ConvictionScreenerResult:
+    """One ticker's stored, latest-computed signal_count from a full
+    universe scan -- a lightweight summary row, not the full
+    ConvictionSummary (no holder/disclosure/transaction detail),
+    matching the same "latest-only cache" pattern already established
+    for factor scores: one row per ticker, overwritten on each
+    refresh, with a shared as_of timestamp so staleness is honestly
+    knowable from any single row."""
+
+    ticker: str
+    institutional_signal: bool
+    activist_signal: bool
+    insider_signal: bool
+    signal_count: int
+    as_of: datetime
+
