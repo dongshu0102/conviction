@@ -74,4 +74,20 @@ describe("AppShell", () => {
     expect(localStorage.getItem("conviction_api_key")).toBeNull();
     expect(pushMock).toHaveBeenCalledWith("/login");
   });
+
+  it("shows a section header grouping the SEC & Conviction pages together", () => {
+    render(<AppShell><div /></AppShell>);
+    expect(screen.getByText("SEC & Conviction")).toBeInTheDocument();
+    expect(screen.getByText("Conviction Screener")).toBeInTheDocument();
+    expect(screen.getByText("Conviction Summary")).toBeInTheDocument();
+    expect(screen.getByText("SEC Research")).toBeInTheDocument();
+    expect(screen.getByText("13F Holdings")).toBeInTheDocument();
+    expect(screen.getByText("13D/13G")).toBeInTheDocument();
+    expect(screen.getByText("Insider Trades")).toBeInTheDocument();
+  });
+
+  it("shows exactly one section header, not one per ungrouped section too", () => {
+    render(<AppShell><div /></AppShell>);
+    expect(screen.getAllByText("SEC & Conviction")).toHaveLength(1);
+  });
 });
