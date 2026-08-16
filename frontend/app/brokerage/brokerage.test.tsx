@@ -55,6 +55,11 @@ beforeEach(() => {
 });
 
 async function fillAndPreview() {
+  // Wait for BrokeragePage's own mount-time fetches (account summary,
+  // positions) to resolve first -- without this, their state updates
+  // can land after this helper's own fireEvent calls, causing a real
+  // not-wrapped-in-act() warning in every test that uses this helper.
+  await waitFor(() => expect(api.getBrokerageAccountSummary).toHaveBeenCalled());
   fireEvent.change(screen.getByPlaceholderText("Ticker, e.g. AAPL"), { target: { value: "AAPL" } });
   fireEvent.change(screen.getByPlaceholderText("Shares"), { target: { value: "10" } });
   fireEvent.click(screen.getByText("Preview order"));

@@ -62,9 +62,14 @@ describe("Insider Transactions page", () => {
     });
   });
 
-  it("shows a real search box defaulting to AAPL", () => {
+  it("shows a real search box defaulting to AAPL", async () => {
     render(<InsiderTransactionsPage />);
     expect(screen.getByPlaceholderText("e.g. AAPL, TSLA, MSFT")).toHaveValue("AAPL");
+    // TickerAutocomplete fetches the company list on mount -- await it
+    // here so that resolution doesn't happen after this test has
+    // already finished, which is what caused a real
+    // not-wrapped-in-act() warning.
+    await waitFor(() => expect(api.getCompanyList).toHaveBeenCalled());
   });
 
   it("searching calls getInsiderTransactions with the entered ticker", async () => {
