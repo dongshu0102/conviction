@@ -75,15 +75,19 @@ describe("AppShell", () => {
     expect(pushMock).toHaveBeenCalledWith("/login");
   });
 
-  it("shows a section header grouping the SEC & Conviction pages together", () => {
+  it("shows a section header grouping the three genuinely distinct SEC & Conviction pages", () => {
     render(<AppShell><div /></AppShell>);
     expect(screen.getByText("SEC & Conviction")).toBeInTheDocument();
     expect(screen.getByText("Conviction Screener")).toBeInTheDocument();
-    expect(screen.getByText("Conviction Summary")).toBeInTheDocument();
     expect(screen.getByText("SEC Research")).toBeInTheDocument();
     expect(screen.getByText("13F Holdings")).toBeInTheDocument();
-    expect(screen.getByText("13D/13G")).toBeInTheDocument();
-    expect(screen.getByText("Insider Trades")).toBeInTheDocument();
+  });
+
+  it("no longer lists Conviction Summary, 13D/13G, or Insider Trades in the nav, now that SEC Research covers the same ground", () => {
+    render(<AppShell><div /></AppShell>);
+    expect(screen.queryByText("Conviction Summary")).not.toBeInTheDocument();
+    expect(screen.queryByText("13D/13G")).not.toBeInTheDocument();
+    expect(screen.queryByText("Insider Trades")).not.toBeInTheDocument();
   });
 
   it("shows exactly one section header, not one per ungrouped section too", () => {

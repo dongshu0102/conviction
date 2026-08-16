@@ -47,11 +47,8 @@ const NAV_SECTIONS: { label: string | null; items: { href: string; label: string
     label: "SEC & Conviction",
     items: [
       { href: "/conviction-screener", label: "Conviction Screener", icon: "☰" },
-      { href: "/conviction-summary", label: "Conviction Summary", icon: "✦" },
       { href: "/sec-research", label: "SEC Research", icon: "◭" },
       { href: "/institutional-holdings", label: "13F Holdings", icon: "▥" },
-      { href: "/beneficial-ownership", label: "13D/13G", icon: "◪" },
-      { href: "/insider-transactions", label: "Insider Trades", icon: "⬤" },
     ],
   },
   {
