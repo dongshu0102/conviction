@@ -224,6 +224,74 @@ def test_ticker_is_uppercased_in_the_result() -> None:
     assert result.ticker == "AAPL"
 
 
+def test_a_13d_filing_with_a_mismatched_cusip_is_honestly_excluded() -> None:
+    """Real, confirmed bug caught live tonight, not hypothetical: FMP's
+    beneficial-ownership endpoint can return filings where the
+    requested ticker is the FILER, not the issuer -- for large
+    institutions that are themselves active 13D/13G filers (confirmed
+    directly for JPMorgan Chase), this silently mixes in disclosures
+    about entirely different companies. A disclosure whose own CUSIP
+    doesn't match this ticker's real, ground-truth CUSIP (from its own
+    13F holdings) must never count toward the activist signal."""
+    use_case = _use_case(
+        holders=[_holding("Berkshire", cusip="037833100")],  # AAPL's real CUSIP
+        changes_by_filer={"Berkshire": [_change("037833100", "increased")]},
+        disclosures=[
+            _disclosure("13D"),  # matches the ground-truth CUSIP (037833100), a real activist filing
+            BeneficialOwnershipDisclosure(
+                cik="0000019617", symbol="AAPL", filing_date=date(2026, 6, 1), accepted_date=date(2026, 6, 1),
+                cusip="092479609",  # a genuinely different CUSIP -- a misattributed filing, not about AAPL at all
+                name_of_reporting_person="JPMorgan Chase & Co.", citizenship_or_place_of_organization="DE",
+                sole_voting_power=0, shared_voting_power=0, sole_dispositive_power=0, shared_dispositive_power=0,
+                amount_beneficially_owned=1000, percent_of_class=0.06, type_of_reporting_person="HC",
+                form_type="13D", source_url="https://example.com",
+            ),
+        ],
+    )
+
+    result = use_case.execute("AAPL")
+
+    assert len(result.activist_disclosures_13d) == 1
+    assert result.activist_disclosures_13d[0].cusip == "037833100"
+    assert result.activist_signal is True  # the one real, matching 13D still counts
+
+
+def test_all_13d_filings_mismatched_correctly_gives_no_activist_signal() -> None:
+    use_case = _use_case(
+        holders=[_holding("Berkshire", cusip="037833100")],
+        changes_by_filer={"Berkshire": [_change("037833100", "increased")]},
+        disclosures=[
+            BeneficialOwnershipDisclosure(
+                cik="0000019617", symbol="AAPL", filing_date=date(2026, 6, 1), accepted_date=date(2026, 6, 1),
+                cusip="092479609", name_of_reporting_person="JPMorgan Chase & Co.",
+                citizenship_or_place_of_organization="DE",
+                sole_voting_power=0, shared_voting_power=0, sole_dispositive_power=0, shared_dispositive_power=0,
+                amount_beneficially_owned=1000, percent_of_class=0.06, type_of_reporting_person="HC",
+                form_type="13D", source_url="https://example.com",
+            ),
+        ],
+    )
+
+    result = use_case.execute("AAPL")
+
+    assert result.activist_disclosures_13d == ()
+    assert result.activist_signal is False
+
+
+def test_no_ground_truth_cusip_shows_disclosures_unfiltered_but_logs_honestly() -> None:
+    """When this ticker has no 13F holdings data at all, there's no
+    real, verified CUSIP to check against -- honest degradation means
+    showing the disclosures unfiltered (not silently discarding real
+    data just because it can't be verified) while making the
+    uncertainty visible in logs, not hiding it."""
+    use_case = _use_case(company_known=False, disclosures=[_disclosure("13D")])
+
+    result = use_case.execute("AAPL")
+
+    assert len(result.activist_disclosures_13d) == 1
+    assert result.activist_signal is True
+
+
 def test_institutional_signal_degrades_honestly_when_the_company_is_not_known_locally() -> None:
     """Real, confirmed bug caught before shipping: get_institutional_holders
     searches by company name, not ticker, since raw 13F data has no

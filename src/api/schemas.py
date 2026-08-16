@@ -590,7 +590,14 @@ class ConvictionSummaryResponseSchema(BaseModel):
         "checks the top 5 holders' own quarter-over-quarter change; the "
         "largest holders are often passive index funds, so an absent "
         "institutional signal doesn't mean no institution holds this stock, "
-        "only that none of the top 5 recently increased."
+        "only that none of the top 5 recently increased. 13D filings are "
+        "verified against this ticker's own real CUSIP (from its 13F holdings "
+        "data) before counting toward the activist signal — confirmed directly "
+        "that large institutions which are themselves active 13D/13G filers "
+        "(e.g. JPMorgan Chase) can otherwise appear to have 'activist' filings "
+        "that are actually about a different company entirely. When no "
+        "verified CUSIP is available for this ticker, 13D filings are shown "
+        "unfiltered and may include unverified results."
     )
 
 

@@ -70,8 +70,8 @@ class GetConvictionSummaryUseCase:
         self._company_repository = company_repository
 
     def execute(self, ticker: str) -> ConvictionSummary:
-        holder_signals, institutional_signal = self._get_institutional_signal(ticker)
-        disclosures_13d, activist_signal = self._get_activist_signal(ticker)
+        holder_signals, institutional_signal, ground_truth_cusip = self._get_institutional_signal(ticker)
+        disclosures_13d, activist_signal = self._get_activist_signal(ticker, ground_truth_cusip)
         purchases, insider_signal = self._get_insider_signal(ticker)
 
         return ConvictionSummary(
@@ -85,7 +85,7 @@ class GetConvictionSummaryUseCase:
             signal_count=sum([institutional_signal, activist_signal, insider_signal]),
         )
 
-    def _get_institutional_signal(self, ticker: str) -> tuple[list[InstitutionalHolderSignal], bool]:
+    def _get_institutional_signal(self, ticker: str) -> tuple[list[InstitutionalHolderSignal], bool, str | None]:
         # Real, confirmed bug caught during self-review before shipping:
         # get_institutional_holders searches by company NAME
         # (issuer_query against the raw 13F issuer_name field), not by
@@ -99,12 +99,28 @@ class GetConvictionSummaryUseCase:
         # a raw ticker string that's very unlikely to match anything.
         company = self._company_repository.get_by_ticker(ticker.upper())
         if company is None:
-            return [], False
+            return [], False, None
 
         try:
             holders_result = self._get_institutional_holders.execute(company.name, limit=TOP_HOLDERS_TO_CHECK)
         except GetInstitutionalHoldersError:
-            return [], False
+            return [], False, None
+
+        # Real, confirmed bug caught live tonight, not a hypothetical:
+        # FMP's beneficial-ownership endpoint returns filings where the
+        # requested ticker is EITHER the issuer OR the filer -- for
+        # large institutions that are themselves active 13D/13G filers
+        # (JPMorgan Chase, and likely other big banks/asset managers),
+        # this silently mixes in filings about entirely different
+        # companies. Confirmed directly: 15 separate "activist"
+        # disclosures for JPM all carried CUSIPs starting with "092...",
+        # none matching JPM's own, real CUSIP ("46625H100") -- every
+        # one was JPMorgan itself, as filer, disclosing a stake in some
+        # other company. The ground-truth CUSIP here comes from this
+        # ticker's own real 13F holdings (every holding of the same
+        # issuer shares one CUSIP), reusing data already fetched for
+        # the institutional signal above -- no extra API or DB calls.
+        ground_truth_cusip = holders_result.holders[0].cusip if holders_result.holders else None
 
         signals = []
         any_increasing = False
@@ -128,15 +144,39 @@ class GetConvictionSummaryUseCase:
                 filer_name=h.filer_name, current_shares=h.shares_or_principal_amount,
                 current_value_usd=h.value_usd, is_increasing=is_increasing,
             ))
-        return signals, any_increasing
+        return signals, any_increasing, ground_truth_cusip
 
-    def _get_activist_signal(self, ticker: str) -> tuple[list, bool]:
+    def _get_activist_signal(self, ticker: str, ground_truth_cusip: str | None) -> tuple[list, bool]:
         try:
             result = self._get_beneficial_ownership_disclosures.execute(ticker)
         except GetBeneficialOwnershipDisclosuresError:
             return [], False
 
         disclosures_13d = [d for d in result.disclosures if d.form_type == "13D"]
+
+        # Filter out misattributed filings when a real, verified CUSIP
+        # is available -- see the ground_truth_cusip comment above for
+        # the real, confirmed reason this check exists. When no ground
+        # truth is available (this ticker has no 13F holdings data at
+        # all), this can't be validated either way -- honestly logged
+        # rather than silently either trusting or discarding
+        # unverifiable data.
+        if ground_truth_cusip is not None:
+            mismatched = [d for d in disclosures_13d if d.cusip != ground_truth_cusip]
+            if mismatched:
+                logger.warning(
+                    "Discarding %d likely-misattributed 13D filing(s) for %s: "
+                    "CUSIP didn't match this ticker's own, real CUSIP (%s)",
+                    len(mismatched), ticker, ground_truth_cusip,
+                )
+            disclosures_13d = [d for d in disclosures_13d if d.cusip == ground_truth_cusip]
+        else:
+            logger.warning(
+                "No ground-truth CUSIP available for %s (no 13F holdings data) -- "
+                "13D filings shown unfiltered and may include misattributed results.",
+                ticker,
+            )
+
         return disclosures_13d, len(disclosures_13d) > 0
 
     def _get_insider_signal(self, ticker: str) -> tuple[list, bool]:
