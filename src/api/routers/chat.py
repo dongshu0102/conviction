@@ -92,6 +92,11 @@ from src.application.use_cases.get_beneficial_ownership_disclosures import (
     GetBeneficialOwnershipDisclosuresUseCase,
 )
 from src.application.use_cases.get_insider_transactions import GetInsiderTransactionsUseCase
+from src.application.use_cases.place_order import PlaceOrderUseCase
+from src.application.use_cases.confirm_order import ConfirmOrderUseCase
+from src.application.use_cases.get_brokerage_account_summary import GetBrokerageAccountSummaryUseCase
+from src.application.use_cases.get_brokerage_positions import GetBrokeragePositionsUseCase
+from src.api.routers.brokerage import get_brokerage_provider
 from src.application.use_cases.get_capital_flow import GetCapitalFlowUseCase
 from src.application.use_cases.get_institutional_holders import GetInstitutionalHoldersUseCase
 from src.application.use_cases.get_institutional_portfolio import GetInstitutionalPortfolioUseCase
@@ -196,6 +201,13 @@ def get_chat_use_case(
     brief_generator: AnthropicBriefGenerator = Depends(get_brief_generator_for_chat),
 ) -> ChatWithAgentUseCase:
     screen_stocks = ScreenStocksUseCase(compute_company_valuation, compute_analysis)
+    # A single, shared instance reused across all 4 brokerage use
+    # cases below, rather than one call to get_brokerage_provider()
+    # per use case -- each provider instance manages its own
+    # authentication state internally (e.g. IBKR's JWT/session flow),
+    # so 4 separate instances would mean 4x the authentication
+    # overhead for a single chat turn that likely only uses one tool.
+    brokerage_provider = get_brokerage_provider()
     factor_repo = SqlAlchemyFactorScoreRepository()
     get_factor_scores = GetFactorScoresUseCase(
         factor_repo,
@@ -305,6 +317,10 @@ def get_chat_use_case(
         detect_position_changes=DetectPositionChangesUseCase(SqlAlchemyInstitutionalHoldingRepository(), data_provider),
         get_beneficial_ownership_disclosures=GetBeneficialOwnershipDisclosuresUseCase(data_provider),
         get_insider_transactions=GetInsiderTransactionsUseCase(data_provider),
+        place_order=PlaceOrderUseCase(brokerage_provider),
+        confirm_order=ConfirmOrderUseCase(brokerage_provider),
+        get_brokerage_account_summary=GetBrokerageAccountSummaryUseCase(brokerage_provider),
+        get_brokerage_positions=GetBrokeragePositionsUseCase(brokerage_provider),
     )
 
 

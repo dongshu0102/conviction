@@ -91,6 +91,16 @@ from src.application.use_cases.get_insider_transactions import (
     GetInsiderTransactionsError,
     GetInsiderTransactionsUseCase,
 )
+from src.application.use_cases.place_order import PlaceOrderError, PlaceOrderUseCase
+from src.application.use_cases.confirm_order import ConfirmOrderError, ConfirmOrderUseCase
+from src.application.use_cases.get_brokerage_account_summary import (
+    GetBrokerageAccountSummaryError,
+    GetBrokerageAccountSummaryUseCase,
+)
+from src.application.use_cases.get_brokerage_positions import (
+    GetBrokeragePositionsError,
+    GetBrokeragePositionsUseCase,
+)
 from src.application.use_cases.get_institutional_holders import (
     GetInstitutionalHoldersError,
     GetInstitutionalHoldersUseCase,
@@ -1036,6 +1046,79 @@ _TOOLS = [
         },
     ),
     ToolDefinition(
+        "place_order",
+        "Place a REAL order at a REAL, connected brokerage — REAL MONEY IS "
+        "AT STAKE. confirm defaults to false, and MUST stay false for the "
+        "first call on any new order idea: with confirm=false, this only "
+        "returns an honest preview (ticker, side, quantity, order type, "
+        "estimated cost where available) and NO order is placed at the "
+        "brokerage — nothing happens. Only call this again with "
+        "confirm=true after the user has seen that exact preview and has "
+        "clearly, explicitly, separately confirmed in their own words "
+        "that they want to proceed with THIS SPECIFIC order — never set "
+        "confirm=true speculatively, as a side effect of some other "
+        "request, on the same turn the order idea was first raised, or "
+        "based on an assumption that the user probably wants it. If the "
+        "user's instruction is even slightly ambiguous about quantity, "
+        "side, or order type, ask a clarifying question rather than "
+        "guessing — an incorrect real order is a real, financial mistake, "
+        "not a reversible one. Even after confirm=true, the brokerage "
+        "itself may return status=\"needs_confirmation\" with its own, "
+        "separate warning (e.g. price far from market) — the order is "
+        "NOT placed in that case either, and requires a further, distinct "
+        "confirm_order call with the reply_id, which again requires a "
+        "further, separate, explicit user confirmation of that specific "
+        "brokerage warning — never confirm it automatically.",
+        {
+            "type": "object",
+            "properties": {
+                "ticker": {"type": "string", "description": "Ticker symbol, e.g. \"AAPL\"."},
+                "side": {"type": "string", "enum": ["buy", "sell"]},
+                "quantity": {"type": "number", "description": "Number of shares."},
+                "order_type": {"type": "string", "enum": ["market", "limit"]},
+                "limit_price": {"type": "number", "description": "Required if order_type is \"limit\"."},
+                "time_in_force": {
+                    "type": "string",
+                    "description": "Optional, default \"day\" — the order is automatically canceled if unfilled by end of day.",
+                },
+                "confirm": {
+                    "type": "boolean",
+                    "description": "Must stay false until the user has explicitly, separately confirmed this exact preview. Defaults to false.",
+                },
+            },
+            "required": ["ticker", "side", "quantity", "order_type"],
+        },
+    ),
+    ToolDefinition(
+        "confirm_brokerage_order",
+        "Confirm a brokerage's own warning reply (status='needs_confirmation' "
+        "from place_order) so a held order can actually be placed. Only ever "
+        "call this after the specific warning message returned by place_order "
+        "has been shown to, and explicitly, separately approved by, the "
+        "person whose money is at stake — never automatically, and never in "
+        "the same turn place_order first returned the warning without a "
+        "genuine, distinct confirmation from the user in between.",
+        {
+            "type": "object",
+            "properties": {
+                "reply_id": {"type": "string", "description": "The reply_id returned by place_order."},
+            },
+            "required": ["reply_id"],
+        },
+    ),
+    ToolDefinition(
+        "get_brokerage_account_summary",
+        "Real, live cash and buying power for the connected brokerage "
+        "account. Read-only, safe to call freely.",
+        {"type": "object", "properties": {}},
+    ),
+    ToolDefinition(
+        "get_brokerage_positions",
+        "Every currently-held real position in the connected brokerage "
+        "account. Read-only, safe to call freely.",
+        {"type": "object", "properties": {}},
+    ),
+    ToolDefinition(
         "ingest_etf",
         "Ingest an ETF's profile (name, expense ratio, AUM) so it can be added "
         "to watchlists, themes, and screened/factor-scored. ETFs have no "
@@ -1349,6 +1432,10 @@ class ChatWithAgentUseCase:
         detect_position_changes: DetectPositionChangesUseCase,
         get_beneficial_ownership_disclosures: GetBeneficialOwnershipDisclosuresUseCase,
         get_insider_transactions: GetInsiderTransactionsUseCase,
+        place_order: PlaceOrderUseCase,
+        confirm_order: ConfirmOrderUseCase,
+        get_brokerage_account_summary: GetBrokerageAccountSummaryUseCase,
+        get_brokerage_positions: GetBrokeragePositionsUseCase,
     ) -> None:
         self._chat_agent = chat_agent
         self._get_watchlist = get_watchlist
@@ -1410,6 +1497,10 @@ class ChatWithAgentUseCase:
         self._detect_position_changes = detect_position_changes
         self._get_beneficial_ownership_disclosures = get_beneficial_ownership_disclosures
         self._get_insider_transactions = get_insider_transactions
+        self._place_order = place_order
+        self._confirm_order = confirm_order
+        self._get_brokerage_account_summary = get_brokerage_account_summary
+        self._get_brokerage_positions = get_brokerage_positions
         self._construct_risk_parity_portfolio = construct_risk_parity_portfolio
         self._user_id: str = ""  # set per-request in execute()
 
@@ -2166,6 +2257,87 @@ class ChatWithAgentUseCase:
                     "reflection of the transaction, not missing data. Never present a "
                     "price=0 transaction as a discretionary buy or sell decision."
                 ),
+            }
+
+        if tool_name == "place_order":
+            from src.domain.entities.brokerage import OrderRequest
+
+            request = OrderRequest(
+                ticker=tool_input["ticker"], side=tool_input["side"], quantity=tool_input["quantity"],
+                order_type=tool_input["order_type"], limit_price=tool_input.get("limit_price"),
+                time_in_force=tool_input.get("time_in_force", "day"),
+            )
+            try:
+                result = self._place_order.execute(request, confirm=bool(tool_input.get("confirm", False)))
+            except PlaceOrderError as exc:
+                return {"error": str(exc)}
+            if not result.confirmed:
+                return {
+                    "preview_only": True,
+                    "order_id": None,
+                    "message": (
+                        "PREVIEW ONLY — no order has been placed. Show this preview to the "
+                        "user and wait for their explicit, separate confirmation of this "
+                        "exact order before calling place_order again with confirm=true."
+                    ),
+                    "ticker": request.ticker, "side": request.side, "quantity": request.quantity,
+                    "order_type": request.order_type, "limit_price": request.limit_price,
+                    "time_in_force": request.time_in_force,
+                }
+            order_result = result.order_result
+            return {
+                "preview_only": False,
+                "status": order_result.status,
+                "order_id": order_result.order_id,
+                "reply_id": order_result.reply_id,
+                "warning_messages": list(order_result.warning_messages),
+                "rejection_reason": order_result.rejection_reason,
+                "message": (
+                    "The brokerage returned a specific warning and has NOT placed this order "
+                    "yet. Show the exact warning_messages to the user and only call "
+                    "confirm_brokerage_order with this reply_id after they explicitly, "
+                    "separately approve it."
+                    if order_result.status == "needs_confirmation" else
+                    "This order was rejected by the brokerage and will not be placed."
+                    if order_result.status == "rejected" else
+                    "This order was submitted to the brokerage."
+                ),
+            }
+
+        if tool_name == "confirm_brokerage_order":
+            try:
+                order_result = self._confirm_order.execute(tool_input["reply_id"])
+            except ConfirmOrderError as exc:
+                return {"error": str(exc)}
+            return {
+                "status": order_result.status, "order_id": order_result.order_id,
+                "rejection_reason": order_result.rejection_reason,
+            }
+
+        if tool_name == "get_brokerage_account_summary":
+            try:
+                summary = self._get_brokerage_account_summary.execute()
+            except GetBrokerageAccountSummaryError as exc:
+                return {"error": str(exc)}
+            return {
+                "account_id": summary.account_id, "cash": summary.cash,
+                "buying_power": summary.buying_power, "equity": summary.equity,
+                "currency": summary.currency,
+            }
+
+        if tool_name == "get_brokerage_positions":
+            try:
+                result = self._get_brokerage_positions.execute()
+            except GetBrokeragePositionsError as exc:
+                return {"error": str(exc)}
+            return {
+                "positions": [
+                    {
+                        "ticker": p.ticker, "quantity": p.quantity, "average_cost": p.average_cost,
+                        "market_value": p.market_value, "unrealized_pnl": p.unrealized_pnl,
+                    }
+                    for p in result.positions
+                ],
             }
 
         if tool_name == "ingest_etf":

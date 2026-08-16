@@ -114,6 +114,51 @@ from src.application.use_cases.manage_speculative_growth_candidates import (
     ListSpeculativeGrowthCandidatesUseCase,
     RemoveSpeculativeGrowthCandidateUseCase,
 )
+from src.application.use_cases.place_order import PlaceOrderUseCase
+from src.application.use_cases.confirm_order import ConfirmOrderUseCase
+from src.application.use_cases.get_brokerage_account_summary import GetBrokerageAccountSummaryUseCase
+from src.application.use_cases.get_brokerage_positions import GetBrokeragePositionsUseCase
+from src.application.interfaces.brokerage_provider import BrokerageProviderError
+from src.domain.entities.brokerage import OrderResult
+
+
+class FakeBrokerageProvider:
+    """A minimal, safe-by-default fake -- confirms nothing happens
+    unless a scripted call explicitly reaches place_order with
+    confirm=True, matching the real, established safety design this
+    fake exists to support testing."""
+
+    def __init__(self, order_result: OrderResult | None = None, raise_error: Exception | None = None):
+        self._order_result = order_result or OrderResult(status="submitted", order_id="TEST-ORDER-1")
+        self._raise_error = raise_error
+        self.place_order_calls = []
+        self.confirm_order_calls = []
+
+    def place_order(self, request):
+        self.place_order_calls.append(request)
+        if self._raise_error is not None:
+            raise self._raise_error
+        return self._order_result
+
+    def confirm_order(self, reply_id):
+        self.confirm_order_calls.append(reply_id)
+        if self._raise_error is not None:
+            raise self._raise_error
+        return self._order_result
+
+    def resolve_ticker_to_contract_id(self, ticker):
+        return ticker.upper()
+
+    def get_account_summary(self):
+        if self._raise_error is not None:
+            raise self._raise_error
+        from src.domain.entities.brokerage import BrokerageAccountSummary
+        return BrokerageAccountSummary(account_id="TEST123", cash=10000.0, buying_power=20000.0, equity=15000.0, currency="USD")
+
+    def get_positions(self):
+        if self._raise_error is not None:
+            raise self._raise_error
+        return []
 
 
 class FakeChatAgent(ChatAgent):
@@ -150,7 +195,7 @@ def _company_repo(*tickers: str) -> FakeCompanyRepository:
     return repo
 
 
-def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watchlist_repo=None, provider=None, options_provider=None, theme_repo=None, statement_repo=None, get_factor_scores_override=None, alert_repo=None, candidate_repo=None, macro_history_provider=None, capital_flow_repo=None, institutional_holding_repo=None, get_institutional_holders_override=None):
+def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watchlist_repo=None, provider=None, options_provider=None, theme_repo=None, statement_repo=None, get_factor_scores_override=None, alert_repo=None, candidate_repo=None, macro_history_provider=None, capital_flow_repo=None, institutional_holding_repo=None, get_institutional_holders_override=None, brokerage_provider=None):
     company_repo = company_repo or _company_repo()
     portfolio_repo = portfolio_repo or FakePortfolioRepository()
     watchlist_repo = watchlist_repo or FakeWatchlistRepository()
@@ -161,6 +206,7 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
     institutional_holding_repo = institutional_holding_repo or FakeInstitutionalHoldingRepository()
     provider = provider or FakeDataProvider(company=Company(ticker="X", name="X", sector=Sector.TECHNOLOGY, industry="X", exchange="X", country="US"))
     options_provider = options_provider or FakeOptionsDataProvider()
+    brokerage_provider = brokerage_provider or FakeBrokerageProvider()
     research_repo = FakeResearchReportRepository()
     snapshot_repo = FakePriceSnapshotRepository()
     brief_generator = FakeBriefGenerator()
@@ -261,6 +307,10 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
         detect_position_changes=DetectPositionChangesUseCase(institutional_holding_repo),
         get_beneficial_ownership_disclosures=GetBeneficialOwnershipDisclosuresUseCase(provider),
         get_insider_transactions=GetInsiderTransactionsUseCase(provider),
+        place_order=PlaceOrderUseCase(brokerage_provider),
+        confirm_order=ConfirmOrderUseCase(brokerage_provider),
+        get_brokerage_account_summary=GetBrokerageAccountSummaryUseCase(brokerage_provider),
+        get_brokerage_positions=GetBrokeragePositionsUseCase(brokerage_provider),
     )
     return use_case, fake_agent, portfolio_repo
 
@@ -467,6 +517,7 @@ def test_get_insider_transactions_error_surfaces_cleanly() -> None:
 
 
 
+def test_get_institutional_holders_source_note_reflects_sec_bulk() -> None:
     """Baseline, unchanged behavior: the default, local-pipeline case."""
     from datetime import date
 
@@ -521,6 +572,122 @@ def test_get_institutional_holders_source_note_reflects_fmp_live() -> None:
     result = fake_agent.dispatch_results[0]
     assert result["source"] == "fmp_live"
     assert "Live from FMP" in result["source_note"]
+
+
+def test_place_order_preview_never_calls_the_provider() -> None:
+    """The single most important safety test in this entire feature,
+    same principle as test_execute_without_confirm_never_calls_the_provider
+    in test_place_order.py, now verified at the chat-dispatch layer too:
+    the LLM omitting confirm (or the tool schema defaulting it to
+    false) must never cause a real order to reach the brokerage."""
+    provider = FakeBrokerageProvider()
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("place_order", {
+            "ticker": "AAPL", "side": "buy", "quantity": 10, "order_type": "market",
+        })],
+        brokerage_provider=provider,
+    )
+    use_case.execute("alice", "buy 10 shares of Apple", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["preview_only"] is True
+    assert provider.place_order_calls == [], "the provider must never be called without explicit confirm=true"
+
+
+def test_place_order_with_confirm_true_calls_the_provider() -> None:
+    provider = FakeBrokerageProvider(order_result=OrderResult(status="submitted", order_id="ORD-99"))
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("place_order", {
+            "ticker": "AAPL", "side": "buy", "quantity": 10, "order_type": "market", "confirm": True,
+        })],
+        brokerage_provider=provider,
+    )
+    use_case.execute("alice", "yes, confirmed, buy 10 shares of Apple", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["preview_only"] is False
+    assert result["status"] == "submitted"
+    assert result["order_id"] == "ORD-99"
+    assert len(provider.place_order_calls) == 1
+
+
+def test_place_order_needs_confirmation_surfaces_the_warning_honestly() -> None:
+    """A real, confirmed IBKR scenario: even after confirm=true, the
+    brokerage itself can still return its own, separate warning --
+    the chat tool must surface this honestly, not silently proceed."""
+    provider = FakeBrokerageProvider(order_result=OrderResult(
+        status="needs_confirmation", reply_id="reply-abc",
+        warning_messages=("price exceeds the 3% constraint",),
+    ))
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("place_order", {
+            "ticker": "AAPL", "side": "buy", "quantity": 10, "order_type": "market", "confirm": True,
+        })],
+        brokerage_provider=provider,
+    )
+    use_case.execute("alice", "yes, confirmed, buy 10 shares of Apple", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["status"] == "needs_confirmation"
+    assert result["reply_id"] == "reply-abc"
+    assert "price exceeds the 3% constraint" in result["warning_messages"]
+
+
+def test_place_order_error_surfaces_cleanly() -> None:
+    provider = FakeBrokerageProvider(raise_error=BrokerageProviderError("not configured"))
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("place_order", {
+            "ticker": "AAPL", "side": "buy", "quantity": 10, "order_type": "market", "confirm": True,
+        })],
+        brokerage_provider=provider,
+    )
+    use_case.execute("alice", "yes, confirmed, buy 10 shares of Apple", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert "error" in result
+
+
+def test_confirm_brokerage_order_dispatches_correctly() -> None:
+    provider = FakeBrokerageProvider(order_result=OrderResult(status="submitted", order_id="ORD-100"))
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("confirm_brokerage_order", {"reply_id": "reply-abc"})],
+        brokerage_provider=provider,
+    )
+    use_case.execute("alice", "yes, I approve that warning, go ahead", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["status"] == "submitted"
+    assert result["order_id"] == "ORD-100"
+    assert provider.confirm_order_calls == ["reply-abc"]
+
+
+def test_confirm_brokerage_order_error_surfaces_cleanly() -> None:
+    provider = FakeBrokerageProvider(raise_error=BrokerageProviderError("reply already used"))
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("confirm_brokerage_order", {"reply_id": "reply-abc"})],
+        brokerage_provider=provider,
+    )
+    use_case.execute("alice", "yes, I approve that warning, go ahead", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert "error" in result
+
+
+def test_get_brokerage_account_summary_dispatches_correctly() -> None:
+    use_case, fake_agent, _ = _build_use_case(scripted_calls=[("get_brokerage_account_summary", {})])
+    use_case.execute("alice", "what's my buying power?", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["account_id"] == "TEST123"
+    assert result["buying_power"] == 20000.0
+
+
+def test_get_brokerage_positions_dispatches_correctly() -> None:
+    use_case, fake_agent, _ = _build_use_case(scripted_calls=[("get_brokerage_positions", {})])
+    use_case.execute("alice", "what are my current positions?", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["positions"] == []
 
 
 def test_get_daily_brief_dispatches_correctly() -> None:
