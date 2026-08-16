@@ -555,6 +555,61 @@ class InsiderTransactionsResponseSchema(BaseModel):
     )
 
 
+class PlaceOrderRequestSchema(BaseModel):
+    ticker: str
+    side: str  # "buy" or "sell"
+    quantity: float
+    order_type: str  # "market" or "limit"
+    limit_price: float | None = None
+    time_in_force: str = "day"
+    # Real money at stake once true. Defaults to false, matching
+    # PlaceOrderUseCase's own default -- omitting this field entirely
+    # returns a preview only, never places a real order.
+    confirm: bool = False
+
+
+class OrderResultSchema(BaseModel):
+    status: str  # "submitted", "needs_confirmation", or "rejected"
+    order_id: str | None = None
+    reply_id: str | None = None
+    warning_messages: list[str] = []
+    rejection_reason: str | None = None
+
+
+class PlaceOrderResponseSchema(BaseModel):
+    confirmed: bool
+    order_result: OrderResultSchema | None = None
+    source_note: str = (
+        "Interactive Brokers, live brokerage integration — real money is at "
+        "stake once confirm=true is sent. confirmed=false means this was a "
+        "preview only; no order was placed."
+    )
+
+
+class ConfirmOrderRequestSchema(BaseModel):
+    reply_id: str
+
+
+class BrokeragePositionSchema(BaseModel):
+    ticker: str
+    quantity: float
+    average_cost: float
+    market_value: float
+    unrealized_pnl: float
+
+
+class BrokeragePositionsResponseSchema(BaseModel):
+    positions: list[BrokeragePositionSchema]
+
+
+class BrokerageAccountSummarySchema(BaseModel):
+    account_id: str
+    cash: float
+    buying_power: float
+    equity: float
+    currency: str
+
+
 class RateSignalsSchema(BaseModel):
     as_of: datetime
     yield_curve: YieldCurveReadingSchema

@@ -30,6 +30,53 @@ class Settings(BaseSettings):
     # -- MarketData.app (options data) --
     marketdata_api_key: str = ""
 
+    # -- Interactive Brokers (real brokerage integration) --
+    # Real money is at stake once configured -- see brokerage_provider.py
+    # and ibkr_provider.py's own docstrings for the full safety design.
+    # private_key_jwt (RFC 7523) client authentication, confirmed
+    # directly against IBKR's own documentation -- not a simple API key.
+    ibkr_private_key_pem: str = ""  # RSA private key, PEM format
+    ibkr_client_id: str = ""
+    ibkr_account_id: str = ""
+    # A genuine, separate opt-in, not inferred from whichever
+    # account_id happens to be configured -- must be explicitly,
+    # deliberately set to true for a real order to ever be allowed to
+    # reach a non-paper ("DU"-prefixed) account. Defaults to false.
+    ibkr_live_trading_enabled: bool = False
+
+    # -- Alpaca (real brokerage integration, second provider option
+    # alongside IBKR) -- genuinely simpler auth than IBKR: a plain
+    # API key/secret pair, confirmed directly from Alpaca's own docs.
+    alpaca_api_key: str = ""
+    alpaca_api_secret: str = ""
+    # A genuine, separate opt-in, same principle as
+    # ibkr_live_trading_enabled: must be explicitly, deliberately set
+    # to true before this provider will ever point at Alpaca's real,
+    # live base URL rather than the paper trading one. Defaults to
+    # false.
+    alpaca_live_trading_enabled: bool = False
+
+    # -- Tradier (real brokerage integration, third provider option
+    # alongside IBKR and Alpaca) -- confirmed directly against
+    # Tradier's own, static documentation, giving genuinely higher
+    # confidence in this specific integration's shape than in IBKR's.
+    tradier_api_token: str = ""
+    tradier_account_id: str = ""
+    # A genuine, separate opt-in, same principle as the other two
+    # providers' own live-trading flags: must be explicitly,
+    # deliberately set to true before this provider will ever point
+    # at Tradier's real, live base URL rather than the sandbox
+    # (paper trading) one. Defaults to false.
+    tradier_live_trading_enabled: bool = False
+
+    # Which brokerage this app actually trades through -- "ibkr" or
+    # "alpaca". Both providers can be fully configured at once (e.g.
+    # while migrating, or testing one against the other), but only one
+    # is ever active for real order placement at a time, chosen
+    # explicitly here rather than inferred from which credentials
+    # happen to be present.
+    active_brokerage_provider: str = "ibkr"
+
     # -- SEC EDGAR (Form 13F bulk data sets) --
     # No API key at all -- SEC requires only a compliant User-Agent
     # identifying the requester with a real, monitored contact email,
