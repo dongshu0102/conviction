@@ -7,10 +7,18 @@ import {
 } from "@/lib/api";
 
 const pushMock = vi.fn();
+const searchParamsMock = vi.fn(() => new URLSearchParams());
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/sec-research",
   useRouter: () => ({ push: pushMock }),
+  useSearchParams: () => searchParamsMock(),
+}));
+
+vi.mock("next/link", () => ({
+  default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
+    <a href={href} {...rest}>{children}</a>
+  ),
 }));
 
 const SAMPLE_COMPANIES: CompanyListItem[] = [
@@ -58,6 +66,7 @@ function transaction(overrides: Partial<InsiderTransaction> = {}): InsiderTransa
 
 beforeEach(() => {
   pushMock.mockClear();
+  searchParamsMock.mockReturnValue(new URLSearchParams());
   localStorage.clear();
   localStorage.setItem("conviction_api_key", "fi_live_test123");
   vi.restoreAllMocks();
@@ -278,5 +287,36 @@ describe("SEC Research page", () => {
 
     await waitFor(() => screen.getByText("summary failed"));
     await waitFor(() => screen.getByText("Vanguard"));
+  });
+
+  it("auto-searches when a ticker is present in the URL, e.g. arriving from Conviction Summary", async () => {
+    searchParamsMock.mockReturnValue(new URLSearchParams({ ticker: "AAPL" }));
+    vi.spyOn(api, "getInstitutionalHolders").mockResolvedValue({
+      issuer_query: "APPLE INC", issuer_name: "APPLE INC", period_of_report: "2026-03-31",
+      holders: [holding({ filer_name: "FMR LLC" })], source: "sec_bulk", source_note: "test",
+    });
+    vi.spyOn(api, "getBeneficialOwnershipDisclosures").mockResolvedValue({ ticker: "AAPL", disclosures: [], source_note: "test" });
+    vi.spyOn(api, "getInsiderTransactions").mockResolvedValue({ ticker: "AAPL", transactions: [], source_note: "test" });
+
+    render(<SecResearchPage />);
+
+    await waitFor(() => screen.getByText("FMR LLC"));
+  });
+
+  it("links back to the Conviction Screener once a search has been made", async () => {
+    vi.spyOn(api, "getInstitutionalHolders").mockResolvedValue({
+      issuer_query: "APPLE INC", issuer_name: "APPLE INC", period_of_report: "2026-03-31",
+      holders: [holding()], source: "sec_bulk", source_note: "test",
+    });
+    vi.spyOn(api, "getBeneficialOwnershipDisclosures").mockResolvedValue({ ticker: "AAPL", disclosures: [], source_note: "test" });
+    vi.spyOn(api, "getInsiderTransactions").mockResolvedValue({ ticker: "AAPL", transactions: [], source_note: "test" });
+
+    render(<SecResearchPage />);
+    await waitFor(() => expect(api.getCompanyList).toHaveBeenCalled());
+    fireEvent.change(screen.getByPlaceholderText("e.g. AAPL, JPM, RBLX"), { target: { value: "AAPL" } });
+    fireEvent.click(screen.getByText("Search"));
+
+    await waitFor(() => screen.getByText("← Back to Conviction Screener"));
+    expect(screen.getByText("← Back to Conviction Screener").closest("a")).toHaveAttribute("href", "/conviction-screener");
   });
 });

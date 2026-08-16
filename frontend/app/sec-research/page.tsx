@@ -13,8 +13,9 @@
 // others" principle already established for GetConvictionSummaryUseCase
 // on the backend.
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { TickerAutocomplete } from "@/components/TickerAutocomplete";
 import {
@@ -65,9 +66,10 @@ interface SectionState<T> {
 
 const EMPTY_SECTION = { loading: false, error: null, data: null };
 
-export default function SecResearchPage() {
+function SecResearchForm() {
   const router = useRouter();
-  const [ticker, setTicker] = useState("");
+  const searchParams = useSearchParams();
+  const [ticker, setTicker] = useState(searchParams.get("ticker") || "");
   const [companies, setCompanies] = useState<CompanyListItem[]>([]);
   const [searchedTicker, setSearchedTicker] = useState<string | null>(null);
 
@@ -83,16 +85,27 @@ export default function SecResearchPage() {
       router.push("/login");
       return;
     }
-    api.getCompanyList().then((r) => setCompanies(r.companies)).catch(() => {});
+    api.getCompanyList().then((r) => {
+      setCompanies(r.companies);
+      // A ticker in the URL (e.g. arriving from Conviction Summary's
+      // own "see full SEC filings" link) is auto-searched once the
+      // company list has genuinely loaded — searching before that
+      // would silently fail the same way a real, earlier bug did for
+      // Conviction Summary's own equivalent feature.
+      const fromUrl = searchParams.get("ticker");
+      if (fromUrl) {
+        performSearch(fromUrl, r.companies);
+      }
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const t = ticker.trim().toUpperCase();
+  async function performSearch(rawTicker: string, companyList: CompanyListItem[]) {
+    const t = rawTicker.trim().toUpperCase();
     if (!t) return;
     setSearchedTicker(t);
 
-    const company = companies.find((c) => c.ticker === t);
+    const company = companyList.find((c) => c.ticker === t);
 
     // Conviction Summary tally — the fast, quick answer, fetched
     // first and independently of the three detailed sections below.
@@ -145,6 +158,11 @@ export default function SecResearchPage() {
     } catch (err) {
       setTransactions({ loading: false, error: err instanceof Error ? err.message : "Couldn't load insider transactions", data: null });
     }
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    performSearch(ticker, companies);
   }
 
   return (
@@ -279,9 +297,26 @@ export default function SecResearchPage() {
                 );
               })}
             </section>
+
+            <p style={{ marginTop: "1.25rem", fontSize: "0.85rem" }}>
+              <Link href="/conviction-screener" style={{ color: "var(--accent)" }}>← Back to Conviction Screener</Link>
+            </p>
           </>
         )}
       </main>
     </AppShell>
   );
 }
+
+export default function SecResearchPage() {
+  // useSearchParams needs a Suspense boundary in the App Router —
+  // without it, the page fails to build/render correctly, same
+  // established requirement as reset-password/page.tsx and
+  // conviction-summary/page.tsx.
+  return (
+    <Suspense fallback={<p className="num" style={{ color: "var(--text-soft)" }}>Loading…</p>}>
+      <SecResearchForm />
+    </Suspense>
+  );
+}
+

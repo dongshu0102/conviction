@@ -10,6 +10,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { api, getApiKey, ConvictionSummary } from "@/lib/api";
 
@@ -117,6 +118,11 @@ function ConvictionSummaryForm() {
                 A coarse, honest tally — not a precise composite score. Institutional only
                 reflects the top 5 holders, who are often passive index funds; an inactive
                 institutional signal doesn&apos;t mean no institution holds this stock.
+              </p>
+              <p style={{ fontSize: "0.85rem", marginTop: "0.5rem" }}>
+                <Link href={`/sec-research?ticker=${result.ticker}`} style={{ color: "var(--accent)" }}>
+                  See full SEC filings →
+                </Link>
               </p>
             </div>
 

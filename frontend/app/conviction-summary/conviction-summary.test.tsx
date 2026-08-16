@@ -12,6 +12,12 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => searchParamsMock(),
 }));
 
+vi.mock("next/link", () => ({
+  default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
+    <a href={href} {...rest}>{children}</a>
+  ),
+}));
+
 const SAMPLE_SUMMARY: ConvictionSummary = {
   ticker: "AAPL",
   institutional_holders: [
@@ -102,5 +108,15 @@ describe("Conviction Summary page", () => {
 
     await waitFor(() => expect(spy).toHaveBeenCalledWith("RBLX"));
     await waitFor(() => screen.getByText("RBLX — 1 of 3 signals"));
+  });
+
+  it("links through to SEC Research for the same ticker's full filings", async () => {
+    vi.spyOn(api, "getConvictionSummary").mockResolvedValue(SAMPLE_SUMMARY);
+    render(<ConvictionSummaryPage />);
+
+    fireEvent.click(screen.getByText("Search"));
+
+    await waitFor(() => screen.getByText("See full SEC filings →"));
+    expect(screen.getByText("See full SEC filings →").closest("a")).toHaveAttribute("href", "/sec-research?ticker=AAPL");
   });
 });
