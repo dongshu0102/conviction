@@ -656,6 +656,45 @@ export interface InsiderTransactionsResponse {
   source_note: string;
 }
 
+// Real brokerage trading — REAL MONEY AT STAKE once confirm=true is
+// sent. confirmed=false means this was a preview only; the provider
+// was never even called, and no order was placed. See
+// PlaceOrderUseCase's own docstring in the backend for why this
+// safeguard is genuine and programmatic, not just a UI convention.
+export interface OrderResult {
+  status: "submitted" | "needs_confirmation" | "rejected";
+  order_id: string | null;
+  reply_id: string | null;
+  warning_messages: string[];
+  rejection_reason: string | null;
+}
+
+export interface PlaceOrderResponse {
+  confirmed: boolean;
+  order_result: OrderResult | null;
+  source_note: string;
+}
+
+export interface BrokeragePosition {
+  ticker: string;
+  quantity: number;
+  average_cost: number;
+  market_value: number;
+  unrealized_pnl: number;
+}
+
+export interface BrokeragePositionsResponse {
+  positions: BrokeragePosition[];
+}
+
+export interface BrokerageAccountSummary {
+  account_id: string;
+  cash: number;
+  buying_power: number;
+  equity: number;
+  currency: string;
+}
+
 export interface CapitalFlowMonitorModuleDef {
   id: string;
   group: string;
@@ -1116,4 +1155,23 @@ export const api = {
     const params = new URLSearchParams({ ticker });
     return request<InsiderTransactionsResponse>(`/insider-transactions?${params.toString()}`);
   },
+
+  // Real brokerage trading — REAL MONEY AT STAKE once confirm=true.
+  // Requires an admin-level API key server-side; a non-admin key gets
+  // a 403 from the backend, same as every other admin-gated route.
+  placeOrder: (order: {
+    ticker: string; side: "buy" | "sell"; quantity: number;
+    order_type: "market" | "limit"; limit_price?: number;
+    time_in_force?: string; confirm: boolean;
+  }) => request<PlaceOrderResponse>("/brokerage/orders", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(order),
+  }),
+
+  confirmBrokerageOrder: (replyId: string) => request<OrderResult>("/brokerage/orders/confirm", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reply_id: replyId }),
+  }),
+
+  getBrokerageAccountSummary: () => request<BrokerageAccountSummary>("/brokerage/account"),
+
+  getBrokeragePositions: () => request<BrokeragePositionsResponse>("/brokerage/positions"),
 };

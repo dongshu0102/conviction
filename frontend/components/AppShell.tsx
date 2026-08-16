@@ -35,6 +35,7 @@ const NAV_ITEMS = [
   { href: "/institutional-holdings", label: "13F Holdings", icon: "▥" },
   { href: "/beneficial-ownership", label: "13D/13G", icon: "◪" },
   { href: "/insider-transactions", label: "Insider Trades", icon: "⬤" },
+  { href: "/brokerage", label: "Trading", icon: "$" },
   { href: "/alerts", label: "Alerts", icon: "◉" },
 ];
 
