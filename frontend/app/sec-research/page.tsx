@@ -136,7 +136,9 @@ export default function SecResearchPage() {
               )}
               {holders.data && holders.data.map((h, i) => (
                 <div key={`${h.filer_name}-${i}`} style={{ display: "flex", justifyContent: "space-between", padding: "0.4rem 0", borderTop: i > 0 ? "1px solid var(--border)" : "none" }}>
-                  <span className="num">{h.filer_name}</span>
+                  <span className="num" style={{ color: h.filer_name ? "inherit" : "var(--text-soft)" }}>
+                    {h.filer_name || "(filer name not provided by source)"}
+                  </span>
                   <span className="num">{fmtUsd(h.value_usd)}</span>
                 </div>
               ))}

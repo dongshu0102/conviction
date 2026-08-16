@@ -128,4 +128,21 @@ describe("SEC Research page", () => {
     await waitFor(() => screen.getByText("Some Fund"));
     expect(screen.getByText("Some Officer")).toBeInTheDocument();
   });
+
+  it("shows an honest placeholder when a 13F holder's filer_name is genuinely blank in the source data", async () => {
+    vi.spyOn(api, "getInstitutionalHolders").mockResolvedValue({
+      issuer_query: "APPLE INC", issuer_name: "APPLE INC", period_of_report: "2026-03-31",
+      holders: [holding({ filer_name: "" })], // real, confirmed live data gap, not a bug in this app's own parsing
+      source: "fmp_live", source_note: "test",
+    });
+    vi.spyOn(api, "getBeneficialOwnershipDisclosures").mockResolvedValue({ ticker: "AAPL", disclosures: [], source_note: "test" });
+    vi.spyOn(api, "getInsiderTransactions").mockResolvedValue({ ticker: "AAPL", transactions: [], source_note: "test" });
+
+    render(<SecResearchPage />);
+    await waitFor(() => expect(api.getCompanyList).toHaveBeenCalled());
+    fireEvent.change(screen.getByPlaceholderText("e.g. AAPL, JPM, RBLX"), { target: { value: "AAPL" } });
+    fireEvent.click(screen.getByText("Search"));
+
+    await waitFor(() => screen.getByText("(filer name not provided by source)"));
+  });
 });
