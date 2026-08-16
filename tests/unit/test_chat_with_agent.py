@@ -120,6 +120,7 @@ from src.application.use_cases.get_brokerage_account_summary import GetBrokerage
 from src.application.use_cases.get_brokerage_positions import GetBrokeragePositionsUseCase
 from src.application.interfaces.brokerage_provider import BrokerageProviderError
 from src.domain.entities.brokerage import OrderResult
+from src.domain.entities.conviction_summary import ConvictionSummary
 
 
 class FakeBrokerageProvider:
@@ -161,6 +162,21 @@ class FakeBrokerageProvider:
         return []
 
 
+class FakeConvictionSummaryUseCase:
+    def __init__(self, summary=None, raise_error=None):
+        self._summary = summary or ConvictionSummary(
+            ticker="AAPL", institutional_holders=(), institutional_signal=False,
+            activist_disclosures_13d=(), activist_signal=False,
+            insider_purchases=(), insider_signal=False, signal_count=0,
+        )
+        self._raise_error = raise_error
+
+    def execute(self, ticker):
+        if self._raise_error is not None:
+            raise self._raise_error
+        return self._summary
+
+
 class FakeChatAgent(ChatAgent):
     """Instead of calling a real LLM, directly exercises the dispatch
     function with a scripted sequence of tool calls — lets us test the
@@ -195,7 +211,7 @@ def _company_repo(*tickers: str) -> FakeCompanyRepository:
     return repo
 
 
-def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watchlist_repo=None, provider=None, options_provider=None, theme_repo=None, statement_repo=None, get_factor_scores_override=None, alert_repo=None, candidate_repo=None, macro_history_provider=None, capital_flow_repo=None, institutional_holding_repo=None, get_institutional_holders_override=None, brokerage_provider=None):
+def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watchlist_repo=None, provider=None, options_provider=None, theme_repo=None, statement_repo=None, get_factor_scores_override=None, alert_repo=None, candidate_repo=None, macro_history_provider=None, capital_flow_repo=None, institutional_holding_repo=None, get_institutional_holders_override=None, brokerage_provider=None, conviction_summary_use_case=None):
     company_repo = company_repo or _company_repo()
     portfolio_repo = portfolio_repo or FakePortfolioRepository()
     watchlist_repo = watchlist_repo or FakeWatchlistRepository()
@@ -311,6 +327,7 @@ def _build_use_case(scripted_calls, company_repo=None, portfolio_repo=None, watc
         confirm_order=ConfirmOrderUseCase(brokerage_provider),
         get_brokerage_account_summary=GetBrokerageAccountSummaryUseCase(brokerage_provider),
         get_brokerage_positions=GetBrokeragePositionsUseCase(brokerage_provider),
+        get_conviction_summary=conviction_summary_use_case or FakeConvictionSummaryUseCase(),
     )
     return use_case, fake_agent, portfolio_repo
 
@@ -688,6 +705,36 @@ def test_get_brokerage_positions_dispatches_correctly() -> None:
 
     result = fake_agent.dispatch_results[0]
     assert result["positions"] == []
+
+
+def test_get_conviction_summary_dispatches_correctly() -> None:
+    summary = ConvictionSummary(
+        ticker="AAPL", institutional_holders=(), institutional_signal=True,
+        activist_disclosures_13d=(), activist_signal=False,
+        insider_purchases=(), insider_signal=True, signal_count=2,
+    )
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("get_conviction_summary", {"ticker": "AAPL"})],
+        conviction_summary_use_case=FakeConvictionSummaryUseCase(summary=summary),
+    )
+    use_case.execute("alice", "give me a conviction summary for Apple", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert result["ticker"] == "AAPL"
+    assert result["institutional_signal"] is True
+    assert result["insider_signal"] is True
+    assert result["signal_count"] == 2
+
+
+def test_get_conviction_summary_error_surfaces_cleanly() -> None:
+    use_case, fake_agent, _ = _build_use_case(
+        scripted_calls=[("get_conviction_summary", {"ticker": "AAPL"})],
+        conviction_summary_use_case=FakeConvictionSummaryUseCase(raise_error=Exception("db down")),
+    )
+    use_case.execute("alice", "give me a conviction summary for Apple", [])
+
+    result = fake_agent.dispatch_results[0]
+    assert "error" in result
 
 
 def test_get_daily_brief_dispatches_correctly() -> None:

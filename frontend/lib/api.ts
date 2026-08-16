@@ -656,6 +656,25 @@ export interface InsiderTransactionsResponse {
   source_note: string;
 }
 
+export interface InstitutionalHolderSignal {
+  filer_name: string;
+  current_shares: number;
+  current_value_usd: number;
+  is_increasing: boolean | null;
+}
+
+export interface ConvictionSummary {
+  ticker: string;
+  institutional_holders: InstitutionalHolderSignal[];
+  institutional_signal: boolean;
+  activist_disclosures_13d: BeneficialOwnershipDisclosure[];
+  activist_signal: boolean;
+  insider_purchases: InsiderTransaction[];
+  insider_signal: boolean;
+  signal_count: number;
+  source_note: string;
+}
+
 // Real brokerage trading — REAL MONEY AT STAKE once confirm=true is
 // sent. confirmed=false means this was a preview only; the provider
 // was never even called, and no order was placed. See
@@ -1154,6 +1173,11 @@ export const api = {
   getInsiderTransactions: (ticker: string) => {
     const params = new URLSearchParams({ ticker });
     return request<InsiderTransactionsResponse>(`/insider-transactions?${params.toString()}`);
+  },
+
+  getConvictionSummary: (ticker: string) => {
+    const params = new URLSearchParams({ ticker });
+    return request<ConvictionSummary>(`/conviction-summary?${params.toString()}`);
   },
 
   // Real brokerage trading — REAL MONEY AT STAKE once confirm=true.

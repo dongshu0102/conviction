@@ -96,6 +96,7 @@ from src.application.use_cases.place_order import PlaceOrderUseCase
 from src.application.use_cases.confirm_order import ConfirmOrderUseCase
 from src.application.use_cases.get_brokerage_account_summary import GetBrokerageAccountSummaryUseCase
 from src.application.use_cases.get_brokerage_positions import GetBrokeragePositionsUseCase
+from src.application.use_cases.get_conviction_summary import GetConvictionSummaryUseCase
 from src.api.routers.brokerage import get_brokerage_provider
 from src.application.use_cases.get_capital_flow import GetCapitalFlowUseCase
 from src.application.use_cases.get_institutional_holders import GetInstitutionalHoldersUseCase
@@ -321,6 +322,13 @@ def get_chat_use_case(
         confirm_order=ConfirmOrderUseCase(brokerage_provider),
         get_brokerage_account_summary=GetBrokerageAccountSummaryUseCase(brokerage_provider),
         get_brokerage_positions=GetBrokeragePositionsUseCase(brokerage_provider),
+        get_conviction_summary=GetConvictionSummaryUseCase(
+            get_institutional_holders=GetInstitutionalHoldersUseCase(SqlAlchemyInstitutionalHoldingRepository(), data_provider),
+            detect_position_changes=DetectPositionChangesUseCase(SqlAlchemyInstitutionalHoldingRepository(), data_provider),
+            get_beneficial_ownership_disclosures=GetBeneficialOwnershipDisclosuresUseCase(data_provider),
+            get_insider_transactions=GetInsiderTransactionsUseCase(data_provider),
+            company_repository=company_repo,
+        ),
     )
 
 

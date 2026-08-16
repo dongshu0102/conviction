@@ -101,6 +101,7 @@ from src.application.use_cases.get_brokerage_positions import (
     GetBrokeragePositionsError,
     GetBrokeragePositionsUseCase,
 )
+from src.application.use_cases.get_conviction_summary import GetConvictionSummaryUseCase
 from src.application.use_cases.get_institutional_holders import (
     GetInstitutionalHoldersError,
     GetInstitutionalHoldersUseCase,
@@ -1119,6 +1120,29 @@ _TOOLS = [
         {"type": "object", "properties": {}},
     ),
     ToolDefinition(
+        "get_conviction_summary",
+        "Combines three genuinely independent SEC disclosure signals for one "
+        "ticker into a single, honest view: institutional accumulation (top 5 "
+        "13F holders' own quarter-over-quarter change), activist intent (13D "
+        "filings), and insider buying (genuine Form 4 purchases at a real, "
+        "non-zero price). signal_count (0-3) is a deliberately coarse, honest "
+        "tally, not a fabricated composite score — present it that way, don't "
+        "imply more precision than the underlying, genuinely disparate data "
+        "supports. institutional_signal only reflects the top 5 holders, who "
+        "are often passive index funds — an absent institutional signal does "
+        "NOT mean no institution holds the stock, only that none of the top 5 "
+        "recently increased; say this explicitly if institutional_signal is "
+        "false and institutional_holders is non-empty. Read-only, safe to "
+        "call freely.",
+        {
+            "type": "object",
+            "properties": {
+                "ticker": {"type": "string", "description": "Ticker symbol, e.g. \"AAPL\"."},
+            },
+            "required": ["ticker"],
+        },
+    ),
+    ToolDefinition(
         "ingest_etf",
         "Ingest an ETF's profile (name, expense ratio, AUM) so it can be added "
         "to watchlists, themes, and screened/factor-scored. ETFs have no "
@@ -1436,6 +1460,7 @@ class ChatWithAgentUseCase:
         confirm_order: ConfirmOrderUseCase,
         get_brokerage_account_summary: GetBrokerageAccountSummaryUseCase,
         get_brokerage_positions: GetBrokeragePositionsUseCase,
+        get_conviction_summary: GetConvictionSummaryUseCase,
     ) -> None:
         self._chat_agent = chat_agent
         self._get_watchlist = get_watchlist
@@ -1501,6 +1526,7 @@ class ChatWithAgentUseCase:
         self._confirm_order = confirm_order
         self._get_brokerage_account_summary = get_brokerage_account_summary
         self._get_brokerage_positions = get_brokerage_positions
+        self._get_conviction_summary = get_conviction_summary
         self._construct_risk_parity_portfolio = construct_risk_parity_portfolio
         self._user_id: str = ""  # set per-request in execute()
 
@@ -2338,6 +2364,51 @@ class ChatWithAgentUseCase:
                     }
                     for p in result.positions
                 ],
+            }
+
+        if tool_name == "get_conviction_summary":
+            try:
+                result = self._get_conviction_summary.execute(tool_input["ticker"])
+            except Exception as exc:
+                return {"error": str(exc)}
+            return {
+                "ticker": result.ticker,
+                "institutional_holders": [
+                    {
+                        "filer_name": h.filer_name, "current_shares": h.current_shares,
+                        "current_value_usd": h.current_value_usd, "is_increasing": h.is_increasing,
+                    }
+                    for h in result.institutional_holders
+                ],
+                "institutional_signal": result.institutional_signal,
+                "activist_disclosures_13d": [
+                    {
+                        "name_of_reporting_person": d.name_of_reporting_person,
+                        "filing_date": d.filing_date.isoformat(),
+                        "percent_of_class": d.percent_of_class,
+                        "type_of_reporting_person": d.type_of_reporting_person,
+                    }
+                    for d in result.activist_disclosures_13d
+                ],
+                "activist_signal": result.activist_signal,
+                "insider_purchases": [
+                    {
+                        "reporting_name": t.reporting_name, "transaction_date": t.transaction_date.isoformat(),
+                        "securities_transacted": t.securities_transacted, "price": t.price,
+                    }
+                    for t in result.insider_purchases
+                ],
+                "insider_signal": result.insider_signal,
+                "signal_count": result.signal_count,
+                "source_note": (
+                    "signal_count is an honest, coarse tally (0-3), not a fabricated "
+                    "composite score. institutional_signal only reflects the top 5 "
+                    "holders, who are often passive index funds — an absent "
+                    "institutional_signal does NOT mean no institution holds this "
+                    "stock, only that none of the top 5 recently increased. State this "
+                    "explicitly if institutional_signal is false but institutional_holders "
+                    "is non-empty."
+                ),
             }
 
         if tool_name == "ingest_etf":
