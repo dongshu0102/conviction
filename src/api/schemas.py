@@ -555,6 +555,36 @@ class InsiderTransactionsResponseSchema(BaseModel):
     )
 
 
+class InstitutionalHolderSignalSchema(BaseModel):
+    filer_name: str
+    current_shares: int
+    current_value_usd: int
+    is_increasing: bool | None
+
+
+class ConvictionSummaryResponseSchema(BaseModel):
+    ticker: str
+    institutional_holders: list[InstitutionalHolderSignalSchema]
+    institutional_signal: bool
+    activist_disclosures_13d: list[BeneficialOwnershipDisclosureSchema]
+    activist_signal: bool
+    insider_purchases: list[InsiderTransactionSchema]
+    insider_signal: bool
+    signal_count: int
+    source_note: str = (
+        "Combines three genuinely independent SEC disclosure regimes: "
+        "institutional accumulation (13F, up to 45 days late), activist intent "
+        "(13D, within 5 business days), and insider buying (Form 4, within 2 "
+        "business days). signal_count is an honest, coarse tally (0-3) of how "
+        "many show real, current buying activity — deliberately not a "
+        "fabricated, falsely-precise numeric score. Institutional signal only "
+        "checks the top 5 holders' own quarter-over-quarter change; the "
+        "largest holders are often passive index funds, so an absent "
+        "institutional signal doesn't mean no institution holds this stock, "
+        "only that none of the top 5 recently increased."
+    )
+
+
 class PlaceOrderRequestSchema(BaseModel):
     ticker: str
     side: str  # "buy" or "sell"
