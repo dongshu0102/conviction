@@ -51,12 +51,17 @@ class ScreenForConvictionUseCase:
         self._get_conviction_summary = get_conviction_summary
         self._repository = repository
 
-    def execute(self, tickers: list[str]) -> ScreenForConvictionResult:
+    def execute(self, tickers: list[str], on_progress=None) -> ScreenForConvictionResult:
+        """on_progress, if given, is called as on_progress(done, total)
+        after every ticker (success or failure) -- lets a long-running
+        caller (see scripts/screen_for_conviction.py) show real
+        progress and pace itself, without this use case itself
+        needing to know anything about logging or rate limiting."""
         as_of = datetime.now(timezone.utc)
         results: list[ConvictionScreenerResult] = []
         failures: list[TickerScanFailure] = []
 
-        for ticker in tickers:
+        for i, ticker in enumerate(tickers, start=1):
             try:
                 summary = self._get_conviction_summary.execute(ticker)
             except Exception as exc:
@@ -67,6 +72,8 @@ class ScreenForConvictionUseCase:
                 # isolated here, not allowed to abort the other tickers.
                 logger.warning("Conviction screen failed for %s: %s", ticker, exc)
                 failures.append(TickerScanFailure(ticker=ticker, error=str(exc)))
+                if on_progress is not None:
+                    on_progress(i, len(tickers))
                 continue
 
             results.append(ConvictionScreenerResult(
@@ -76,6 +83,8 @@ class ScreenForConvictionUseCase:
                 insider_signal=summary.insider_signal,
                 signal_count=summary.signal_count,
             ))
+            if on_progress is not None:
+                on_progress(i, len(tickers))
 
         self._repository.save_batch(results)
 

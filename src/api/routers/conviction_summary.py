@@ -17,6 +17,18 @@ refresh-factor-snapshot endpoint, including the same, real, confirmed
 reason for the lock: nothing would otherwise stop repeated triggers
 from stacking multiple concurrent, genuinely expensive (~4,000 live
 API calls) scans against the same ~500 tickers.
+
+HONEST RELIABILITY CAVEAT, confirmed directly in production, not
+theoretical: FastAPI's BackgroundTasks mechanism was confirmed to die
+silently mid-scan -- no exception logged, no completion logged, the
+task simply gone -- almost certainly killed by an AWS App Runner
+container lifecycle event partway through a run that, at the pace
+actually observed against real tickers, was well on track to take
+over an hour for the full S&P 500. This endpoint remains useful for a
+small scan or a quick check, but scripts/screen_for_conviction.py --
+run independently of the web server's own container lifecycle, the
+same proven pattern as scripts/backfill_cusip_tickers.py -- is the
+reliable path for a genuine, full run.
 """
 from __future__ import annotations
 
@@ -194,10 +206,16 @@ def trigger_conviction_screen(
     return ScreenForConvictionResponseSchema(
         status="started",
         message=(
-            "Conviction screen started in the background. This takes minutes "
-            "for the full S&P 500 (hundreds of tickers, thousands of live API "
-            "calls). Check server logs, or query GET "
-            "/conviction-summary/screen-results once it's done -- the as_of "
+            "Conviction screen started in the background. HONEST CAVEAT, confirmed "
+            "directly in production: for the full S&P 500 this can take well over an "
+            "hour at the observed pace, and FastAPI's BackgroundTasks mechanism has "
+            "been confirmed to die silently mid-scan on a container restart, with no "
+            "error logged -- for a genuine, full, reliable run, use "
+            "scripts/screen_for_conviction.py instead, which runs independently of "
+            "this web server's own container lifecycle. This endpoint is best suited "
+            "to a small scan (see the --limit flag's script equivalent) or a quick "
+            "check, not a full run you need to actually complete. Check server logs, "
+            "or query GET /conviction-summary/screen-results once done -- the as_of "
             "timestamp on any result will confirm completion."
         ),
     )

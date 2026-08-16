@@ -101,3 +101,14 @@ def test_empty_ticker_list_still_saves_an_empty_batch() -> None:
     assert result.total_tickers == 0
     assert result.succeeded == 0
     assert repo.saved_batches == [[]]
+
+
+def test_on_progress_is_called_once_per_ticker_including_failures() -> None:
+    get_summary = FakeGetConvictionSummary(raise_for={"BROKEN": Exception("timeout")})
+    repo = FakeConvictionScreenerRepository()
+    use_case = ScreenForConvictionUseCase(get_summary, repo)
+    calls = []
+
+    use_case.execute(["AAPL", "BROKEN", "MSFT"], on_progress=lambda done, total: calls.append((done, total)))
+
+    assert calls == [(1, 3), (2, 3), (3, 3)]
