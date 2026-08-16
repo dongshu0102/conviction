@@ -8,8 +8,8 @@
 // price). signal_count is a deliberately coarse, honest tally (0-3),
 // never presented here as a fabricated, precise composite score.
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { api, getApiKey, ConvictionSummary } from "@/lib/api";
 
@@ -34,9 +34,10 @@ function SignalBadge({ label, active }: { label: string; active: boolean }) {
   );
 }
 
-export default function ConvictionSummaryPage() {
+function ConvictionSummaryForm() {
   const router = useRouter();
-  const [ticker, setTicker] = useState("AAPL");
+  const searchParams = useSearchParams();
+  const [ticker, setTicker] = useState(searchParams.get("ticker") || "AAPL");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ConvictionSummary | null>(null);
@@ -44,14 +45,19 @@ export default function ConvictionSummaryPage() {
   useEffect(() => {
     if (!getApiKey()) {
       router.push("/login");
+      return;
     }
+    // A ticker in the URL (e.g. arriving from the screener's own
+    // "click a ticker" links) is auto-searched on load, rather than
+    // just pre-filling the box and requiring a second, manual submit.
+    const fromUrl = searchParams.get("ticker");
+    if (fromUrl) {
+      fetchSummary(fromUrl);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const t = ticker.trim();
-    if (!t) return;
-
+  async function fetchSummary(t: string) {
     setLoading(true);
     setError(null);
     try {
@@ -62,6 +68,13 @@ export default function ConvictionSummaryPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const t = ticker.trim();
+    if (!t) return;
+    fetchSummary(t);
   }
 
   return (
@@ -146,5 +159,16 @@ export default function ConvictionSummaryPage() {
         )}
       </main>
     </AppShell>
+  );
+}
+
+export default function ConvictionSummaryPage() {
+  // useSearchParams needs a Suspense boundary in the App Router —
+  // without it, the page fails to build/render correctly, same
+  // established requirement as reset-password/page.tsx.
+  return (
+    <Suspense fallback={<p className="num" style={{ color: "var(--text-soft)" }}>Loading…</p>}>
+      <ConvictionSummaryForm />
+    </Suspense>
   );
 }

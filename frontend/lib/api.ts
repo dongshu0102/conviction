@@ -675,6 +675,25 @@ export interface ConvictionSummary {
   source_note: string;
 }
 
+export interface ConvictionScreenerResult {
+  ticker: string;
+  institutional_signal: boolean;
+  activist_signal: boolean;
+  insider_signal: boolean;
+  signal_count: number;
+  as_of: string;
+}
+
+export interface ConvictionScreenerResultsResponse {
+  results: ConvictionScreenerResult[];
+  source_note: string;
+}
+
+export interface ScreenForConvictionResponse {
+  status: string;
+  message: string;
+}
+
 // Real brokerage trading — REAL MONEY AT STAKE once confirm=true is
 // sent. confirmed=false means this was a preview only; the provider
 // was never even called, and no order was placed. See
@@ -1179,6 +1198,17 @@ export const api = {
     const params = new URLSearchParams({ ticker });
     return request<ConvictionSummary>(`/conviction-summary?${params.toString()}`);
   },
+
+  getConvictionScreenResults: (minSignalCount = 1) => {
+    const params = new URLSearchParams({ min_signal_count: String(minSignalCount) });
+    return request<ConvictionScreenerResultsResponse>(`/conviction-summary/screen-results?${params.toString()}`);
+  },
+
+  // Admin-only: triggers a genuinely expensive (~4,000 live API calls,
+  // minutes to complete) full S&P 500 background scan.
+  triggerConvictionScreen: () => request<ScreenForConvictionResponse>("/conviction-summary/screen", {
+    method: "POST",
+  }),
 
   // Real brokerage trading — REAL MONEY AT STAKE once confirm=true.
   // Requires an admin-level API key server-side; a non-admin key gets

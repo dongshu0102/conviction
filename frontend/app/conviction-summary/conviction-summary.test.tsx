@@ -4,10 +4,12 @@ import ConvictionSummaryPage from "./page";
 import { api, ConvictionSummary } from "@/lib/api";
 
 const pushMock = vi.fn();
+const searchParamsMock = vi.fn(() => new URLSearchParams());
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/conviction-summary",
   useRouter: () => ({ push: pushMock }),
+  useSearchParams: () => searchParamsMock(),
 }));
 
 const SAMPLE_SUMMARY: ConvictionSummary = {
@@ -26,6 +28,7 @@ const SAMPLE_SUMMARY: ConvictionSummary = {
 
 beforeEach(() => {
   pushMock.mockClear();
+  searchParamsMock.mockReturnValue(new URLSearchParams());
   localStorage.clear();
   localStorage.setItem("conviction_api_key", "fi_live_test123");
   vi.restoreAllMocks();
@@ -90,5 +93,14 @@ describe("Conviction Summary page", () => {
     fireEvent.click(screen.getByText("Search"));
 
     await waitFor(() => expect(spy).toHaveBeenCalledWith("MSFT"));
+  });
+
+  it("auto-searches when a ticker is present in the URL, e.g. arriving from the screener", async () => {
+    searchParamsMock.mockReturnValue(new URLSearchParams({ ticker: "RBLX" }));
+    const spy = vi.spyOn(api, "getConvictionSummary").mockResolvedValue({ ...SAMPLE_SUMMARY, ticker: "RBLX" });
+    render(<ConvictionSummaryPage />);
+
+    await waitFor(() => expect(spy).toHaveBeenCalledWith("RBLX"));
+    await waitFor(() => screen.getByText("RBLX — 1 of 3 signals"));
   });
 });
