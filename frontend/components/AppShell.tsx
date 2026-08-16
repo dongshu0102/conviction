@@ -35,6 +35,7 @@ const NAV_ITEMS = [
   { href: "/institutional-holdings", label: "13F Holdings", icon: "▥" },
   { href: "/beneficial-ownership", label: "13D/13G", icon: "◪" },
   { href: "/insider-transactions", label: "Insider Trades", icon: "⬤" },
+  { href: "/sec-research", label: "SEC Research", icon: "◭" },
   { href: "/conviction-summary", label: "Conviction Summary", icon: "✦" },
   { href: "/conviction-screener", label: "Conviction Screener", icon: "☰" },
   { href: "/brokerage", label: "Trading", icon: "$" },
