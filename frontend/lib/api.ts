@@ -29,6 +29,15 @@ export class ApiError extends Error {
   }
 }
 
+// Lightweight ticker+name pair for every locally-ingested company —
+// backs cheap, repeated frontend autocomplete. NOT a live API call
+// (see GET /companies/list-all's own docstring on the backend); safe
+// to fetch once per page load without worrying about rate limits.
+export interface CompanyListItem {
+  ticker: string;
+  name: string;
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const key = getApiKey();
   const headers: Record<string, string> = {
@@ -866,6 +875,8 @@ export interface CompsResponse {
 }
 
 export const api = {
+  getCompanyList: () => request<{ companies: CompanyListItem[] }>("/companies/list-all"),
+
   signUp: (email: string, password: string) =>
     request<{ plaintext_key: string; user_id: string }>("/auth/signup", {
       method: "POST",

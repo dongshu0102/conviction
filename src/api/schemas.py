@@ -112,6 +112,15 @@ class SP500ConstituentsSchema(BaseModel):
     count: int
 
 
+class CompanyListItemSchema(BaseModel):
+    ticker: str
+    name: str
+
+
+class CompanyListResponseSchema(BaseModel):
+    companies: list[CompanyListItemSchema]
+
+
 class IngestResultSchema(BaseModel):
     ticker: str
     income_statements_ingested: int

@@ -96,6 +96,9 @@ describe("Dashboard page", () => {
     vi.spyOn(api, "getDailyBrief").mockResolvedValue({
       narrative: "Your portfolio is up 2% today.",
       generated_at: "2026-01-01T12:00:00Z",
+      unread_alert_count: 0,
+      watchlist_moves: [],
+      portfolio_summaries: [],
     });
     render(<DashboardPage />);
 

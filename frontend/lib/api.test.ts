@@ -88,7 +88,7 @@ describe("request() — the shared fetch wrapper", () => {
       json: async () => {
         throw new Error("not json");
       },
-    } as Response;
+    } as unknown as Response;
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
 
     await expect(api.getWatchlist()).rejects.toMatchObject({

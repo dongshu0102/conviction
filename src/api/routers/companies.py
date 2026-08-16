@@ -27,6 +27,8 @@ from src.api.schemas import (
     CashFlowStatementSchema,
     CompanyFinancialAnalysisSchema,
     CompanyFinancialsSchema,
+    CompanyListItemSchema,
+    CompanyListResponseSchema,
     CompanySchema,
     IncomeStatementSchema,
     IngestResultSchema,
@@ -345,6 +347,22 @@ def ingest_etf(
     return EtfIngestResultSchema(
         ticker=company.ticker, name=company.name,
         expense_ratio=company.expense_ratio, aum=company.aum,
+    )
+
+
+@router.get("/list-all", response_model=CompanyListResponseSchema)
+def list_all_companies(
+    company_repo: SqlAlchemyCompanyRepository = Depends(get_company_repository),
+) -> CompanyListResponseSchema:
+    """Every locally-ingested company's ticker and name -- deliberately
+    NOT a live API call (unlike /sp500-constituents), since this is
+    meant to back cheap, repeated frontend autocomplete, not to be a
+    source of truth for current index membership. Registered before
+    the dynamic /{ticker} route on purpose, same reasoning as
+    /sp500-constituents's own comment."""
+    companies = company_repo.list_all()
+    return CompanyListResponseSchema(
+        companies=[CompanyListItemSchema(ticker=c.ticker, name=c.name) for c in companies],
     )
 
 

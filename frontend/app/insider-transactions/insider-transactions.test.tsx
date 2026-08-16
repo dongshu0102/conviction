@@ -50,6 +50,7 @@ beforeEach(() => {
   localStorage.clear();
   localStorage.setItem("conviction_api_key", "fi_live_test123");
   vi.restoreAllMocks();
+  vi.spyOn(api, "getCompanyList").mockResolvedValue({ companies: [] });
 });
 
 describe("Insider Transactions page", () => {

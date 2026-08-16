@@ -20,6 +20,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
+import { TickerAutocomplete } from "@/components/TickerAutocomplete";
 import { api, getApiKey, ApiError, InsiderTransactionsResponse } from "@/lib/api";
 
 function fmtShares(v: number): string {
@@ -53,6 +54,7 @@ export default function InsiderTransactionsPage() {
     try {
       setResult(await api.getInsiderTransactions(t));
     } catch (err) {
+      setResult(null); // don't leave a stale, previous result showing alongside a new error
       if (err instanceof ApiError && err.status === 404) {
         setError(err.message);
       } else {
@@ -77,12 +79,10 @@ export default function InsiderTransactionsPage() {
         </p>
 
         <form onSubmit={handleSubmit} style={{ display: "flex", gap: "0.5rem", marginBottom: "1.5rem" }}>
-          <input
-            type="text"
-            placeholder="e.g. AAPL, TSLA, MSFT"
+          <TickerAutocomplete
             value={ticker}
-            onChange={(e) => setTicker(e.target.value)}
-            style={{ flex: 1, padding: "0.6rem 0.9rem", fontSize: "0.95rem" }}
+            onChange={setTicker}
+            placeholder="e.g. AAPL, TSLA, MSFT"
           />
           <button type="submit" className="btn-primary" disabled={loading || !ticker.trim()}>
             {loading ? "Searching…" : "Search"}
@@ -93,7 +93,11 @@ export default function InsiderTransactionsPage() {
           <p className="num loss" style={{ fontSize: "0.85rem", marginBottom: "1rem" }}>{error}</p>
         )}
 
-        {result && (
+        {loading && (
+          <p style={{ color: "var(--text-soft)", fontSize: "0.9rem" }}>Loading insider transactions…</p>
+        )}
+
+        {!loading && result && (
           <div className="card">
             <p className="eyebrow" style={{ fontSize: "0.68rem", marginBottom: "0.5rem" }}>
               {`${result.ticker} · ${result.transactions.length} transaction${result.transactions.length === 1 ? "" : "s"}`}

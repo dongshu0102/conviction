@@ -106,6 +106,11 @@ export default function InstitutionalHoldingsPage() {
         setPortfolio(await api.getInstitutionalPortfolio(q));
       }
     } catch (err) {
+      // Don't leave a stale, previous result showing alongside a new
+      // error -- only the active mode's own result needs clearing.
+      if (mode === "changes") setChanges(null);
+      else if (mode === "holders") setHolders(null);
+      else setPortfolio(null);
       if (err instanceof ApiError && err.status === 404) {
         setError(err.message);
       } else {
@@ -171,7 +176,11 @@ export default function InstitutionalHoldingsPage() {
           <p className="num loss" style={{ fontSize: "0.85rem", marginBottom: "1rem" }}>{error}</p>
         )}
 
-        {mode === "changes" && changes && (
+        {loading && (
+          <p style={{ color: "var(--text-soft)", fontSize: "0.9rem" }}>Loading 13F data…</p>
+        )}
+
+        {!loading && mode === "changes" && changes && (
           <>
             <div className="card" style={{ marginBottom: "1.25rem", padding: "0.85rem 1rem" }}>
               <p style={{ margin: 0, fontSize: "0.95rem", fontWeight: 600 }}>
@@ -219,7 +228,7 @@ export default function InstitutionalHoldingsPage() {
           </>
         )}
 
-        {mode === "holders" && holders && (
+        {!loading && mode === "holders" && holders && (
           <div className="card">
             <p className="eyebrow" style={{ fontSize: "0.68rem", marginBottom: "0.5rem" }}>
               {`${holders.issuer_name}${holders.holders[0]?.ticker ? ` (${holders.holders[0].ticker})` : ""} · ${holders.period_of_report}`}
@@ -234,7 +243,7 @@ export default function InstitutionalHoldingsPage() {
           </div>
         )}
 
-        {mode === "portfolio" && portfolio && (
+        {!loading && mode === "portfolio" && portfolio && (
           <div className="card">
             <p className="eyebrow" style={{ fontSize: "0.68rem", marginBottom: "0.5rem" }}>
               {portfolio.filer_name} · {portfolio.period_of_report}
