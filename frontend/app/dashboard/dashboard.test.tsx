@@ -25,9 +25,10 @@ beforeEach(() => {
   vi.restoreAllMocks();
 });
 
-function mockLoads(portfolios: any[] = [], watchlist: any[] = []) {
+function mockLoads(portfolios: any[] = [], watchlist: any[] = [], convictionResults: any[] = []) {
   vi.spyOn(api, "listPortfolios").mockResolvedValue(portfolios);
   vi.spyOn(api, "getWatchlist").mockResolvedValue(watchlist);
+  vi.spyOn(api, "getConvictionScreenResults").mockResolvedValue({ results: convictionResults, source_note: "test" });
 }
 
 describe("Dashboard page", () => {
@@ -108,5 +109,46 @@ describe("Dashboard page", () => {
     await waitFor(() => {
       expect(screen.getByText("Your portfolio is up 2% today.")).toBeInTheDocument();
     });
+  });
+
+  it("shows the top conviction signals sorted by the backend's own order", async () => {
+    mockLoads([], [], [
+      { ticker: "NVDA", institutional_signal: true, activist_signal: false, insider_signal: true, signal_count: 2, as_of: "2026-08-16T02:00:00Z" },
+      { ticker: "AAPL", institutional_signal: true, activist_signal: false, insider_signal: false, signal_count: 1, as_of: "2026-08-16T02:00:00Z" },
+    ]);
+    render(<DashboardPage />);
+
+    await waitFor(() => screen.getByText("NVDA"));
+    expect(screen.getByText("AAPL")).toBeInTheDocument();
+    expect(screen.getByText("2/3")).toBeInTheDocument();
+  });
+
+  it("shows an honest empty state with a link to run a scan when there are no stored results yet", async () => {
+    mockLoads([], [], []);
+    render(<DashboardPage />);
+
+    const emptyStateText = await waitFor(() => screen.getByText(/No stored screener results yet/));
+    const link = emptyStateText.querySelector("a");
+    expect(link).toHaveAttribute("href", "/conviction-screener");
+  });
+
+  it("does not render the widget at all if the screener results request genuinely fails", async () => {
+    vi.spyOn(api, "listPortfolios").mockResolvedValue([]);
+    vi.spyOn(api, "getWatchlist").mockResolvedValue([]);
+    vi.spyOn(api, "getConvictionScreenResults").mockRejectedValue(new Error("network error"));
+    render(<DashboardPage />);
+
+    await waitFor(() => screen.getByText("Overview"));
+    expect(screen.queryByText("Top Conviction Signals")).not.toBeInTheDocument();
+  });
+
+  it("a top conviction signal links to that ticker's full conviction summary", async () => {
+    mockLoads([], [], [
+      { ticker: "NVDA", institutional_signal: true, activist_signal: false, insider_signal: true, signal_count: 2, as_of: "2026-08-16T02:00:00Z" },
+    ]);
+    render(<DashboardPage />);
+
+    await waitFor(() => screen.getByText("NVDA"));
+    expect(screen.getByText("NVDA").closest("a")).toHaveAttribute("href", "/conviction-summary?ticker=NVDA");
   });
 });

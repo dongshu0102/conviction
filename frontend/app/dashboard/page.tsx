@@ -14,13 +14,16 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
-import { api, getApiKey, ApiError, DailyBrief, Portfolio, WatchlistItem } from "@/lib/api";
+import { api, getApiKey, ApiError, DailyBrief, Portfolio, WatchlistItem, ConvictionScreenerResult } from "@/lib/api";
+
+const TOP_CONVICTION_RESULTS_SHOWN = 5;
 
 export default function DashboardPage() {
   const router = useRouter();
   const [brief, setBrief] = useState<DailyBrief | null>(null);
   const [portfolios, setPortfolios] = useState<Portfolio[] | null>(null);
   const [watchlist, setWatchlist] = useState<WatchlistItem[] | null>(null);
+  const [convictionResults, setConvictionResults] = useState<ConvictionScreenerResult[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [briefLoading, setBriefLoading] = useState(false);
@@ -43,6 +46,16 @@ export default function DashboardPage() {
         setError(err instanceof Error ? err.message : "Failed to load");
       })
       .finally(() => setLoading(false));
+
+    // Screener results are a real, separate, optional widget — a
+    // failure here (e.g. no scan has ever completed yet, or a real
+    // network error) shouldn't block or error out the rest of the
+    // dashboard, so it's fetched and failed independently of the
+    // Promise.all above. On a genuine failure, convictionResults
+    // stays null (not []) so the widget simply doesn't render at all,
+    // rather than showing a misleading "no results yet" message for
+    // what might actually be a real error.
+    api.getConvictionScreenResults(1).then((r) => setConvictionResults(r.results)).catch(() => {});
   }, [router]);
 
   async function loadBrief() {
@@ -100,6 +113,49 @@ export default function DashboardPage() {
             </div>
           )}
         </section>
+
+        {convictionResults !== null && (
+          <section className="card" style={{ marginBottom: "1.25rem", borderLeft: "3px solid var(--accent)" }}>
+            <p className="eyebrow" style={{ marginBottom: "0.5rem" }}>Top Conviction Signals</p>
+            {convictionResults.length === 0 ? (
+              <p style={{ margin: 0, color: "var(--text-soft)", fontSize: "0.9rem", lineHeight: 1.6 }}>
+                No stored screener results yet — run a scan from the{" "}
+                <Link href="/conviction-screener" style={{ color: "var(--accent)" }}>Conviction Screener</Link> page.
+              </p>
+            ) : (
+              <>
+                <p style={{ margin: "0 0 0.85rem", color: "var(--text-soft)", fontSize: "0.85rem", lineHeight: 1.6 }}>
+                  Tickers with the most institutional accumulation, activist intent, and insider
+                  buying signals converging at once, from the most recent full-market scan.
+                </p>
+                {convictionResults.slice(0, TOP_CONVICTION_RESULTS_SHOWN).map((r, i) => (
+                  <Link
+                    key={r.ticker}
+                    href={`/conviction-summary?ticker=${r.ticker}`}
+                    style={{
+                      display: "flex", justifyContent: "space-between", alignItems: "center",
+                      padding: "0.5rem 0", borderTop: i > 0 ? "1px solid var(--border)" : "none",
+                      textDecoration: "none", color: "inherit",
+                    }}
+                  >
+                    <span className="num" style={{ fontWeight: 700 }}>{r.ticker}</span>
+                    <span style={{ display: "flex", gap: "0.3rem", alignItems: "center" }}>
+                      <span style={{ color: r.institutional_signal ? "var(--gain)" : "var(--border)" }}>●</span>
+                      <span style={{ color: r.activist_signal ? "var(--gain)" : "var(--border)" }}>●</span>
+                      <span style={{ color: r.insider_signal ? "var(--gain)" : "var(--border)" }}>●</span>
+                      <span className="num" style={{ marginLeft: "0.4rem", fontSize: "0.82rem", color: "var(--text-soft)" }}>
+                        {`${r.signal_count}/3`}
+                      </span>
+                    </span>
+                  </Link>
+                ))}
+                <p style={{ margin: "0.85rem 0 0", fontSize: "0.85rem" }}>
+                  <Link href="/conviction-screener" style={{ color: "var(--accent)" }}>See full screener results →</Link>
+                </p>
+              </>
+            )}
+          </section>
+        )}
 
         <Link
           href="/growth-hunter"
