@@ -43,6 +43,24 @@ class SqlAlchemyConvictionScreenerRepository(ConvictionScreenerRepository):
                     insider_signal=r.insider_signal, signal_count=r.signal_count,
                 ))
 
+    def save_one(self, result: ConvictionScreenerResult) -> None:
+        with session_scope() as session:
+            # Scoped delete on this ticker's own primary key, not the
+            # whole table -- genuinely, deliberately different from
+            # save_batch's full-refresh semantics. Delete-then-insert
+            # rather than an UPDATE so this also correctly handles the
+            # "no prior row for this ticker at all" case (e.g. a
+            # brand-new addition to the universe) in the same code
+            # path as "retrying a ticker that failed last time."
+            session.execute(delete(ConvictionScreenerResultModel).where(
+                ConvictionScreenerResultModel.ticker == result.ticker
+            ))
+            session.add(ConvictionScreenerResultModel(
+                ticker=result.ticker, as_of=result.as_of,
+                institutional_signal=result.institutional_signal, activist_signal=result.activist_signal,
+                insider_signal=result.insider_signal, signal_count=result.signal_count,
+            ))
+
     def get_latest_as_of(self) -> datetime | None:
         with session_scope() as session:
             result = session.execute(

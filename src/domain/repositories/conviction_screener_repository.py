@@ -16,6 +16,16 @@ class ConvictionScreenerRepository(ABC):
         result forever."""
 
     @abstractmethod
+    def save_one(self, result: ConvictionScreenerResult) -> None:
+        """Upserts a single ticker's result WITHOUT touching any other
+        row -- deliberately, genuinely different from save_batch's own
+        full-refresh semantics. Exists for retrying just the handful
+        of tickers a full scan's own transient failures (a network
+        timeout, a dropped DB connection) left missing, without
+        re-running -- or worse, accidentally wiping -- the rest of an
+        already-completed, many-hour scan."""
+
+    @abstractmethod
     def get_latest_as_of(self) -> datetime | None:
         """None if no scan has ever completed."""
 
