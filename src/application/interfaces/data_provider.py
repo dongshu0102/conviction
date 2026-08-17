@@ -62,8 +62,18 @@ class FinancialDataProvider(ABC):
     # exercise. Consumers must treat NotImplementedError as "capability
     # absent" and degrade honestly (signal=None / feature unavailable),
     # never crash.
-    def get_stock_news(self, ticker: str, limit: int = 10) -> list[NewsArticle]:
-        raise NotImplementedError("This data provider does not support get_stock_news")
+    def get_nasdaq100_constituent_tickers(self) -> list[str]:
+        """Current Nasdaq-100 membership, as tickers only -- same
+        reasoning as get_sp500_constituent_tickers's own docstring.
+        Non-abstract, Phase-C-style: an additive universe, not needed
+        by every existing fake/test provider."""
+        raise NotImplementedError("This data provider does not support get_nasdaq100_constituent_tickers")
+
+    def get_dowjones_constituent_tickers(self) -> list[str]:
+        """Current Dow Jones Industrial Average membership, as tickers
+        only -- same reasoning as get_sp500_constituent_tickers's own
+        docstring."""
+        raise NotImplementedError("This data provider does not support get_dowjones_constituent_tickers")
 
     def search_cusip(self, cusip: str) -> list:
         """Real ticker resolution for a CUSIP — FMP-specific

@@ -263,6 +263,14 @@ class FinancialModelingPrepProvider(FinancialDataProvider):
         payload = self._get("/sp500-constituent")
         return sorted({row["symbol"] for row in payload if row.get("symbol")})
 
+    def get_nasdaq100_constituent_tickers(self) -> list[str]:
+        payload = self._get("/nasdaq-constituent")
+        return sorted({row["symbol"] for row in payload if row.get("symbol")})
+
+    def get_dowjones_constituent_tickers(self) -> list[str]:
+        payload = self._get("/dowjones-constituent")
+        return sorted({row["symbol"] for row in payload if row.get("symbol")})
+
     def get_quote(self, ticker: str) -> MarketQuote:
         payload = self._get("/quote", symbol=ticker)
         if not payload:
