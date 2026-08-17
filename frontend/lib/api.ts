@@ -691,6 +691,10 @@ export interface ConvictionScreenerResult {
   insider_signal: boolean;
   signal_count: number;
   as_of: string;
+  // Which major index(es) this ticker belongs to (S&P 500,
+  // Nasdaq-100, Dow Jones) -- empty if membership hasn't been
+  // backfilled for this ticker yet, never fabricated.
+  index_memberships: string[];
 }
 
 export interface ConvictionScreenerResultsResponse {

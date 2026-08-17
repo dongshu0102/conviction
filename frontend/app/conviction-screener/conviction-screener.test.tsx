@@ -5,9 +5,21 @@ import { api, ConvictionScreenerResult } from "@/lib/api";
 
 const pushMock = vi.fn();
 
+// A stable object reference, not a fresh {push: pushMock} literal on
+// every call -- real Next.js's own useRouter() is genuinely
+// memoized/stable across renders. An unstable mock here was
+// confirmed to cause a real, otherwise-invisible bug: this page's own
+// useEffect depends on [router], so a fresh reference every render
+// re-triggers loadResults (and its own setPage(1)) on every
+// state change, silently resetting pagination back to page 1
+// immediately after advancing it. Named with the required "mock"
+// prefix so Vitest's own hoisting allows referencing it inside the
+// hoisted vi.mock() factory below.
+const mockRouter = { push: pushMock };
+
 vi.mock("next/navigation", () => ({
   usePathname: () => "/conviction-screener",
-  useRouter: () => ({ push: pushMock }),
+  useRouter: () => mockRouter,
 }));
 
 vi.mock("next/link", () => ({
@@ -17,8 +29,8 @@ vi.mock("next/link", () => ({
 }));
 
 const SAMPLE_RESULTS: ConvictionScreenerResult[] = [
-  { ticker: "NVDA", institutional_signal: true, activist_signal: false, insider_signal: true, signal_count: 2, as_of: "2026-08-16T02:00:00Z" },
-  { ticker: "AAPL", institutional_signal: true, activist_signal: false, insider_signal: false, signal_count: 1, as_of: "2026-08-16T02:00:00Z" },
+  { ticker: "NVDA", institutional_signal: true, activist_signal: false, insider_signal: true, signal_count: 2, as_of: "2026-08-16T02:00:00Z", index_memberships: ["S&P 500", "Nasdaq-100"] },
+  { ticker: "AAPL", institutional_signal: true, activist_signal: false, insider_signal: false, signal_count: 1, as_of: "2026-08-16T02:00:00Z", index_memberships: ["S&P 500", "Nasdaq-100", "Dow Jones"] },
 ];
 
 beforeEach(() => {
@@ -93,5 +105,57 @@ describe("Conviction Screener page", () => {
     render(<ConvictionScreenerPage />);
 
     await waitFor(() => screen.getByText("db unreachable"));
+  });
+
+  it("shows each ticker's real index membership tags", async () => {
+    vi.spyOn(api, "getConvictionScreenResults").mockResolvedValue({ results: SAMPLE_RESULTS, source_note: "test" });
+    render(<ConvictionScreenerPage />);
+
+    await waitFor(() => screen.getByText("NVDA"));
+    expect(screen.getAllByText("S&P 500").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Dow Jones").length).toBeGreaterThan(0);
+  });
+
+  it("filtering by category shows only tickers genuinely in that index", async () => {
+    vi.spyOn(api, "getConvictionScreenResults").mockResolvedValue({ results: SAMPLE_RESULTS, source_note: "test" });
+    render(<ConvictionScreenerPage />);
+
+    await waitFor(() => screen.getByText("NVDA"));
+    fireEvent.change(screen.getByDisplayValue("All"), { target: { value: "Dow Jones" } });
+
+    await waitFor(() => screen.getByText("AAPL")); // AAPL is in Dow Jones
+    expect(screen.queryByText("NVDA")).not.toBeInTheDocument(); // NVDA is not
+  });
+
+  it("shows an honest empty state when a category has no matching results", async () => {
+    const noDowJonesResults: ConvictionScreenerResult[] = [
+      { ticker: "NVDA", institutional_signal: true, activist_signal: false, insider_signal: true, signal_count: 2, as_of: "2026-08-16T02:00:00Z", index_memberships: ["S&P 500", "Nasdaq-100"] },
+    ];
+    vi.spyOn(api, "getConvictionScreenResults").mockResolvedValue({ results: noDowJonesResults, source_note: "test" });
+    render(<ConvictionScreenerPage />);
+
+    await waitFor(() => screen.getByText("NVDA"));
+    fireEvent.change(screen.getByDisplayValue("All"), { target: { value: "Dow Jones" } });
+
+    await waitFor(() => screen.getByText(/No results in "Dow Jones"/));
+    expect(screen.queryByText("NVDA")).not.toBeInTheDocument();
+  });
+
+  it("paginates when results exceed one page", async () => {
+    const manyResults: ConvictionScreenerResult[] = Array.from({ length: 30 }, (_, i) => ({
+      ticker: `TICK${i}`, institutional_signal: true, activist_signal: false, insider_signal: false,
+      signal_count: 1, as_of: "2026-08-16T02:00:00Z", index_memberships: ["S&P 500"],
+    }));
+    vi.spyOn(api, "getConvictionScreenResults").mockResolvedValue({ results: manyResults, source_note: "test" });
+    render(<ConvictionScreenerPage />);
+
+    await waitFor(() => screen.getByText("TICK0"));
+    expect(screen.queryByText("TICK25")).not.toBeInTheDocument(); // page 1 only shows the first 25
+    expect(screen.getByText("1 / 2")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Next →"));
+
+    await waitFor(() => screen.getByText("TICK25"));
+    await waitFor(() => expect(screen.queryByText("TICK0")).not.toBeInTheDocument());
   });
 });
