@@ -550,3 +550,18 @@ class ConvictionScreenerResultModel(Base):
     signal_count: Mapped[int] = mapped_column(nullable=False, index=True)
 
 
+class IndexMembershipModel(Base):
+    """Many-to-many: which major index(es) a ticker belongs to (S&P
+    500, Nasdaq-100, Dow Jones). A ticker can have zero, one, or
+    several rows here -- substantial real overlap exists between
+    these indices, confirmed directly tonight (only 8 of 123 combined
+    Nasdaq-100 + Dow Jones tickers were genuinely new beyond the
+    existing S&P 500 universe). No row at all for a given ticker is
+    meaningful (membership not yet backfilled), not an error."""
+
+    __tablename__ = "index_memberships"
+
+    ticker: Mapped[str] = mapped_column(ForeignKey("companies.ticker"), primary_key=True)
+    index_name: Mapped[str] = mapped_column(primary_key=True, index=True)
+
+

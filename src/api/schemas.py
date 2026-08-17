@@ -608,6 +608,10 @@ class ConvictionScreenerResultSchema(BaseModel):
     insider_signal: bool
     signal_count: int
     as_of: datetime
+    # Which major index(es) this ticker belongs to (S&P 500,
+    # Nasdaq-100, Dow Jones) -- empty if membership hasn't been
+    # backfilled for this ticker yet, never fabricated.
+    index_memberships: list[str] = []
 
 
 class ConvictionScreenerResultsResponseSchema(BaseModel):

@@ -64,6 +64,9 @@ from src.infrastructure.persistence.company_repository_impl import SqlAlchemyCom
 from src.infrastructure.persistence.conviction_screener_repository_impl import (
     SqlAlchemyConvictionScreenerRepository,
 )
+from src.infrastructure.persistence.index_membership_repository_impl import (
+    SqlAlchemyIndexMembershipRepository,
+)
 from src.infrastructure.persistence.institutional_holding_repository_impl import (
     SqlAlchemyInstitutionalHoldingRepository,
 )
@@ -234,18 +237,28 @@ def get_conviction_screener_repository() -> SqlAlchemyConvictionScreenerReposito
     return SqlAlchemyConvictionScreenerRepository()
 
 
+def get_index_membership_repository() -> SqlAlchemyIndexMembershipRepository:
+    return SqlAlchemyIndexMembershipRepository()
+
+
 @router.get("/screen-results", response_model=ConvictionScreenerResultsResponseSchema)
 def get_conviction_screen_results(
     min_signal_count: int = Query(1, ge=0, le=3, description="Only tickers with at least this many signals."),
     repository: SqlAlchemyConvictionScreenerRepository = Depends(get_conviction_screener_repository),
+    membership_repository: SqlAlchemyIndexMembershipRepository = Depends(get_index_membership_repository),
 ) -> ConvictionScreenerResultsResponseSchema:
     results = repository.get_all(min_signal_count=min_signal_count)
+    # One bulk query for every ticker's memberships, not one query per
+    # ticker -- genuinely important at hundreds of results, not a
+    # premature optimization (see IndexMembershipRepository's own docstring).
+    memberships = membership_repository.get_memberships_for_tickers([r.ticker for r in results])
     return ConvictionScreenerResultsResponseSchema(
         results=[
             ConvictionScreenerResultSchema(
                 ticker=r.ticker, institutional_signal=r.institutional_signal,
                 activist_signal=r.activist_signal, insider_signal=r.insider_signal,
                 signal_count=r.signal_count, as_of=r.as_of,
+                index_memberships=memberships.get(r.ticker, []),
             )
             for r in results
         ],
