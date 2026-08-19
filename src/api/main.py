@@ -5,7 +5,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routers import admin, alerts, api_keys, auth, beneficial_ownership, brief, brokerage, capital_flow, capital_flow_monitor, chat, companies, conviction_summary, growth_candidates, insider_transactions, institutional_holdings, portfolios, research, universe, watchlist
+from src.api.routers import admin, alerts, api_keys, auth, beneficial_ownership, brief, brokerage, capital_flow, capital_flow_monitor, chat, companies, conviction_summary, growth_candidates, insider_transactions, institutional_holdings, master_lens, portfolios, research, universe, watchlist
 from src.infrastructure.config import get_settings
 
 settings = get_settings()
@@ -48,6 +48,7 @@ app.include_router(beneficial_ownership.router)
 app.include_router(insider_transactions.router)
 app.include_router(brokerage.router)
 app.include_router(conviction_summary.router)
+app.include_router(master_lens.router)
 
 
 @app.on_event("startup")

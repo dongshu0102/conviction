@@ -185,6 +185,36 @@ class FakeResearchGenerator:
         return self._result
 
 
+class FakeMasterLensNarrativeGenerator:
+    """Records exactly what scored_inputs it was called with — same
+    grounding-assertion purpose as FakeResearchGenerator. Default
+    narrative echoes each master's own score_basis, so a test can
+    directly verify a given narrative actually reflects the real,
+    deterministic score it was supposed to explain, not a canned string.
+    """
+
+    def __init__(self, fail: bool = False) -> None:
+        self._fail = fail
+        self.received_scored_inputs = None
+        self.received_ticker = None
+
+    def generate(self, ticker, analysis, valuation, scored_inputs):
+        from src.application.interfaces.master_lens_narrative_generator import (
+            MasterLensGenerationError,
+            MasterLensNarrativeResult,
+        )
+
+        self.received_ticker = ticker
+        self.received_scored_inputs = scored_inputs
+        if self._fail:
+            raise MasterLensGenerationError("simulated failure")
+        return MasterLensNarrativeResult(
+            narratives={s.master_name: f"Narrative for {s.master_name}: {s.score_basis}" for s in scored_inputs},
+            model_used="fake-model",
+            raw_response={},
+        )
+
+
 class ScriptedFailureDataProvider(FinancialDataProvider):
     """Data provider whose behavior per ticker is scripted in advance —
     used to test retry/backoff and partial-failure isolation without

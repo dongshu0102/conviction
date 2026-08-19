@@ -1083,6 +1083,23 @@ class ResearchReportSchema(BaseModel):
     grounded_fiscal_year: int | None
 
 
+class MasterLensResultSchema(BaseModel):
+    master_name: str
+    lens_label: str
+    score: float | None
+    score_basis: str
+    narrative: str
+
+
+class MasterLensAnalysisSchema(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    ticker: str
+    generated_at: datetime
+    results: list[MasterLensResultSchema]
+    model_used: str
+
+
 class CapitalFlowMonitorModuleDefSchema(BaseModel):
     id: str
     group: str
