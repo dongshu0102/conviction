@@ -8,7 +8,7 @@
 // the user pays for. The scoring note from the backend is displayed
 // verbatim — the honesty contract extends to the UI.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import {
@@ -16,6 +16,7 @@ import {
   ApiError,
   EarningsEvent,
   getApiKey,
+  MasterLensAnalysis,
   NewsArticle,
   TriageItem,
   TriageResponse,
@@ -63,6 +64,11 @@ export default function TerminalPage() {
   const [removingKey, setRemovingKey] = useState<string | null>(null);
   const [notIngestedTicker, setNotIngestedTicker] = useState<string | null>(null);
   const [ingesting, setIngesting] = useState(false);
+
+  const [expandedLensTicker, setExpandedLensTicker] = useState<string | null>(null);
+  const [masterLensData, setMasterLensData] = useState<MasterLensAnalysis | null>(null);
+  const [masterLensLoading, setMasterLensLoading] = useState(false);
+  const [masterLensError, setMasterLensError] = useState<string | null>(null);
 
   const load = useCallback(async (listName?: string) => {
     setLoading(true);
@@ -164,6 +170,29 @@ export default function TerminalPage() {
       setError(err instanceof Error ? err.message : "Couldn't remove that ticker.");
     } finally {
       setRemovingKey(null);
+    }
+  }
+
+  async function handleToggleMasterLens(ticker: string) {
+    // A second click on an already-expanded ticker collapses it, same
+    // accordion convention as any other expandable row — it does not
+    // re-fetch (this is a real, live LLM call every time, so a stray
+    // double-click must never trigger it twice).
+    if (expandedLensTicker === ticker) {
+      setExpandedLensTicker(null);
+      return;
+    }
+    setExpandedLensTicker(ticker);
+    setMasterLensData(null);
+    setMasterLensError(null);
+    setMasterLensLoading(true);
+    try {
+      const result = await api.getMasterLensAnalysis(ticker);
+      setMasterLensData(result);
+    } catch (err) {
+      setMasterLensError(err instanceof Error ? err.message : "Couldn't load Master Lens analysis.");
+    } finally {
+      setMasterLensLoading(false);
     }
   }
 
@@ -294,8 +323,8 @@ export default function TerminalPage() {
             </thead>
             <tbody>
               {triage.items.map((item: TriageItem) => (
+                <Fragment key={`${item.list_name}:${item.ticker}`}>
                 <tr
-                  key={`${item.list_name}:${item.ticker}`}
                   style={{
                     borderTop: "1px solid var(--rule)",
                     borderLeft: item.signals.target_crossed ? "3px solid var(--accent)" : "3px solid transparent",
@@ -349,6 +378,18 @@ export default function TerminalPage() {
                   </td>
                   <td style={{ padding: "0.55rem 0.6rem", textAlign: "center" }}>
                     <button
+                      onClick={() => handleToggleMasterLens(item.ticker)}
+                      title={`${expandedLensTicker === item.ticker ? "Hide" : "Show"} Master Lens analysis for ${item.ticker}`}
+                      aria-label={`Toggle Master Lens analysis for ${item.ticker}`}
+                      style={{
+                        background: "none", border: "none", cursor: "pointer",
+                        color: expandedLensTicker === item.ticker ? "var(--accent)" : "var(--text-soft)",
+                        fontSize: "0.75rem", padding: "0.2rem 0.4rem", marginRight: "0.3rem",
+                      }}
+                    >
+                      Lens
+                    </button>
+                    <button
                       onClick={() => handleRemove(item.ticker, item.list_name)}
                       disabled={removingKey === `${item.list_name}:${item.ticker}`}
                       title={`Remove ${item.ticker} from ${item.list_name}`}
@@ -363,6 +404,40 @@ export default function TerminalPage() {
                     </button>
                   </td>
                 </tr>
+                {expandedLensTicker === item.ticker && (
+                  <tr>
+                    <td colSpan={9} style={{ padding: "0.75rem 0.6rem 1.25rem", background: "var(--surface)" }}>
+                      <p className="eyebrow" style={{ margin: "0 0 0.6rem" }}>{`Master Lens — ${item.ticker}`}</p>
+                      {masterLensLoading && (
+                        <p style={{ color: "var(--text-soft)", fontSize: "0.85rem" }}>
+                          Computing ten investors&apos; own real frameworks against this ticker&apos;s real data…
+                        </p>
+                      )}
+                      {masterLensError && (
+                        <p className="loss" style={{ fontSize: "0.85rem" }}>{masterLensError}</p>
+                      )}
+                      {masterLensData && masterLensData.ticker === item.ticker && (
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "0.85rem" }}>
+                          {masterLensData.results.map((lens) => (
+                            <div key={lens.master_name} className="card" style={{ padding: "0.75rem" }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.3rem" }}>
+                                <span style={{ fontWeight: 600, fontSize: "0.88rem" }}>{lens.master_name}</span>
+                                <span className="num" style={{ fontSize: "0.85rem", color: lens.score === null ? "var(--text-soft)" : "var(--accent)" }}>
+                                  {lens.score === null ? "—" : `${lens.score.toFixed(1)}/10`}
+                                </span>
+                              </div>
+                              <p style={{ margin: "0 0 0.4rem", fontSize: "0.72rem", color: "var(--text-soft)", letterSpacing: "0.03em" }}>
+                                {lens.lens_label}
+                              </p>
+                              <p style={{ margin: 0, fontSize: "0.82rem", lineHeight: 1.5 }}>{lens.narrative}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>

@@ -672,6 +672,26 @@ export interface InstitutionalHolderSignal {
   is_increasing: boolean | null;
 }
 
+// Master Lens — ten historically significant investors, each a real
+// analytical MODEL applied to a ticker's own, real financial data,
+// deliberately not a biography. Every score is deterministic
+// arithmetic, computed before the LLM is ever called; the narrative
+// only explains that already-fixed score, never invents its own.
+export interface MasterLensResult {
+  master_name: string;
+  lens_label: string;
+  score: number | null;
+  score_basis: string;
+  narrative: string;
+}
+
+export interface MasterLensAnalysis {
+  ticker: string;
+  generated_at: string;
+  results: MasterLensResult[];
+  model_used: string;
+}
+
 export interface ConvictionSummary {
   ticker: string;
   institutional_holders: InstitutionalHolderSignal[];
@@ -1213,6 +1233,11 @@ export const api = {
     const params = new URLSearchParams({ ticker });
     return request<ConvictionSummary>(`/conviction-summary?${params.toString()}`);
   },
+
+  // On-demand, not cached client-side — a real, live LLM call every
+  // time, matching the backend's own "computed fresh, never persisted"
+  // design for this feature's first version.
+  getMasterLensAnalysis: (ticker: string) => request<MasterLensAnalysis>(`/master-lens/${ticker}`),
 
   getConvictionScreenResults: (minSignalCount = 1) => {
     const params = new URLSearchParams({ min_signal_count: String(minSignalCount) });

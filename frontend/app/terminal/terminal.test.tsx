@@ -197,3 +197,85 @@ describe("Watchlist Terminal — add a ticker that hasn't been ingested yet", ()
     expect(screen.queryByText("Ingest & add")).not.toBeInTheDocument();
   });
 });
+
+const SAMPLE_LENS_RESULT = {
+  master_name: "Buffett",
+  lens_label: "Moats & Owner Earnings",
+  score: 7.5,
+  score_basis: "avg gross margin 60.0%",
+  narrative: "A wide, durable moat is visible here.",
+};
+
+const SAMPLE_MASTER_LENS_ANALYSIS = {
+  ticker: "NVDA",
+  generated_at: "2026-08-19T12:00:00Z",
+  model_used: "test-model",
+  results: [SAMPLE_LENS_RESULT],
+};
+
+describe("Watchlist Terminal — Master Lens", () => {
+  it("shows a Lens button per row", async () => {
+    mockLoads([SAMPLE_ITEM]);
+    render(<TerminalPage />);
+    await waitFor(() => screen.getByText("NVDA"));
+    expect(screen.getByText("Lens")).toBeInTheDocument();
+  });
+
+  it("clicking Lens fetches and shows the real, live Master Lens analysis", async () => {
+    mockLoads([SAMPLE_ITEM]);
+    const lensSpy = vi.spyOn(api, "getMasterLensAnalysis").mockResolvedValue(SAMPLE_MASTER_LENS_ANALYSIS);
+    render(<TerminalPage />);
+
+    await waitFor(() => screen.getByText("NVDA"));
+    fireEvent.click(screen.getByText("Lens"));
+
+    await waitFor(() => expect(lensSpy).toHaveBeenCalledWith("NVDA"));
+    await waitFor(() => screen.getByText("A wide, durable moat is visible here."));
+    expect(screen.getByText("7.5/10")).toBeInTheDocument();
+    expect(screen.getByText("Moats & Owner Earnings")).toBeInTheDocument();
+  });
+
+  it("shows a real, honest score placeholder for a lens with no computable score", async () => {
+    mockLoads([SAMPLE_ITEM]);
+    vi.spyOn(api, "getMasterLensAnalysis").mockResolvedValue({
+      ...SAMPLE_MASTER_LENS_ANALYSIS,
+      results: [{ ...SAMPLE_LENS_RESULT, score: null }],
+    });
+    render(<TerminalPage />);
+
+    await waitFor(() => screen.getByText("NVDA"));
+    fireEvent.click(screen.getByText("Lens"));
+
+    await waitFor(() => screen.getByText("Moats & Owner Earnings"));
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+    expect(screen.queryByText("7.5/10")).not.toBeInTheDocument();
+  });
+
+  it("clicking Lens again collapses the analysis without re-fetching", async () => {
+    mockLoads([SAMPLE_ITEM]);
+    const lensSpy = vi.spyOn(api, "getMasterLensAnalysis").mockResolvedValue(SAMPLE_MASTER_LENS_ANALYSIS);
+    render(<TerminalPage />);
+
+    await waitFor(() => screen.getByText("NVDA"));
+    fireEvent.click(screen.getByText("Lens"));
+    await waitFor(() => screen.getByText("A wide, durable moat is visible here."));
+
+    fireEvent.click(screen.getByText("Lens"));
+
+    await waitFor(() => {
+      expect(screen.queryByText("A wide, durable moat is visible here.")).not.toBeInTheDocument();
+    });
+    expect(lensSpy).toHaveBeenCalledTimes(1); // collapsing must never re-fetch
+  });
+
+  it("shows a real, honest error message if the analysis fails to load", async () => {
+    mockLoads([SAMPLE_ITEM]);
+    vi.spyOn(api, "getMasterLensAnalysis").mockRejectedValue(new Error("model unavailable"));
+    render(<TerminalPage />);
+
+    await waitFor(() => screen.getByText("NVDA"));
+    fireEvent.click(screen.getByText("Lens"));
+
+    await waitFor(() => screen.getByText("model unavailable"));
+  });
+});
