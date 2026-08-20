@@ -653,11 +653,12 @@ class OrderResultSchema(BaseModel):
 class PlaceOrderResponseSchema(BaseModel):
     confirmed: bool
     order_result: OrderResultSchema | None = None
-    source_note: str = (
-        "Interactive Brokers, live brokerage integration — real money is at "
-        "stake once confirm=true is sent. confirmed=false means this was a "
-        "preview only; no order was placed."
-    )
+    # No longer a hard-coded default -- was genuinely, silently
+    # wrong (always said "Interactive Brokers" regardless of the
+    # real, active provider) whenever Alpaca or Tradier was actually
+    # active, confirmed live in production. The route handler now
+    # sets this explicitly from settings.active_brokerage_provider.
+    source_note: str
 
 
 class ConfirmOrderRequestSchema(BaseModel):

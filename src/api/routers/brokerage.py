@@ -71,6 +71,25 @@ def get_brokerage_provider() -> BrokerageProvider:
     return IbkrProvider(settings=settings)
 
 
+_BROKERAGE_SOURCE_NOTES = {
+    "ibkr": (
+        "Interactive Brokers, live brokerage integration — real money is at "
+        "stake once confirm=true is sent. confirmed=false means this was a "
+        "preview only; no order was placed."
+    ),
+    "alpaca": (
+        "Alpaca, live brokerage integration — real money is at "
+        "stake once confirm=true is sent against a live (non-paper) account. "
+        "confirmed=false means this was a preview only; no order was placed."
+    ),
+    "tradier": (
+        "Tradier, live brokerage integration — real money is at "
+        "stake once confirm=true is sent against a live (non-paper) account. "
+        "confirmed=false means this was a preview only; no order was placed."
+    ),
+}
+
+
 def _to_order_result_schema(result) -> OrderResultSchema:
     return OrderResultSchema(
         status=result.status, order_id=result.order_id, reply_id=result.reply_id,
@@ -83,6 +102,7 @@ def place_order(
     body: PlaceOrderRequestSchema,
     admin_user_id: str = Depends(get_admin_user_id),
     provider: BrokerageProvider = Depends(get_brokerage_provider),
+    settings=Depends(get_settings),
 ) -> PlaceOrderResponseSchema:
     use_case = PlaceOrderUseCase(provider)
     request = OrderRequest(
@@ -99,7 +119,11 @@ def place_order(
     return PlaceOrderResponseSchema(
         confirmed=result.confirmed,
         order_result=_to_order_result_schema(result.order_result) if result.order_result else None,
+        source_note=_BROKERAGE_SOURCE_NOTES.get(
+            settings.active_brokerage_provider, _BROKERAGE_SOURCE_NOTES["ibkr"]
+        ),
     )
+
 
 
 @router.post("/orders/confirm", response_model=OrderResultSchema)
