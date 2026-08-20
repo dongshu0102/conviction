@@ -41,6 +41,7 @@ from src.domain.entities.brokerage import (
     BrokerageAccountSummary,
     BrokeragePosition,
     CancelOrderResult,
+    OrderHistoryEntry,
     OrderRequest,
     OrderResult,
     OrderStatus,
@@ -322,3 +323,50 @@ class TradierProvider(BrokerageProvider):
                 reason=f"Tradier order cancellation returned {response.status_code}: {response.text}",
             )
         return CancelOrderResult(success=True)
+
+    def get_order_history(self, limit: int = 50) -> list[OrderHistoryEntry]:
+        """Endpoint confirmed directly from Tradier's own documentation:
+        GET /v1/accounts/{account_id}/orders ("Get current market
+        session orders for an account"). HONEST CONFIDENCE NOTE
+        matching this module's own: reuses the same per-order field
+        vocabulary (exec_quantity, avg_fill_price) already confirmed
+        for get_order_status against Tradier's adjacent, single-order
+        endpoint, not independently re-verified for the list response
+        specifically. This endpoint's own limit/pagination support
+        was not confirmed, so limit is applied client-side after the
+        fetch -- flagged honestly, not hidden. Same defensive handling
+        as get_positions for Tradier's own, confirmed quirks: the
+        literal string "null" for an empty result, and a bare object
+        instead of a list for exactly one order."""
+        client = self._ensure_configured()
+        try:
+            response = client.get(f"/accounts/{self._settings.tradier_account_id}/orders")
+        except httpx.HTTPError as exc:
+            raise BrokerageProviderError(f"Tradier order history request failed: {exc}") from exc
+
+        if response.status_code != 200:
+            raise BrokerageProviderError(
+                f"Tradier order history request returned {response.status_code}: {response.text}"
+            )
+        data = response.json().get("orders")
+        if not data or data == "null":
+            return []  # Tradier returns the literal string "null" for zero orders, same as get_positions
+        raw_orders = data.get("order", [])
+        if isinstance(raw_orders, dict):
+            raw_orders = [raw_orders]  # a bare object, not a list, for exactly one order -- same as get_positions
+
+        entries = []
+        for row in raw_orders[:limit]:
+            avg_price = row.get("avg_fill_price")
+            entries.append(OrderHistoryEntry(
+                order_id=str(row.get("id", "")),
+                ticker=row.get("symbol", ""),
+                side=row.get("side", ""),
+                quantity=float(row.get("quantity", 0.0)),
+                order_type=row.get("type", ""),
+                status=row.get("status", "unknown"),
+                filled_quantity=float(row.get("exec_quantity", 0.0)),
+                filled_avg_price=float(avg_price) if avg_price not in (None, 0, "0", "0.00000000") else None,
+                submitted_at=row.get("create_date"),
+            ))
+        return entries

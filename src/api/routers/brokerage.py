@@ -35,6 +35,8 @@ from src.api.schemas import (
     BrokeragePositionsResponseSchema,
     CancelOrderResponseSchema,
     ConfirmOrderRequestSchema,
+    OrderHistoryEntrySchema,
+    OrderHistoryResponseSchema,
     OrderResultSchema,
     OrderStatusSchema,
     PlaceOrderRequestSchema,
@@ -51,6 +53,7 @@ from src.application.use_cases.get_brokerage_positions import (
     GetBrokeragePositionsError,
     GetBrokeragePositionsUseCase,
 )
+from src.application.use_cases.get_order_history import GetOrderHistoryError, GetOrderHistoryUseCase
 from src.application.use_cases.get_order_status import GetOrderStatusError, GetOrderStatusUseCase
 from src.application.use_cases.place_order import PlaceOrderError, PlaceOrderUseCase
 from src.domain.entities.brokerage import OrderRequest
@@ -180,6 +183,35 @@ def get_positions(
                 market_value=p.market_value, unrealized_pnl=p.unrealized_pnl,
             )
             for p in result.positions
+        ],
+    )
+
+
+@router.get("/orders/history", response_model=OrderHistoryResponseSchema)
+def get_order_history(
+    limit: int = 50,
+    admin_user_id: str = Depends(get_admin_user_id),
+    provider: BrokerageProvider = Depends(get_brokerage_provider),
+) -> OrderHistoryResponseSchema:
+    """Declared BEFORE GET /orders/{order_id} deliberately -- FastAPI
+    matches routes in declaration order, and a literal path segment
+    ("history") must be registered ahead of a parameterized one
+    ({order_id}) on the same prefix, or a request to /orders/history
+    would incorrectly match {order_id}="history" instead."""
+    use_case = GetOrderHistoryUseCase(provider)
+    try:
+        result = use_case.execute(limit=limit)
+    except GetOrderHistoryError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return OrderHistoryResponseSchema(
+        entries=[
+            OrderHistoryEntrySchema(
+                order_id=e.order_id, ticker=e.ticker, side=e.side, quantity=e.quantity,
+                order_type=e.order_type, status=e.status, filled_quantity=e.filled_quantity,
+                filled_avg_price=e.filled_avg_price, submitted_at=e.submitted_at,
+            )
+            for e in result.entries
         ],
     )
 

@@ -662,6 +662,22 @@ class CancelOrderResponseSchema(BaseModel):
     reason: str | None = None
 
 
+class OrderHistoryEntrySchema(BaseModel):
+    order_id: str
+    ticker: str
+    side: str
+    quantity: float
+    order_type: str
+    status: str
+    filled_quantity: float
+    filled_avg_price: float | None = None
+    submitted_at: str | None = None
+
+
+class OrderHistoryResponseSchema(BaseModel):
+    entries: list[OrderHistoryEntrySchema]
+
+
 class PlaceOrderResponseSchema(BaseModel):
     confirmed: bool
     order_result: OrderResultSchema | None = None

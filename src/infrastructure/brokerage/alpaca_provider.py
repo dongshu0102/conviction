@@ -43,6 +43,7 @@ from src.domain.entities.brokerage import (
     BrokerageAccountSummary,
     BrokeragePosition,
     CancelOrderResult,
+    OrderHistoryEntry,
     OrderRequest,
     OrderResult,
     OrderStatus,
@@ -269,3 +270,35 @@ class AlpacaProvider(BrokerageProvider):
         raise BrokerageProviderError(
             f"Alpaca order cancellation returned an unexpected {response.status_code}: {response.text}"
         )
+
+    def get_order_history(self, limit: int = 50) -> list[OrderHistoryEntry]:
+        """Confirmed directly against Alpaca's own documentation: GET
+        /v2/orders with status=all (both open and closed orders, not
+        just open ones -- a genuine history view needs both) and
+        direction=desc (most recent first, Alpaca's own real,
+        documented parameter for ordering)."""
+        client = self._ensure_configured()
+        try:
+            response = client.get("/orders", params={"status": "all", "limit": limit, "direction": "desc"})
+        except httpx.HTTPError as exc:
+            raise BrokerageProviderError(f"Alpaca order history request failed: {exc}") from exc
+
+        if response.status_code != 200:
+            raise BrokerageProviderError(
+                f"Alpaca order history request returned {response.status_code}: {response.text}"
+            )
+        entries = []
+        for row in response.json():
+            filled_avg_price = row.get("filled_avg_price")
+            entries.append(OrderHistoryEntry(
+                order_id=row.get("id", ""),
+                ticker=row.get("symbol", ""),
+                side=row.get("side", ""),
+                quantity=float(row.get("qty", 0.0)),
+                order_type=row.get("type", ""),
+                status=row.get("status", "unknown"),
+                filled_quantity=float(row.get("filled_qty", 0.0)),
+                filled_avg_price=float(filled_avg_price) if filled_avg_price is not None else None,
+                submitted_at=row.get("submitted_at"),
+            ))
+        return entries

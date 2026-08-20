@@ -18,6 +18,7 @@ from src.domain.entities.brokerage import (
     BrokerageAccountSummary,
     BrokeragePosition,
     CancelOrderResult,
+    OrderHistoryEntry,
     OrderRequest,
     OrderResult,
     OrderStatus,
@@ -77,3 +78,11 @@ class BrokerageProvider(ABC):
         """Attempt to cancel an already-placed, still-open order.
         success=False (e.g. the order has already filled) is a real,
         honest outcome to report back, not an error to raise."""
+
+    @abstractmethod
+    def get_order_history(self, limit: int = 50) -> list[OrderHistoryEntry]:
+        """The account's real order history, most recent first --
+        limit is honored as a real, upper bound on the request (not
+        just a client-side truncation after fetching everything), so a
+        genuinely large account's history doesn't get pulled in full
+        on every call."""

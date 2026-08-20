@@ -81,6 +81,27 @@ class CancelOrderResult:
 
 
 @dataclass(frozen=True, slots=True)
+class OrderHistoryEntry:
+    """One order in the account's real order history -- genuinely
+    richer than OrderStatus alone, since a history view needs to say
+    what the order actually was (ticker, side, quantity), not just
+    its current state. submitted_at is a real ISO 8601 timestamp
+    string, not a parsed datetime -- three genuinely different
+    brokerages format this differently, and passing the raw, real
+    string through honestly avoids silently misparsing one of them."""
+
+    order_id: str
+    ticker: str
+    side: str
+    quantity: float
+    order_type: str
+    status: str
+    filled_quantity: float
+    filled_avg_price: float | None
+    submitted_at: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class BrokeragePosition:
     """One currently-held position at the real brokerage account."""
 
