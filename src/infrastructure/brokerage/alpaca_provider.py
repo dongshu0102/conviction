@@ -42,6 +42,7 @@ from src.application.interfaces.brokerage_provider import (
 from src.domain.entities.brokerage import (
     BrokerageAccountSummary,
     BrokeragePosition,
+    CancelOrderResult,
     OrderRequest,
     OrderResult,
     OrderStatus,
@@ -247,4 +248,24 @@ class AlpacaProvider(BrokerageProvider):
             status=data.get("status", "unknown"),
             filled_quantity=float(data.get("filled_qty", 0.0)),
             filled_avg_price=float(filled_avg_price) if filled_avg_price is not None else None,
+        )
+
+    def cancel_order(self, order_id: str) -> CancelOrderResult:
+        """Confirmed directly from Alpaca's own documentation: DELETE
+        /v2/orders/{order_id} returns 204 (no content) on a genuine,
+        successful cancellation, or 422 if the order is no longer
+        cancelable (e.g. it has already filled) -- the 422 case is a
+        real, honest outcome to report back, not an error to raise."""
+        client = self._ensure_configured()
+        try:
+            response = client.delete(f"/orders/{order_id}")
+        except httpx.HTTPError as exc:
+            raise BrokerageProviderError(f"Alpaca order cancellation request failed: {exc}") from exc
+
+        if response.status_code == 204:
+            return CancelOrderResult(success=True)
+        if response.status_code == 422:
+            return CancelOrderResult(success=False, reason="Order is no longer cancelable (e.g. already filled).")
+        raise BrokerageProviderError(
+            f"Alpaca order cancellation returned an unexpected {response.status_code}: {response.text}"
         )

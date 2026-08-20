@@ -68,6 +68,19 @@ class OrderStatus:
 
 
 @dataclass(frozen=True, slots=True)
+class CancelOrderResult:
+    """The outcome of attempting to cancel an already-placed order.
+    success=False is a genuine, honest outcome, not a failure of this
+    app -- an order that has already filled, or already been
+    canceled/rejected, is no longer cancelable at any brokerage, and
+    that fact needs to reach the caller with a real reason, not just a
+    bare False."""
+
+    success: bool
+    reason: str | None = None  # populated when success is False
+
+
+@dataclass(frozen=True, slots=True)
 class BrokeragePosition:
     """One currently-held position at the real brokerage account."""
 

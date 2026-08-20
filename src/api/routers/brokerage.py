@@ -33,6 +33,7 @@ from src.api.schemas import (
     BrokerageAccountSummarySchema,
     BrokeragePositionSchema,
     BrokeragePositionsResponseSchema,
+    CancelOrderResponseSchema,
     ConfirmOrderRequestSchema,
     OrderResultSchema,
     OrderStatusSchema,
@@ -40,6 +41,7 @@ from src.api.schemas import (
     PlaceOrderResponseSchema,
 )
 from src.application.interfaces.brokerage_provider import BrokerageProvider, BrokerageProviderError
+from src.application.use_cases.cancel_order import CancelOrderError, CancelOrderUseCase
 from src.application.use_cases.confirm_order import ConfirmOrderError, ConfirmOrderUseCase
 from src.application.use_cases.get_brokerage_account_summary import (
     GetBrokerageAccountSummaryError,
@@ -198,3 +200,18 @@ def get_order_status(
         order_id=status.order_id, status=status.status,
         filled_quantity=status.filled_quantity, filled_avg_price=status.filled_avg_price,
     )
+
+
+@router.delete("/orders/{order_id}", response_model=CancelOrderResponseSchema)
+def cancel_order(
+    order_id: str,
+    admin_user_id: str = Depends(get_admin_user_id),
+    provider: BrokerageProvider = Depends(get_brokerage_provider),
+) -> CancelOrderResponseSchema:
+    use_case = CancelOrderUseCase(provider)
+    try:
+        result = use_case.execute(order_id)
+    except CancelOrderError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return CancelOrderResponseSchema(success=result.success, reason=result.reason)

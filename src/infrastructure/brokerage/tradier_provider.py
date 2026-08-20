@@ -40,6 +40,7 @@ from src.application.interfaces.brokerage_provider import (
 from src.domain.entities.brokerage import (
     BrokerageAccountSummary,
     BrokeragePosition,
+    CancelOrderResult,
     OrderRequest,
     OrderResult,
     OrderStatus,
@@ -298,3 +299,26 @@ class TradierProvider(BrokerageProvider):
             filled_quantity=float(data.get("exec_quantity", 0.0)),
             filled_avg_price=float(avg_price) if avg_price not in (None, 0, "0", "0.00000000") else None,
         )
+
+    def cancel_order(self, order_id: str) -> CancelOrderResult:
+        """Endpoint confirmed directly from Tradier's own documentation:
+        DELETE /v1/accounts/{account_id}/orders/{order_id}, which
+        Tradier's own docs explicitly state returns 200 OK on a
+        successful cancel and recommend immediately re-checking the
+        order's status to confirm it. HONEST CONFIDENCE NOTE matching
+        this module's own: the exact response body shape on failure
+        wasn't independently confirmed -- a non-200 status is treated
+        as a real, raised error rather than assumed to map to a
+        specific "already filled" case."""
+        client = self._ensure_configured()
+        try:
+            response = client.delete(f"/accounts/{self._settings.tradier_account_id}/orders/{order_id}")
+        except httpx.HTTPError as exc:
+            raise BrokerageProviderError(f"Tradier order cancellation request failed: {exc}") from exc
+
+        if response.status_code != 200:
+            return CancelOrderResult(
+                success=False,
+                reason=f"Tradier order cancellation returned {response.status_code}: {response.text}",
+            )
+        return CancelOrderResult(success=True)

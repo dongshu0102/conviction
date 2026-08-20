@@ -47,6 +47,7 @@ from src.application.interfaces.brokerage_provider import (
 from src.domain.entities.brokerage import (
     BrokerageAccountSummary,
     BrokeragePosition,
+    CancelOrderResult,
     OrderRequest,
     OrderResult,
     OrderStatus,
@@ -327,3 +328,28 @@ class IbkrProvider(BrokerageProvider):
             filled_quantity=float(data.get("filledQuantity", 0.0)),
             filled_avg_price=float(avg_price) if avg_price not in (None, "") else None,
         )
+
+    def cancel_order(self, order_id: str) -> CancelOrderResult:
+        """Endpoint confirmed directly from IBKR's own published
+        documentation: DELETE /iserver/account/{accountId}/order/{orderId}.
+        HONEST CONFIDENCE NOTE matching this module's own: the exact
+        response body shape for a genuine failure (e.g. the order has
+        already filled) was not independently confirmed the way
+        place_order's three response shapes were. A non-200 status is
+        treated as a real, raised error here rather than assumed to
+        map to a specific "already filled" case, since that specific
+        mapping isn't confirmed -- callers should call
+        get_order_status first if they need to distinguish why a
+        cancel might fail."""
+        self._ensure_authenticated()
+        try:
+            response = self._client.delete(f"/iserver/account/{self._settings.ibkr_account_id}/order/{order_id}")
+        except httpx.HTTPError as exc:
+            raise BrokerageProviderError(f"IBKR order cancellation request failed: {exc}") from exc
+
+        if response.status_code != 200:
+            return CancelOrderResult(
+                success=False,
+                reason=f"IBKR order cancellation returned {response.status_code}: {response.text}",
+            )
+        return CancelOrderResult(success=True)

@@ -17,6 +17,7 @@ from abc import ABC, abstractmethod
 from src.domain.entities.brokerage import (
     BrokerageAccountSummary,
     BrokeragePosition,
+    CancelOrderResult,
     OrderRequest,
     OrderResult,
     OrderStatus,
@@ -70,3 +71,9 @@ class BrokerageProvider(ABC):
         only the outcome of the placement call itself, not whether the
         order has since filled, partially filled, or been canceled or
         rejected downstream."""
+
+    @abstractmethod
+    def cancel_order(self, order_id: str) -> CancelOrderResult:
+        """Attempt to cancel an already-placed, still-open order.
+        success=False (e.g. the order has already filled) is a real,
+        honest outcome to report back, not an error to raise."""

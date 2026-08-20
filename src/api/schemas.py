@@ -657,6 +657,11 @@ class OrderStatusSchema(BaseModel):
     filled_avg_price: float | None = None
 
 
+class CancelOrderResponseSchema(BaseModel):
+    success: bool
+    reason: str | None = None
+
+
 class PlaceOrderResponseSchema(BaseModel):
     confirmed: bool
     order_result: OrderResultSchema | None = None
