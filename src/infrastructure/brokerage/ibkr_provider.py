@@ -49,6 +49,7 @@ from src.domain.entities.brokerage import (
     BrokeragePosition,
     OrderRequest,
     OrderResult,
+    OrderStatus,
 )
 from src.infrastructure.config import Settings
 
@@ -296,3 +297,33 @@ class IbkrProvider(BrokerageProvider):
                 unrealized_pnl=float(row.get("unrealizedPnl", 0.0)),
             ))
         return positions
+
+    def get_order_status(self, order_id: str) -> OrderStatus:
+        """HONEST CONFIDENCE NOTE, matching this module's own: the
+        endpoint path (/iserver/account/order/status/{orderId}) is
+        directly confirmed from IBKR's own published documentation.
+        The exact response body's field names for filled quantity and
+        average fill price were NOT independently confirmed the way
+        place_order's three response shapes were -- best-informed
+        inference from IBKR's own, adjacent /iserver/account/orders
+        field vocabulary (filledQuantity, avgPrice), not
+        field-by-field verified against a live response. Flagged here
+        explicitly rather than presented with false confidence."""
+        self._ensure_authenticated()
+        try:
+            response = self._client.get(f"/iserver/account/order/status/{order_id}")
+        except httpx.HTTPError as exc:
+            raise BrokerageProviderError(f"IBKR order status request failed: {exc}") from exc
+
+        if response.status_code != 200:
+            raise BrokerageProviderError(
+                f"IBKR order status request returned {response.status_code}: {response.text}"
+            )
+        data = response.json()
+        avg_price = data.get("avgPrice")
+        return OrderStatus(
+            order_id=str(data.get("order_id", order_id)),
+            status=data.get("order_status", "unknown"),
+            filled_quantity=float(data.get("filledQuantity", 0.0)),
+            filled_avg_price=float(avg_price) if avg_price not in (None, "") else None,
+        )

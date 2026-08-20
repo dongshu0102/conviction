@@ -35,6 +35,7 @@ from src.api.schemas import (
     BrokeragePositionsResponseSchema,
     ConfirmOrderRequestSchema,
     OrderResultSchema,
+    OrderStatusSchema,
     PlaceOrderRequestSchema,
     PlaceOrderResponseSchema,
 )
@@ -48,6 +49,7 @@ from src.application.use_cases.get_brokerage_positions import (
     GetBrokeragePositionsError,
     GetBrokeragePositionsUseCase,
 )
+from src.application.use_cases.get_order_status import GetOrderStatusError, GetOrderStatusUseCase
 from src.application.use_cases.place_order import PlaceOrderError, PlaceOrderUseCase
 from src.domain.entities.brokerage import OrderRequest
 from src.infrastructure.brokerage.alpaca_provider import AlpacaProvider
@@ -177,4 +179,22 @@ def get_positions(
             )
             for p in result.positions
         ],
+    )
+
+
+@router.get("/orders/{order_id}", response_model=OrderStatusSchema)
+def get_order_status(
+    order_id: str,
+    admin_user_id: str = Depends(get_admin_user_id),
+    provider: BrokerageProvider = Depends(get_brokerage_provider),
+) -> OrderStatusSchema:
+    use_case = GetOrderStatusUseCase(provider)
+    try:
+        status = use_case.execute(order_id)
+    except GetOrderStatusError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return OrderStatusSchema(
+        order_id=status.order_id, status=status.status,
+        filled_quantity=status.filled_quantity, filled_avg_price=status.filled_avg_price,
     )

@@ -45,6 +45,29 @@ class OrderResult:
 
 
 @dataclass(frozen=True, slots=True)
+class OrderStatus:
+    """The current, live state of an already-placed order -- distinct
+    from OrderResult, which represents the outcome of the PLACEMENT
+    call itself. status here reflects the order's actual, real-time
+    state at the brokerage (e.g. "new", "filled", "partially_filled",
+    "canceled", "rejected", "expired") -- the exact vocabulary is
+    brokerage-specific and passed through honestly, not forced into a
+    fixed enum across all three providers, since they don't share one.
+
+    filled_quantity and filled_avg_price are 0 (not None) for a fully
+    unfilled order -- a genuine, honest zero, not a missing value. Both
+    can also genuinely be 0 for an order that hasn't yet processed at
+    all (e.g. submitted outside market hours), independent of whether
+    the order will eventually fill.
+    """
+
+    order_id: str
+    status: str
+    filled_quantity: float
+    filled_avg_price: float | None
+
+
+@dataclass(frozen=True, slots=True)
 class BrokeragePosition:
     """One currently-held position at the real brokerage account."""
 

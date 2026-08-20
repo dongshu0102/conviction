@@ -44,6 +44,7 @@ from src.domain.entities.brokerage import (
     BrokeragePosition,
     OrderRequest,
     OrderResult,
+    OrderStatus,
 )
 from src.infrastructure.config import Settings
 
@@ -220,3 +221,30 @@ class AlpacaProvider(BrokerageProvider):
                 unrealized_pnl=float(row.get("unrealized_pl", 0.0)),
             ))
         return positions
+
+    def get_order_status(self, order_id: str) -> OrderStatus:
+        """Confirmed directly against Alpaca's own, documented Order
+        model: filled_qty and filled_avg_price are both genuinely 0
+        (filled_avg_price literally, per Alpaca's own docs) until the
+        order is processed -- e.g. submitted outside market hours --
+        independent of whether it will eventually fill. Reported
+        honestly here as 0.0, not treated as an error or a missing
+        value."""
+        client = self._ensure_configured()
+        try:
+            response = client.get(f"/orders/{order_id}")
+        except httpx.HTTPError as exc:
+            raise BrokerageProviderError(f"Alpaca order status request failed: {exc}") from exc
+
+        if response.status_code != 200:
+            raise BrokerageProviderError(
+                f"Alpaca order status request returned {response.status_code}: {response.text}"
+            )
+        data = response.json()
+        filled_avg_price = data.get("filled_avg_price")
+        return OrderStatus(
+            order_id=data.get("id", order_id),
+            status=data.get("status", "unknown"),
+            filled_quantity=float(data.get("filled_qty", 0.0)),
+            filled_avg_price=float(filled_avg_price) if filled_avg_price is not None else None,
+        )

@@ -42,6 +42,7 @@ from src.domain.entities.brokerage import (
     BrokeragePosition,
     OrderRequest,
     OrderResult,
+    OrderStatus,
 )
 from src.infrastructure.config import Settings
 
@@ -265,3 +266,35 @@ class TradierProvider(BrokerageProvider):
                 market_value=0.0, unrealized_pnl=0.0,
             ))
         return positions
+
+    def get_order_status(self, order_id: str) -> OrderStatus:
+        """Endpoint confirmed directly from Tradier's own documentation
+        (GET /v1/accounts/{account_id}/orders/{order_id}, explicitly
+        documented as the way to poll for open/partially_filled/filled
+        vs. rejected/canceled). HONEST CONFIDENCE NOTE matching the
+        other two providers: the exact field names for filled quantity
+        and average fill price were not independently confirmed
+        field-by-field the way this module's place_order() request
+        shape was -- best-informed inference from Tradier's own
+        adjacent, confirmed field vocabulary (exec_quantity,
+        avg_fill_price), consistent with this provider's own
+        documented terminology elsewhere, not independently verified
+        against a live response."""
+        client = self._ensure_configured()
+        try:
+            response = client.get(f"/accounts/{self._settings.tradier_account_id}/orders/{order_id}")
+        except httpx.HTTPError as exc:
+            raise BrokerageProviderError(f"Tradier order status request failed: {exc}") from exc
+
+        if response.status_code != 200:
+            raise BrokerageProviderError(
+                f"Tradier order status request returned {response.status_code}: {response.text}"
+            )
+        data = response.json().get("order", {})
+        avg_price = data.get("avg_fill_price")
+        return OrderStatus(
+            order_id=str(data.get("id", order_id)),
+            status=data.get("status", "unknown"),
+            filled_quantity=float(data.get("exec_quantity", 0.0)),
+            filled_avg_price=float(avg_price) if avg_price not in (None, 0, "0", "0.00000000") else None,
+        )

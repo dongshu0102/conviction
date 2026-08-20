@@ -19,6 +19,7 @@ from src.domain.entities.brokerage import (
     BrokeragePosition,
     OrderRequest,
     OrderResult,
+    OrderStatus,
 )
 
 
@@ -61,3 +62,11 @@ class BrokerageProvider(ABC):
     @abstractmethod
     def get_positions(self) -> list[BrokeragePosition]:
         """Every currently-held position in the connected account."""
+
+    @abstractmethod
+    def get_order_status(self, order_id: str) -> OrderStatus:
+        """The current, live state of an already-placed order --
+        distinct from place_order's own return value, which reflects
+        only the outcome of the placement call itself, not whether the
+        order has since filled, partially filled, or been canceled or
+        rejected downstream."""

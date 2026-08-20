@@ -650,6 +650,13 @@ class OrderResultSchema(BaseModel):
     rejection_reason: str | None = None
 
 
+class OrderStatusSchema(BaseModel):
+    order_id: str
+    status: str  # brokerage-specific, e.g. "new", "filled", "partially_filled", "canceled", "rejected"
+    filled_quantity: float
+    filled_avg_price: float | None = None
+
+
 class PlaceOrderResponseSchema(BaseModel):
     confirmed: bool
     order_result: OrderResultSchema | None = None
