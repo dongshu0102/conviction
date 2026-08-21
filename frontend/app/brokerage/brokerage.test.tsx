@@ -179,7 +179,8 @@ describe("Brokerage Trading page — order history, status, cancel, sync", () =>
     render(<BrokeragePage />);
 
     await waitFor(() => screen.getByText("AAPL"));
-    expect(screen.getByText("buy 1 · market · filled")).toBeInTheDocument();
+    expect(screen.getByText("buy 1 · market")).toBeInTheDocument();
+    expect(screen.getByText("filled")).toBeInTheDocument();
   });
 
   it("shows an honest empty state when there is no order history yet", async () => {
@@ -202,6 +203,23 @@ describe("Brokerage Trading page — order history, status, cancel, sync", () =>
     await waitFor(() => screen.getByText("Status: filled — 1 filled @ $150.25"));
   });
 
+  it("canceling requires a genuine, explicit confirmation, not just one click", async () => {
+    const cancelSpy = vi.spyOn(api, "cancelOrder").mockResolvedValue({ success: true, reason: null });
+    render(<BrokeragePage />);
+    await waitFor(() => screen.getByText("AAPL"));
+
+    fireEvent.click(screen.getByText("Cancel"));
+
+    // The real cancellation must NOT have been called yet -- only a
+    // confirmation prompt should have appeared.
+    await waitFor(() => screen.getByText("Confirm cancel"));
+    expect(cancelSpy).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText("Never mind"));
+    expect(screen.queryByText("Confirm cancel")).not.toBeInTheDocument();
+    expect(cancelSpy).not.toHaveBeenCalled();
+  });
+
   it("canceling a genuinely cancelable order shows success and refreshes history", async () => {
     const cancelSpy = vi.spyOn(api, "cancelOrder").mockResolvedValue({ success: true, reason: null });
     // A "successful" cancel still re-verifies the real, current status
@@ -213,6 +231,8 @@ describe("Brokerage Trading page — order history, status, cancel, sync", () =>
     await waitFor(() => screen.getByText("AAPL"));
 
     fireEvent.click(screen.getByText("Cancel"));
+    await waitFor(() => screen.getByText("Confirm cancel"));
+    fireEvent.click(screen.getByText("Confirm cancel"));
 
     await waitFor(() => expect(cancelSpy).toHaveBeenCalledWith("ORD-1"));
     await waitFor(() => screen.getByText("Canceled."));
@@ -233,6 +253,8 @@ describe("Brokerage Trading page — order history, status, cancel, sync", () =>
     await waitFor(() => screen.getByText("AAPL"));
 
     fireEvent.click(screen.getByText("Cancel"));
+    await waitFor(() => screen.getByText("Confirm cancel"));
+    fireEvent.click(screen.getByText("Confirm cancel"));
 
     await waitFor(() => screen.getByText(/real, current status is "filled"/));
     expect(screen.queryByText("Canceled.")).not.toBeInTheDocument();
@@ -246,6 +268,8 @@ describe("Brokerage Trading page — order history, status, cancel, sync", () =>
     await waitFor(() => screen.getByText("AAPL"));
 
     fireEvent.click(screen.getByText("Cancel"));
+    await waitFor(() => screen.getByText("Confirm cancel"));
+    fireEvent.click(screen.getByText("Confirm cancel"));
 
     await waitFor(() => screen.getByText("Order is no longer cancelable (e.g. already filled)."));
   });
@@ -271,6 +295,20 @@ describe("Brokerage Trading page — order history, status, cancel, sync", () =>
 
     await waitFor(() => expect(syncSpy).toHaveBeenCalledWith("ORD-1", "AAPL", "buy"));
     await waitFor(() => screen.getByText("Synced — now 1 sh of AAPL @ $150.25 avg."));
+  });
+
+  it("the Sync button disables itself right after a real, successful sync, preventing an accidental re-click", async () => {
+    vi.spyOn(api, "syncOrderToPortfolio").mockResolvedValue({
+      ticker: "AAPL", shares: 1, cost_basis_per_share: 150.25, position_closed: false,
+    });
+    render(<BrokeragePage />);
+    await waitFor(() => screen.getByText("AAPL"));
+
+    fireEvent.click(screen.getByText("Sync to portfolio"));
+
+    await waitFor(() => screen.getByText("Synced"));
+    expect(screen.getByText("Synced")).toBeDisabled();
+    expect(screen.queryByText("Sync to portfolio")).not.toBeInTheDocument();
   });
 
   it("bulk-syncing selected orders reports a real, honest per-order summary", async () => {
