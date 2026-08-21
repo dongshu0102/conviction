@@ -45,6 +45,9 @@ from src.api.schemas import (
     PlaceOrderResponseSchema,
     SyncFilledOrderRequestSchema,
     SyncFilledOrderResponseSchema,
+    SyncMultipleOrdersRequestSchema,
+    SyncMultipleOrdersResponseSchema,
+    SyncOrderOutcomeSchema,
 )
 from src.application.interfaces.brokerage_provider import BrokerageProvider, BrokerageProviderError
 from src.application.use_cases.cancel_order import CancelOrderError, CancelOrderUseCase
@@ -72,6 +75,7 @@ from src.application.use_cases.sync_filled_order_to_portfolio import (
     SyncFilledOrderToPortfolioUseCase,
     UnrecognizedProviderError,
 )
+from src.application.use_cases.sync_multiple_filled_orders import SyncMultipleFilledOrdersUseCase
 from src.domain.entities.brokerage import OrderRequest
 from src.infrastructure.brokerage.alpaca_provider import AlpacaProvider
 from src.infrastructure.brokerage.ibkr_provider import IbkrProvider
@@ -306,4 +310,44 @@ def sync_filled_order_to_portfolio(
         return SyncFilledOrderResponseSchema(position_closed=True)
     return SyncFilledOrderResponseSchema(
         ticker=result.ticker, shares=result.shares, cost_basis_per_share=result.cost_basis_per_share,
+    )
+
+
+@router.post("/orders/sync-to-portfolio", response_model=SyncMultipleOrdersResponseSchema)
+def sync_multiple_filled_orders(
+    body: SyncMultipleOrdersRequestSchema,
+    admin_user_id: str = Depends(get_admin_user_id),
+    provider: BrokerageProvider = Depends(get_brokerage_provider),
+    portfolio_repo=Depends(get_portfolio_repository),
+    company_repo=Depends(get_company_repository),
+    settings=Depends(get_settings),
+) -> SyncMultipleOrdersResponseSchema:
+    """Bulk sync for a caller-specified list of order_ids -- never
+    "sync everything filled automatically," since this app has no
+    persistent record of which orders were already synced, and a
+    naive full-history sync run twice would silently double-count
+    shares. One order's own failure never aborts the rest of the
+    batch -- every outcome is reported back individually and
+    honestly, success or failure."""
+    add_holding = AddHoldingUseCase(portfolio_repo, company_repo)
+    create_portfolio = CreatePortfolioUseCase(portfolio_repo)
+    sync_one = SyncFilledOrderToPortfolioUseCase(provider, portfolio_repo, add_holding, create_portfolio)
+    get_history = GetOrderHistoryUseCase(provider)
+    use_case = SyncMultipleFilledOrdersUseCase(get_history, sync_one)
+
+    outcomes = use_case.execute(
+        body.order_ids, user_id=admin_user_id,
+        provider_name=settings.active_brokerage_provider, portfolio_id=body.portfolio_id,
+    )
+
+    return SyncMultipleOrdersResponseSchema(
+        outcomes=[
+            SyncOrderOutcomeSchema(
+                order_id=o.order_id, succeeded=o.succeeded, error=o.error, position_closed=o.position_closed,
+                ticker=o.holding.ticker if o.holding else None,
+                shares=o.holding.shares if o.holding else None,
+                cost_basis_per_share=o.holding.cost_basis_per_share if o.holding else None,
+            )
+            for o in outcomes
+        ],
     )

@@ -696,6 +696,25 @@ class SyncFilledOrderResponseSchema(BaseModel):
     position_closed: bool = False
 
 
+class SyncMultipleOrdersRequestSchema(BaseModel):
+    order_ids: list[str]
+    portfolio_id: str | None = None
+
+
+class SyncOrderOutcomeSchema(BaseModel):
+    order_id: str
+    succeeded: bool
+    ticker: str | None = None
+    shares: float | None = None
+    cost_basis_per_share: float | None = None
+    position_closed: bool = False
+    error: str | None = None
+
+
+class SyncMultipleOrdersResponseSchema(BaseModel):
+    outcomes: list[SyncOrderOutcomeSchema]
+
+
 class PlaceOrderResponseSchema(BaseModel):
     confirmed: bool
     order_result: OrderResultSchema | None = None
