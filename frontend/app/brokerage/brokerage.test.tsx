@@ -204,6 +204,11 @@ describe("Brokerage Trading page — order history, status, cancel, sync", () =>
 
   it("canceling a genuinely cancelable order shows success and refreshes history", async () => {
     const cancelSpy = vi.spyOn(api, "cancelOrder").mockResolvedValue({ success: true, reason: null });
+    // A "successful" cancel still re-verifies the real, current status
+    // before declaring "Canceled." -- see the honest re-verification test below.
+    vi.spyOn(api, "getOrderStatus").mockResolvedValue({
+      order_id: "ORD-1", status: "canceled", filled_quantity: 0, filled_avg_price: null,
+    });
     render(<BrokeragePage />);
     await waitFor(() => screen.getByText("AAPL"));
 
@@ -211,8 +216,26 @@ describe("Brokerage Trading page — order history, status, cancel, sync", () =>
 
     await waitFor(() => expect(cancelSpy).toHaveBeenCalledWith("ORD-1"));
     await waitFor(() => screen.getByText("Canceled."));
-    // A successful cancel triggers a real refresh, not just a local guess.
+    // A successful, verified cancel triggers a real refresh, not just a local guess.
     expect(api.getOrderHistory).toHaveBeenCalledTimes(2);
+  });
+
+  it("honestly reports when a cancel is accepted but the order's real status is not actually canceled", async () => {
+    // The real, known race: the brokerage accepts the cancel REQUEST
+    // (success: true), but the order genuinely, actually filled just
+    // before the cancel reached it -- this must never be shown as a
+    // plain "Canceled." that misrepresents the order's real state.
+    vi.spyOn(api, "cancelOrder").mockResolvedValue({ success: true, reason: null });
+    vi.spyOn(api, "getOrderStatus").mockResolvedValue({
+      order_id: "ORD-1", status: "filled", filled_quantity: 1, filled_avg_price: 150.25,
+    });
+    render(<BrokeragePage />);
+    await waitFor(() => screen.getByText("AAPL"));
+
+    fireEvent.click(screen.getByText("Cancel"));
+
+    await waitFor(() => screen.getByText(/real, current status is "filled"/));
+    expect(screen.queryByText("Canceled.")).not.toBeInTheDocument();
   });
 
   it("a genuinely non-cancelable order shows the real, honest reason, not a fabricated success", async () => {

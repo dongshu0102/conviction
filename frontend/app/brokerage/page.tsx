@@ -188,13 +188,27 @@ export default function BrokeragePage() {
     setRowActionOrderId(orderId);
     try {
       const result = await api.cancelOrder(orderId);
+      if (!result.success) {
+        setRowMessages((prev) => ({
+          ...prev, [orderId]: result.reason || "Could not cancel — not cancelable.",
+        }));
+        return;
+      }
+      // A real 204/success from the brokerage means the cancel REQUEST
+      // was accepted -- it does not, by itself, guarantee the order
+      // has already, actually finished transitioning to "canceled" at
+      // this exact moment (a real, known race: the order can genuinely
+      // fill in the brief window right around when a cancel is sent).
+      // Re-fetch the order's own, real, live status rather than
+      // trusting success:true as the final word on its actual state.
+      const status = await api.getOrderStatus(orderId);
       setRowMessages((prev) => ({
         ...prev,
-        [orderId]: result.success ? "Canceled." : (result.reason || "Could not cancel — not cancelable."),
+        [orderId]: status.status === "canceled"
+          ? "Canceled."
+          : `Cancel request accepted, but the order's real, current status is "${status.status}" -- it may have already filled before the cancel reached the brokerage.`,
       }));
-      if (result.success) {
-        await loadHistory(); // reflect the real, new "canceled" status in the table
-      }
+      await loadHistory(); // reflect the real, current status in the table either way
     } catch (err) {
       setRowMessages((prev) => ({
         ...prev, [orderId]: err instanceof Error ? err.message : "Couldn't cancel this order",
