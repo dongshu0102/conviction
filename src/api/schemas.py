@@ -678,6 +678,24 @@ class OrderHistoryResponseSchema(BaseModel):
     entries: list[OrderHistoryEntrySchema]
 
 
+class SyncFilledOrderRequestSchema(BaseModel):
+    ticker: str
+    side: str  # "buy" or "sell"
+    # Optional -- when omitted, the sync maps automatically to a
+    # dedicated, per-broker portfolio (e.g. "Alpaca (auto-synced)"),
+    # found by name or created on first use.
+    portfolio_id: str | None = None
+
+
+class SyncFilledOrderResponseSchema(BaseModel):
+    # None specifically means a sell fully closed the position -- zero
+    # shares remain, so there's no holding left to describe.
+    ticker: str | None = None
+    shares: float | None = None
+    cost_basis_per_share: float | None = None
+    position_closed: bool = False
+
+
 class PlaceOrderResponseSchema(BaseModel):
     confirmed: bool
     order_result: OrderResultSchema | None = None

@@ -29,6 +29,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 
 from src.api.auth import get_admin_user_id
+from src.api.routers.companies import get_company_repository
+from src.api.routers.portfolios import get_portfolio_repository
 from src.api.schemas import (
     BrokerageAccountSummarySchema,
     BrokeragePositionSchema,
@@ -41,6 +43,8 @@ from src.api.schemas import (
     OrderStatusSchema,
     PlaceOrderRequestSchema,
     PlaceOrderResponseSchema,
+    SyncFilledOrderRequestSchema,
+    SyncFilledOrderResponseSchema,
 )
 from src.application.interfaces.brokerage_provider import BrokerageProvider, BrokerageProviderError
 from src.application.use_cases.cancel_order import CancelOrderError, CancelOrderUseCase
@@ -55,7 +59,19 @@ from src.application.use_cases.get_brokerage_positions import (
 )
 from src.application.use_cases.get_order_history import GetOrderHistoryError, GetOrderHistoryUseCase
 from src.application.use_cases.get_order_status import GetOrderStatusError, GetOrderStatusUseCase
+from src.application.use_cases.manage_portfolio import (
+    AddHoldingUseCase,
+    CreatePortfolioUseCase,
+    PortfolioNotFoundError,
+    TickerNotIngestedError,
+)
 from src.application.use_cases.place_order import PlaceOrderError, PlaceOrderUseCase
+from src.application.use_cases.sync_filled_order_to_portfolio import (
+    OrderNotFilledError,
+    SyncFilledOrderError,
+    SyncFilledOrderToPortfolioUseCase,
+    UnrecognizedProviderError,
+)
 from src.domain.entities.brokerage import OrderRequest
 from src.infrastructure.brokerage.alpaca_provider import AlpacaProvider
 from src.infrastructure.brokerage.ibkr_provider import IbkrProvider
@@ -247,3 +263,47 @@ def cancel_order(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     return CancelOrderResponseSchema(success=result.success, reason=result.reason)
+
+
+@router.post("/orders/{order_id}/sync-to-portfolio", response_model=SyncFilledOrderResponseSchema)
+def sync_filled_order_to_portfolio(
+    order_id: str,
+    body: SyncFilledOrderRequestSchema,
+    admin_user_id: str = Depends(get_admin_user_id),
+    provider: BrokerageProvider = Depends(get_brokerage_provider),
+    portfolio_repo=Depends(get_portfolio_repository),
+    company_repo=Depends(get_company_repository),
+    settings=Depends(get_settings),
+) -> SyncFilledOrderResponseSchema:
+    """A deliberate, explicit POST -- never an automatic side effect of
+    checking order status. Re-fetches the order's real, live status
+    from the brokerage itself before syncing anything; the request
+    body's ticker/side are used only to identify which order this is,
+    never trusted as the source of the actual fill quantity or price.
+
+    portfolio_id is optional in the request body -- when omitted, this
+    syncs to a dedicated, per-broker portfolio automatically, using
+    settings.active_brokerage_provider (this app's own, real source of
+    truth for which broker is currently active) rather than trusting
+    the client to say which broker it was."""
+    add_holding = AddHoldingUseCase(portfolio_repo, company_repo)
+    create_portfolio = CreatePortfolioUseCase(portfolio_repo)
+    use_case = SyncFilledOrderToPortfolioUseCase(provider, portfolio_repo, add_holding, create_portfolio)
+    try:
+        result = use_case.execute(
+            order_id, ticker=body.ticker, side=body.side,
+            user_id=admin_user_id, provider_name=settings.active_brokerage_provider,
+            portfolio_id=body.portfolio_id,
+        )
+    except (OrderNotFilledError, TickerNotIngestedError, UnrecognizedProviderError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except PortfolioNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SyncFilledOrderError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    if result is None:
+        return SyncFilledOrderResponseSchema(position_closed=True)
+    return SyncFilledOrderResponseSchema(
+        ticker=result.ticker, shares=result.shares, cost_basis_per_share=result.cost_basis_per_share,
+    )
