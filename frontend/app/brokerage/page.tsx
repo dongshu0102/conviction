@@ -26,7 +26,7 @@ import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import {
   api, getApiKey, PlaceOrderResponse, OrderResult,
-  BrokerageAccountSummary, BrokeragePosition,
+  BrokerageAccountSummary, BrokeragePosition, OrderHistoryEntry,
 } from "@/lib/api";
 
 function fmtUsd(v: number): string {
@@ -41,6 +41,15 @@ export default function BrokeragePage() {
   const [account, setAccount] = useState<BrokerageAccountSummary | null>(null);
   const [positions, setPositions] = useState<BrokeragePosition[] | null>(null);
   const [accountError, setAccountError] = useState<string | null>(null);
+
+  const [history, setHistory] = useState<OrderHistoryEntry[] | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [rowActionOrderId, setRowActionOrderId] = useState<string | null>(null); // which row's own button is loading
+  const [rowMessages, setRowMessages] = useState<Record<string, string>>({}); // per-order, honest result text
+  const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
+  const [bulkSyncing, setBulkSyncing] = useState(false);
+  const [bulkSyncMessage, setBulkSyncMessage] = useState<string | null>(null);
 
   const [ticker, setTicker] = useState("");
   const [side, setSide] = useState<"buy" | "sell">("buy");
@@ -67,7 +76,21 @@ export default function BrokeragePage() {
       // Positions failing to load isn't fatal to the rest of the page — the account
       // summary error above already surfaces a configuration problem if there is one.
     });
+    loadHistory();
   }, [router]);
+
+  async function loadHistory() {
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const r = await api.getOrderHistory();
+      setHistory(r.entries);
+    } catch (err) {
+      setHistoryError(err instanceof Error ? err.message : "Couldn't load order history");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
 
   function resetOrderFlow() {
     setStep("form");
@@ -143,6 +166,99 @@ export default function BrokeragePage() {
     }
   }
 
+  async function handleCheckStatus(orderId: string) {
+    setRowActionOrderId(orderId);
+    try {
+      const status = await api.getOrderStatus(orderId);
+      const priceText = status.filled_avg_price !== null ? ` @ $${status.filled_avg_price.toFixed(2)}` : "";
+      setRowMessages((prev) => ({
+        ...prev,
+        [orderId]: `Status: ${status.status} — ${status.filled_quantity} filled${priceText}`,
+      }));
+    } catch (err) {
+      setRowMessages((prev) => ({
+        ...prev, [orderId]: err instanceof Error ? err.message : "Couldn't check status",
+      }));
+    } finally {
+      setRowActionOrderId(null);
+    }
+  }
+
+  async function handleCancelOrder(orderId: string) {
+    setRowActionOrderId(orderId);
+    try {
+      const result = await api.cancelOrder(orderId);
+      setRowMessages((prev) => ({
+        ...prev,
+        [orderId]: result.success ? "Canceled." : (result.reason || "Could not cancel — not cancelable."),
+      }));
+      if (result.success) {
+        await loadHistory(); // reflect the real, new "canceled" status in the table
+      }
+    } catch (err) {
+      setRowMessages((prev) => ({
+        ...prev, [orderId]: err instanceof Error ? err.message : "Couldn't cancel this order",
+      }));
+    } finally {
+      setRowActionOrderId(null);
+    }
+  }
+
+  async function handleSyncOrder(entry: OrderHistoryEntry) {
+    setRowActionOrderId(entry.order_id);
+    try {
+      const result = await api.syncOrderToPortfolio(entry.order_id, entry.ticker, entry.side);
+      setRowMessages((prev) => ({
+        ...prev,
+        [entry.order_id]: result.position_closed
+          ? `Synced — position in ${entry.ticker} fully closed.`
+          : `Synced — now ${result.shares} sh of ${result.ticker} @ ${fmtUsd(result.cost_basis_per_share ?? 0)} avg.`,
+      }));
+    } catch (err) {
+      setRowMessages((prev) => ({
+        ...prev, [entry.order_id]: err instanceof Error ? err.message : "Couldn't sync this order",
+      }));
+    } finally {
+      setRowActionOrderId(null);
+    }
+  }
+
+  function toggleSelected(orderId: string) {
+    setSelectedOrderIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(orderId)) next.delete(orderId); else next.add(orderId);
+      return next;
+    });
+  }
+
+  async function handleBulkSync() {
+    if (selectedOrderIds.size === 0) return;
+    setBulkSyncing(true);
+    setBulkSyncMessage(null);
+    try {
+      const result = await api.syncMultipleOrdersToPortfolio(Array.from(selectedOrderIds));
+      const succeeded = result.outcomes.filter((o) => o.succeeded).length;
+      const failed = result.outcomes.length - succeeded;
+      setBulkSyncMessage(
+        failed === 0
+          ? `Synced all ${succeeded} selected order(s).`
+          : `Synced ${succeeded} of ${result.outcomes.length} — ${failed} failed (see individual results below).`
+      );
+      const newRowMessages: Record<string, string> = {};
+      for (const o of result.outcomes) {
+        newRowMessages[o.order_id] = o.succeeded
+          ? (o.position_closed ? `Synced — position in ${o.ticker} fully closed.` : `Synced — now ${o.shares} sh of ${o.ticker}.`)
+          : (o.error || "Sync failed.");
+      }
+      setRowMessages((prev) => ({ ...prev, ...newRowMessages }));
+      setSelectedOrderIds(new Set());
+    } catch (err) {
+      setBulkSyncMessage(err instanceof Error ? err.message : "Couldn't sync the selected orders");
+    } finally {
+      setBulkSyncing(false);
+    }
+  }
+
   const orderResult = preview?.order_result;
   const tickerMatches = confirmTypedTicker.trim().toUpperCase() === ticker.trim().toUpperCase();
 
@@ -183,6 +299,81 @@ export default function BrokeragePage() {
             ))}
           </div>
         )}
+
+        <div className="card" style={{ marginBottom: "1.25rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+            <p className="eyebrow" style={{ fontSize: "0.68rem", margin: 0 }}>Order history</p>
+            <button type="button" onClick={loadHistory} disabled={historyLoading} style={{ fontSize: "0.8rem" }}>
+              {historyLoading ? "Loading…" : "Refresh"}
+            </button>
+          </div>
+
+          {historyError && <p className="num loss" style={{ fontSize: "0.85rem" }}>{historyError}</p>}
+          {history && history.length === 0 && (
+            <p style={{ color: "var(--text-soft)", fontSize: "0.85rem" }}>No orders yet.</p>
+          )}
+
+          {history && history.length > 0 && (
+            <>
+              {history.map((entry) => (
+                <div key={entry.order_id} style={{ borderTop: "1px solid var(--rule)", padding: "0.6rem 0" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <input
+                        type="checkbox" checked={selectedOrderIds.has(entry.order_id)}
+                        onChange={() => toggleSelected(entry.order_id)}
+                      />
+                      <span className="num" style={{ fontWeight: 700 }}>{entry.ticker}</span>
+                      <span className="num" style={{ fontSize: "0.82rem", color: "var(--text-soft)" }}>
+                        {`${entry.side} ${entry.quantity} · ${entry.order_type} · ${entry.status}`}
+                      </span>
+                    </label>
+                    <div style={{ display: "flex", gap: "0.4rem" }}>
+                      <button
+                        type="button" onClick={() => handleCheckStatus(entry.order_id)}
+                        disabled={rowActionOrderId === entry.order_id} style={{ fontSize: "0.78rem" }}
+                      >
+                        Check status
+                      </button>
+                      <button
+                        type="button" onClick={() => handleCancelOrder(entry.order_id)}
+                        disabled={rowActionOrderId === entry.order_id} style={{ fontSize: "0.78rem" }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button" onClick={() => handleSyncOrder(entry)}
+                        disabled={rowActionOrderId === entry.order_id || entry.status !== "filled"}
+                        title={entry.status !== "filled" ? "Only a genuinely filled order can be synced" : undefined}
+                        style={{ fontSize: "0.78rem" }}
+                      >
+                        Sync to portfolio
+                      </button>
+                    </div>
+                  </div>
+                  {rowMessages[entry.order_id] && (
+                    <p className="num" style={{ fontSize: "0.78rem", color: "var(--text-soft)", marginTop: "0.3rem" }}>
+                      {rowMessages[entry.order_id]}
+                    </p>
+                  )}
+                </div>
+              ))}
+
+              <div style={{ marginTop: "0.75rem", display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                <button
+                  type="button" onClick={handleBulkSync}
+                  disabled={bulkSyncing || selectedOrderIds.size === 0}
+                  className="btn-primary" style={{ fontSize: "0.85rem" }}
+                >
+                  {bulkSyncing ? "Syncing…" : `Sync ${selectedOrderIds.size} selected to portfolio`}
+                </button>
+                {bulkSyncMessage && (
+                  <span className="num" style={{ fontSize: "0.82rem", color: "var(--text-soft)" }}>{bulkSyncMessage}</span>
+                )}
+              </div>
+            </>
+          )}
+        </div>
 
         {step === "form" && (
           <form onSubmit={handlePreview} className="card" style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>

@@ -758,6 +758,55 @@ export interface BrokeragePositionsResponse {
   positions: BrokeragePosition[];
 }
 
+export interface OrderStatus {
+  order_id: string;
+  status: string;
+  filled_quantity: number;
+  filled_avg_price: number | null;
+}
+
+export interface CancelOrderResponse {
+  success: boolean;
+  reason: string | null;
+}
+
+export interface OrderHistoryEntry {
+  order_id: string;
+  ticker: string;
+  side: string;
+  quantity: number;
+  order_type: string;
+  status: string;
+  filled_quantity: number;
+  filled_avg_price: number | null;
+  submitted_at: string | null;
+}
+
+export interface OrderHistoryResponse {
+  entries: OrderHistoryEntry[];
+}
+
+export interface SyncFilledOrderResponse {
+  ticker: string | null;
+  shares: number | null;
+  cost_basis_per_share: number | null;
+  position_closed: boolean;
+}
+
+export interface SyncOrderOutcome {
+  order_id: string;
+  succeeded: boolean;
+  ticker: string | null;
+  shares: number | null;
+  cost_basis_per_share: number | null;
+  position_closed: boolean;
+  error: string | null;
+}
+
+export interface SyncMultipleOrdersResponse {
+  outcomes: SyncOrderOutcome[];
+}
+
 export interface BrokerageAccountSummary {
   account_id: string;
   cash: number;
@@ -1268,4 +1317,25 @@ export const api = {
   getBrokerageAccountSummary: () => request<BrokerageAccountSummary>("/brokerage/account"),
 
   getBrokeragePositions: () => request<BrokeragePositionsResponse>("/brokerage/positions"),
+
+  getOrderHistory: (limit = 50) =>
+    request<OrderHistoryResponse>(`/brokerage/orders/history?limit=${limit}`),
+
+  getOrderStatus: (orderId: string) =>
+    request<OrderStatus>(`/brokerage/orders/${orderId}`),
+
+  cancelOrder: (orderId: string) =>
+    request<CancelOrderResponse>(`/brokerage/orders/${orderId}`, { method: "DELETE" }),
+
+  syncOrderToPortfolio: (orderId: string, ticker: string, side: string, portfolioId?: string) =>
+    request<SyncFilledOrderResponse>(`/brokerage/orders/${orderId}/sync-to-portfolio`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ticker, side, portfolio_id: portfolioId }),
+    }),
+
+  syncMultipleOrdersToPortfolio: (orderIds: string[], portfolioId?: string) =>
+    request<SyncMultipleOrdersResponse>("/brokerage/orders/sync-to-portfolio", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ order_ids: orderIds, portfolio_id: portfolioId }),
+    }),
 };

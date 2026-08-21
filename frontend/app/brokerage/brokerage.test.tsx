@@ -9,10 +9,17 @@ import BrokeragePage from "./page";
 import { api, PlaceOrderResponse, BrokerageAccountSummary } from "@/lib/api";
 
 const pushMock = vi.fn();
+// A stable object reference, not a fresh {push: pushMock} literal on
+// every call -- confirmed as a real, root-cause bug source earlier
+// tonight (see conviction-screener.test.tsx): this page's own
+// useEffect depends on [router], so an unstable mock reference would
+// re-trigger every fetch inside it on every client-side state change
+// (e.g. toggling a checkbox), not just on genuine navigation.
+const mockRouter = { push: pushMock };
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/brokerage",
-  useRouter: () => ({ push: pushMock }),
+  useRouter: () => mockRouter,
 }));
 
 const SAMPLE_ACCOUNT: BrokerageAccountSummary = {
@@ -155,5 +162,121 @@ describe("Brokerage Trading page", () => {
 
     await waitFor(() => screen.getByText("Rejected by the brokerage: insufficient buying power"));
     expect(screen.getByText("Start over")).toBeInTheDocument();
+  });
+});
+
+const SAMPLE_HISTORY_ENTRY = {
+  order_id: "ORD-1", ticker: "AAPL", side: "buy", quantity: 1, order_type: "market",
+  status: "filled", filled_quantity: 1, filled_avg_price: 150.25, submitted_at: "2026-08-21T13:30:00Z",
+};
+
+describe("Brokerage Trading page — order history, status, cancel, sync", () => {
+  beforeEach(() => {
+    vi.spyOn(api, "getOrderHistory").mockResolvedValue({ entries: [SAMPLE_HISTORY_ENTRY] });
+  });
+
+  it("shows the real order history on load", async () => {
+    render(<BrokeragePage />);
+
+    await waitFor(() => screen.getByText("AAPL"));
+    expect(screen.getByText("buy 1 · market · filled")).toBeInTheDocument();
+  });
+
+  it("shows an honest empty state when there is no order history yet", async () => {
+    vi.spyOn(api, "getOrderHistory").mockResolvedValue({ entries: [] });
+    render(<BrokeragePage />);
+
+    await waitFor(() => screen.getByText("No orders yet."));
+  });
+
+  it("checking status shows the real, live result inline", async () => {
+    const statusSpy = vi.spyOn(api, "getOrderStatus").mockResolvedValue({
+      order_id: "ORD-1", status: "filled", filled_quantity: 1, filled_avg_price: 150.25,
+    });
+    render(<BrokeragePage />);
+    await waitFor(() => screen.getByText("AAPL"));
+
+    fireEvent.click(screen.getByText("Check status"));
+
+    await waitFor(() => expect(statusSpy).toHaveBeenCalledWith("ORD-1"));
+    await waitFor(() => screen.getByText("Status: filled — 1 filled @ $150.25"));
+  });
+
+  it("canceling a genuinely cancelable order shows success and refreshes history", async () => {
+    const cancelSpy = vi.spyOn(api, "cancelOrder").mockResolvedValue({ success: true, reason: null });
+    render(<BrokeragePage />);
+    await waitFor(() => screen.getByText("AAPL"));
+
+    fireEvent.click(screen.getByText("Cancel"));
+
+    await waitFor(() => expect(cancelSpy).toHaveBeenCalledWith("ORD-1"));
+    await waitFor(() => screen.getByText("Canceled."));
+    // A successful cancel triggers a real refresh, not just a local guess.
+    expect(api.getOrderHistory).toHaveBeenCalledTimes(2);
+  });
+
+  it("a genuinely non-cancelable order shows the real, honest reason, not a fabricated success", async () => {
+    vi.spyOn(api, "cancelOrder").mockResolvedValue({
+      success: false, reason: "Order is no longer cancelable (e.g. already filled).",
+    });
+    render(<BrokeragePage />);
+    await waitFor(() => screen.getByText("AAPL"));
+
+    fireEvent.click(screen.getByText("Cancel"));
+
+    await waitFor(() => screen.getByText("Order is no longer cancelable (e.g. already filled)."));
+  });
+
+  it("the Sync to portfolio button is disabled for a genuinely unfilled order", async () => {
+    vi.spyOn(api, "getOrderHistory").mockResolvedValue({
+      entries: [{ ...SAMPLE_HISTORY_ENTRY, status: "accepted", filled_quantity: 0, filled_avg_price: null }],
+    });
+    render(<BrokeragePage />);
+
+    await waitFor(() => screen.getByText("AAPL"));
+    expect(screen.getByText("Sync to portfolio")).toBeDisabled();
+  });
+
+  it("syncing a genuinely filled order shows the real, resulting position", async () => {
+    const syncSpy = vi.spyOn(api, "syncOrderToPortfolio").mockResolvedValue({
+      ticker: "AAPL", shares: 1, cost_basis_per_share: 150.25, position_closed: false,
+    });
+    render(<BrokeragePage />);
+    await waitFor(() => screen.getByText("AAPL"));
+
+    fireEvent.click(screen.getByText("Sync to portfolio"));
+
+    await waitFor(() => expect(syncSpy).toHaveBeenCalledWith("ORD-1", "AAPL", "buy"));
+    await waitFor(() => screen.getByText("Synced — now 1 sh of AAPL @ $150.25 avg."));
+  });
+
+  it("bulk-syncing selected orders reports a real, honest per-order summary", async () => {
+    vi.spyOn(api, "getOrderHistory").mockResolvedValue({
+      entries: [SAMPLE_HISTORY_ENTRY, { ...SAMPLE_HISTORY_ENTRY, order_id: "ORD-2", ticker: "MSFT" }],
+    });
+    const bulkSpy = vi.spyOn(api, "syncMultipleOrdersToPortfolio").mockResolvedValue({
+      outcomes: [
+        { order_id: "ORD-1", succeeded: true, ticker: "AAPL", shares: 1, cost_basis_per_share: 150.25, position_closed: false, error: null },
+        { order_id: "ORD-2", succeeded: false, ticker: null, shares: null, cost_basis_per_share: null, position_closed: false, error: "sold more than held" },
+      ],
+    });
+    render(<BrokeragePage />);
+    await waitFor(() => screen.getByText("AAPL"));
+
+    const checkboxes = screen.getAllByRole("checkbox");
+    fireEvent.click(checkboxes[0]);
+    fireEvent.click(checkboxes[1]);
+    fireEvent.click(screen.getByText("Sync 2 selected to portfolio"));
+
+    await waitFor(() => expect(bulkSpy).toHaveBeenCalledWith(["ORD-1", "ORD-2"]));
+    await waitFor(() => screen.getByText("Synced 1 of 2 — 1 failed (see individual results below)."));
+    expect(screen.getByText("sold more than held")).toBeInTheDocument();
+  });
+
+  it("the bulk sync button is disabled until at least one order is selected", async () => {
+    render(<BrokeragePage />);
+    await waitFor(() => screen.getByText("AAPL"));
+
+    expect(screen.getByText("Sync 0 selected to portfolio")).toBeDisabled();
   });
 });

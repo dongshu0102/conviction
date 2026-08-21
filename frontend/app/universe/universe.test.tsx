@@ -10,10 +10,18 @@ import UniversePage from "./page";
 import { api, ApiError } from "@/lib/api";
 
 const pushMock = vi.fn();
+// A stable object reference, not a fresh {push: pushMock} literal on
+// every call -- the same, confirmed root cause found twice already
+// tonight (Conviction Screener, then Brokerage): this page's own
+// useEffect depends on [loadThemes, router], so an unstable mock
+// reference re-triggers loadThemes() on every client-side state
+// change, silently undoing state set moments earlier (here,
+// confirmingDelete getting reset right after "Delete theme" sets it).
+const mockRouter = { push: pushMock };
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/universe",
-  useRouter: () => ({ push: pushMock }),
+  useRouter: () => mockRouter,
 }));
 
 beforeEach(() => {
