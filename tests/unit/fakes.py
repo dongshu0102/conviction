@@ -942,3 +942,21 @@ class FakeFreshnessFallbackProvider:
         if self._raise_error is not None:
             raise self._raise_error
         return self._holders_by_symbol_quarter.get((symbol, year, quarter), [])
+
+
+class FakeSyncedOrderRepository:
+    """Records synced order_ids in memory -- lets tests directly
+    verify the real, live double-sync bug is genuinely prevented,
+    without needing a real database."""
+
+    def __init__(self) -> None:
+        self._synced_order_ids: set = set()
+        self.record_sync_calls = []
+
+    def is_already_synced(self, order_id: str) -> bool:
+        return order_id in self._synced_order_ids
+
+    def record_sync(self, order_id, portfolio_id, ticker, synced_at) -> None:
+        self.record_sync_calls.append((order_id, portfolio_id, ticker, synced_at))
+        self._synced_order_ids.add(order_id)
+

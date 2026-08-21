@@ -30,6 +30,8 @@ default, not a removed capability.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from src.application.interfaces.brokerage_provider import (
     BrokerageProvider,
     BrokerageProviderError,
@@ -42,6 +44,7 @@ from src.application.use_cases.manage_portfolio import (
 )
 from src.domain.entities.portfolio import PortfolioHolding
 from src.domain.repositories.portfolio_repository import PortfolioRepository
+from src.domain.repositories.synced_order_repository import SyncedOrderRepository
 
 # Real, known provider identifiers this app supports -- matches
 # Settings.active_brokerage_provider's own three valid values exactly
@@ -68,6 +71,18 @@ class UnrecognizedProviderError(SyncFilledOrderError):
     refused rather than silently creating a mis-named portfolio."""
 
 
+class OrderAlreadySyncedError(SyncFilledOrderError):
+    """This exact order_id has already been synced once before --
+    caught directly as a real, live bug: with nothing enforcing this,
+    clicking "Sync to portfolio" multiple times on the same order (or
+    calling the bulk endpoint with a repeated order_id, or a plain
+    double-click) silently double- and triple-counted its real
+    shares, since the underlying accumulation logic is correct and
+    honest per call but has no memory of prior calls on its own.
+    Raised rather than silently no-op'd, so the caller genuinely knows
+    a re-sync was refused, not that it quietly succeeded twice."""
+
+
 class SyncFilledOrderToPortfolioUseCase:
     def __init__(
         self,
@@ -75,11 +90,13 @@ class SyncFilledOrderToPortfolioUseCase:
         portfolio_repo: PortfolioRepository,
         add_holding: AddHoldingUseCase,
         create_portfolio: CreatePortfolioUseCase,
+        synced_order_repo: SyncedOrderRepository,
     ) -> None:
         self._provider = provider
         self._portfolio_repo = portfolio_repo
         self._add_holding = add_holding
         self._create_portfolio = create_portfolio
+        self._synced_order_repo = synced_order_repo
 
     def _resolve_portfolio_id(self, user_id: str, provider_name: str) -> str:
         """Find this user's existing, dedicated portfolio for this
@@ -118,6 +135,18 @@ class SyncFilledOrderToPortfolioUseCase:
         what's actually held."""
         ticker = ticker.strip().upper()
         side = side.strip().lower()
+
+        # Checked FIRST, before any real order-status fetch or
+        # portfolio mutation -- the real, authoritative guard against
+        # double-counting this specific order's shares, regardless of
+        # how the duplicate attempt arrived (a stray double-click, a
+        # page refresh, a repeated API call, or the same order_id
+        # appearing twice in one bulk-sync request).
+        if self._synced_order_repo.is_already_synced(order_id):
+            raise OrderAlreadySyncedError(
+                f"Order {order_id} has already been synced to a portfolio once before -- "
+                f"refusing to sync it again, which would double-count its real shares."
+            )
 
         try:
             order_status = self._provider.get_order_status(order_id)
@@ -180,12 +209,18 @@ class SyncFilledOrderToPortfolioUseCase:
 
         if new_shares <= 0:
             self._portfolio_repo.remove_holding(portfolio_id, ticker)
+            # Recorded even on a full-close sell -- this order genuinely,
+            # actually was synced (it closed the position), and must
+            # never be eligible for a second, duplicate sync attempt.
+            self._synced_order_repo.record_sync(order_id, portfolio_id, ticker, datetime.now(timezone.utc))
             return None
 
-        try:
-            return self._add_holding.execute(
-                portfolio_id=portfolio_id, ticker=ticker,
-                shares=new_shares, cost_basis_per_share=new_cost_basis,
-            )
-        except TickerNotIngestedError:
-            raise
+        result = self._add_holding.execute(
+            portfolio_id=portfolio_id, ticker=ticker,
+            shares=new_shares, cost_basis_per_share=new_cost_basis,
+        )
+        # Recorded only after the real, successful write -- a failure
+        # partway through (e.g. TickerNotIngestedError, raised below)
+        # must never be recorded as a genuine sync that happened.
+        self._synced_order_repo.record_sync(order_id, portfolio_id, ticker, datetime.now(timezone.utc))
+        return result

@@ -81,6 +81,7 @@ from src.infrastructure.brokerage.alpaca_provider import AlpacaProvider
 from src.infrastructure.brokerage.ibkr_provider import IbkrProvider
 from src.infrastructure.brokerage.tradier_provider import TradierProvider
 from src.infrastructure.config import get_settings
+from src.infrastructure.persistence.synced_order_repository_impl import SqlAlchemySyncedOrderRepository
 
 router = APIRouter(prefix="/brokerage", tags=["brokerage"])
 
@@ -96,6 +97,10 @@ def get_brokerage_provider() -> BrokerageProvider:
     if settings.active_brokerage_provider == "tradier":
         return TradierProvider(settings=settings)
     return IbkrProvider(settings=settings)
+
+
+def get_synced_order_repository() -> SqlAlchemySyncedOrderRepository:
+    return SqlAlchemySyncedOrderRepository()
 
 
 _BROKERAGE_SOURCE_NOTES = {
@@ -278,6 +283,7 @@ def sync_filled_order_to_portfolio(
     portfolio_repo=Depends(get_portfolio_repository),
     company_repo=Depends(get_company_repository),
     settings=Depends(get_settings),
+    synced_order_repo=Depends(get_synced_order_repository),
 ) -> SyncFilledOrderResponseSchema:
     """A deliberate, explicit POST -- never an automatic side effect of
     checking order status. Re-fetches the order's real, live status
@@ -292,7 +298,7 @@ def sync_filled_order_to_portfolio(
     the client to say which broker it was."""
     add_holding = AddHoldingUseCase(portfolio_repo, company_repo)
     create_portfolio = CreatePortfolioUseCase(portfolio_repo)
-    use_case = SyncFilledOrderToPortfolioUseCase(provider, portfolio_repo, add_holding, create_portfolio)
+    use_case = SyncFilledOrderToPortfolioUseCase(provider, portfolio_repo, add_holding, create_portfolio, synced_order_repo)
     try:
         result = use_case.execute(
             order_id, ticker=body.ticker, side=body.side,
@@ -321,6 +327,7 @@ def sync_multiple_filled_orders(
     portfolio_repo=Depends(get_portfolio_repository),
     company_repo=Depends(get_company_repository),
     settings=Depends(get_settings),
+    synced_order_repo=Depends(get_synced_order_repository),
 ) -> SyncMultipleOrdersResponseSchema:
     """Bulk sync for a caller-specified list of order_ids -- never
     "sync everything filled automatically," since this app has no
@@ -331,7 +338,7 @@ def sync_multiple_filled_orders(
     honestly, success or failure."""
     add_holding = AddHoldingUseCase(portfolio_repo, company_repo)
     create_portfolio = CreatePortfolioUseCase(portfolio_repo)
-    sync_one = SyncFilledOrderToPortfolioUseCase(provider, portfolio_repo, add_holding, create_portfolio)
+    sync_one = SyncFilledOrderToPortfolioUseCase(provider, portfolio_repo, add_holding, create_portfolio, synced_order_repo)
     get_history = GetOrderHistoryUseCase(provider)
     use_case = SyncMultipleFilledOrdersUseCase(get_history, sync_one)
 

@@ -565,3 +565,25 @@ class IndexMembershipModel(Base):
     index_name: Mapped[str] = mapped_column(primary_key=True, index=True)
 
 
+class SyncedOrderModel(Base):
+    """Tracks which brokerage order_ids have already been synced into
+    a portfolio -- a real, live bug caught directly by the user: the
+    "Sync to portfolio" button had nothing preventing the same order
+    from being synced twice, silently double- and triple-counting its
+    real shares each time (SyncFilledOrderToPortfolioUseCase itself
+    correctly accumulates shares on every call, which is necessary
+    for genuinely buying more of a ticker over time, but has no way
+    to know a given order was already counted). order_id is the
+    primary key, not portfolio_id + order_id, because a specific,
+    real brokerage order was either already synced once or it
+    wasn't -- that's a fact about the order itself, independent of
+    which portfolio it landed in."""
+
+    __tablename__ = "synced_orders"
+
+    order_id: Mapped[str] = mapped_column(primary_key=True)
+    portfolio_id: Mapped[str] = mapped_column(nullable=False)
+    ticker: Mapped[str] = mapped_column(nullable=False)
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
