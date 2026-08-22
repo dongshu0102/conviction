@@ -190,6 +190,29 @@ describe("Brokerage Trading page — order history, status, cancel, sync", () =>
     await waitFor(() => screen.getByText("No orders yet."));
   });
 
+  it("filters canceled orders out of the default view", async () => {
+    vi.spyOn(api, "getOrderHistory").mockResolvedValue({
+      entries: [
+        SAMPLE_HISTORY_ENTRY, // status: "filled"
+        { ...SAMPLE_HISTORY_ENTRY, order_id: "ORD-2", status: "canceled" },
+      ],
+    });
+    render(<BrokeragePage />);
+
+    await waitFor(() => screen.getByText("filled"));
+    expect(screen.queryByText("canceled")).not.toBeInTheDocument();
+  });
+
+  it("shows a real, honest empty state distinct from \"no orders at all\" when every order is canceled", async () => {
+    vi.spyOn(api, "getOrderHistory").mockResolvedValue({
+      entries: [{ ...SAMPLE_HISTORY_ENTRY, status: "canceled" }],
+    });
+    render(<BrokeragePage />);
+
+    await waitFor(() => screen.getByText("No orders to show (canceled orders are hidden by default)."));
+    expect(screen.queryByText("No orders yet.")).not.toBeInTheDocument();
+  });
+
   it("checking status shows the real, live result inline", async () => {
     const statusSpy = vi.spyOn(api, "getOrderStatus").mockResolvedValue({
       order_id: "ORD-1", status: "filled", filled_quantity: 1, filled_avg_price: 150.25,

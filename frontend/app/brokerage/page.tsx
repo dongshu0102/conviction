@@ -313,6 +313,12 @@ export default function BrokeragePage() {
   }
 
   const orderResult = preview?.order_result;
+  // Canceled orders are filtered from the default view -- this is a
+  // real, live query against the brokerage's own order history, not
+  // this app's own data, so "filtering" here never deletes anything
+  // real; it only changes what's shown. Scoped specifically to
+  // "canceled" (not e.g. "rejected") -- what was actually asked for.
+  const visibleHistory = history?.filter((entry) => entry.status !== "canceled") ?? null;
   const tickerMatches = confirmTypedTicker.trim().toUpperCase() === ticker.trim().toUpperCase();
 
   return (
@@ -362,13 +368,17 @@ export default function BrokeragePage() {
           </div>
 
           {historyError && <p className="num loss" style={{ fontSize: "0.85rem" }}>{historyError}</p>}
-          {history && history.length === 0 && (
-            <p style={{ color: "var(--text-soft)", fontSize: "0.85rem" }}>No orders yet.</p>
+          {visibleHistory && visibleHistory.length === 0 && (
+            <p style={{ color: "var(--text-soft)", fontSize: "0.85rem" }}>
+              {history && history.length > 0
+                ? "No orders to show (canceled orders are hidden by default)."
+                : "No orders yet."}
+            </p>
           )}
 
-          {history && history.length > 0 && (
+          {visibleHistory && visibleHistory.length > 0 && (
             <>
-              {history.map((entry, i) => {
+              {visibleHistory.map((entry, i) => {
                 const isRowBusy = rowActionOrderId === entry.order_id;
                 const isConfirmingCancel = confirmingCancelOrderId === entry.order_id;
                 const alreadySynced = syncedOrderIds.has(entry.order_id);
