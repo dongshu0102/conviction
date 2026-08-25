@@ -95,19 +95,27 @@ class RunNasdaq100ClassificationBatchUseCase:
         category = classify_market_structure(hhi, company_share, peer_count)
         return category, hhi
 
-    def execute(self) -> tuple[int, int]:
+    def execute(self, on_progress=None) -> tuple[int, int]:
         """Returns (succeeded_count, failed_count). A ticker "failing"
         here means it was skipped entirely for this run (e.g. an
         unexpected error) -- its prior row, if any, is left untouched
         until this refresh's save_batch call replaces the whole table,
         at which point a persistently-failing ticker would genuinely,
-        correctly disappear rather than show a silently stale row."""
+        correctly disappear rather than show a silently stale row.
+
+        on_progress, if given, is called as on_progress(done, total)
+        after each company (succeeded or not) -- same optional
+        callback pattern already established for
+        ScreenForConvictionUseCase, for a long-running batch script to
+        report real progress without this use case itself knowing
+        anything about logging or timing."""
         companies = self._find_nasdaq100_companies()
+        total = len(companies)
         as_of = datetime.now(timezone.utc)
         results: list[Nasdaq100Classification] = []
         failed = 0
 
-        for company in companies:
+        for i, company in enumerate(companies, start=1):
             try:
                 market_structure_category, hhi = self._compute_market_structure(company)
 
@@ -151,6 +159,9 @@ class RunNasdaq100ClassificationBatchUseCase:
             except Exception as exc:
                 logger.warning("%s: skipped entirely for this batch run: %s", company.ticker, exc)
                 failed += 1
+
+            if on_progress is not None:
+                on_progress(i, total)
 
         self._classification_repository.save_batch(results)
         return len(results), failed

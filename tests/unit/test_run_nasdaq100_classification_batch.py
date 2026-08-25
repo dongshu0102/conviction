@@ -190,3 +190,23 @@ def test_market_structure_category_is_computed_from_real_ingested_peers() -> Non
     row = next(r for r in classification_repo.saved_batches[-1] if r.ticker == "NVDA")
     assert row.market_structure_category == "Monopoly"
     assert row.hhi is not None
+
+
+def test_on_progress_callback_reports_real_progress_through_every_ticker() -> None:
+    use_case, _, _ = _build(nasdaq100_tickers=["NVDA", "AMD", "INTC"])
+    progress_calls = []
+
+    use_case.execute(on_progress=lambda done, total: progress_calls.append((done, total)))
+
+    assert progress_calls == [(1, 3), (2, 3), (3, 3)]
+
+
+def test_execute_without_on_progress_still_works_genuinely_fine() -> None:
+    """Backward compatible -- on_progress is optional, defaults to None."""
+    use_case, classification_repo, _ = _build(nasdaq100_tickers=["NVDA"])
+
+    succeeded, failed = use_case.execute()
+
+    assert succeeded == 1
+    assert len(classification_repo.saved_batches[-1]) == 1
+
