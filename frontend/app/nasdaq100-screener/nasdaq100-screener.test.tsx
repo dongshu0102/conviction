@@ -125,4 +125,28 @@ describe("Nasdaq-100 Screener page", () => {
 
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/login"));
   });
+
+  it("suppresses a genuinely misleading HHI display when the category is Unclassifiable, keeping the real number in a tooltip", async () => {
+    // The exact, real scenario from production: AAPL's own hhi=10000
+    // (mathematically valid, a single ingested peer) alongside an
+    // honestly Unclassifiable category -- displaying "10000" directly
+    // would look contradictory next to "Unclassifiable".
+    vi.spyOn(api, "getNasdaq100ScreenerResults").mockResolvedValue({
+      results: [{
+        ticker: "AAPL", as_of: "2026-08-25T13:48:17Z", industry: "Consumer Electronics",
+        market_structure_category: "Unclassifiable (insufficient ingested peer data)", hhi: 10000.0,
+        value_chain_position: "Downstream — End-Product/Retail", business_model: "Mixed/Diversified",
+        market_cap_tier: "Mega-Cap", maturity_stage: "Mature",
+        market_cap: 4_563_655_256_320.0, revenue_growth: 0.064,
+      }],
+    });
+    render(<Nasdaq100ScreenerPage />);
+
+    await waitFor(() => screen.getByText("AAPL"));
+    expect(screen.getAllByText("Unclassifiable (insufficient ingested peer data)")).toHaveLength(2); // one dropdown option, one table cell
+    // The raw "10000" must never render directly in the HHI cell...
+    expect(screen.queryByText("10000")).not.toBeInTheDocument();
+    // ...but the real, underlying number is still preserved, honestly, in a tooltip.
+    expect(screen.getByTitle(/HHI computed as 10000/)).toBeInTheDocument();
+  });
 });

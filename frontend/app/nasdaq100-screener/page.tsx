@@ -21,8 +21,23 @@ function fmtUsd(n: number | null): string {
 function fmtPct(n: number | null): string {
   return n === null ? "—" : `${(n * 100).toFixed(1)}%`;
 }
-function fmtHhi(n: number | null): string {
-  return n === null ? "—" : n.toFixed(0);
+function fmtHhi(n: number | null, category: string | null): { text: string; title?: string } {
+  if (n === null) return { text: "—" };
+  if (category?.startsWith("Unclassifiable")) {
+    // A genuinely valid HHI number (mathematically correct even for a
+    // single-company group) is deliberately not shown here -- showing
+    // e.g. "HHI: 10000" next to "Unclassifiable" would look
+    // contradictory, since HHI=10000 normally signals a real,
+    // single-firm monopoly, not "too little real data to classify."
+    // The real, underlying number is still preserved via the API for
+    // anyone inspecting the raw data directly -- only the display is
+    // suppressed here, not the data itself.
+    return {
+      text: "—",
+      title: `HHI computed as ${n.toFixed(0)}, but not shown here -- too few real, ingested peer companies to treat this as a meaningful market.`,
+    };
+  }
+  return { text: n.toFixed(0) };
 }
 
 type FilterKey =
@@ -235,7 +250,11 @@ export default function Nasdaq100ScreenerPage() {
                     <td style={{ padding: "0.45rem 0.4rem", textAlign: "left", fontWeight: 600 }}>{r.ticker}</td>
                     <td style={{ padding: "0.45rem 0.4rem", textAlign: "left", color: "var(--text-soft)" }}>{r.industry}</td>
                     <td style={{ padding: "0.45rem 0.4rem", textAlign: "right" }}>{r.market_structure_category || "—"}</td>
-                    <td style={{ padding: "0.45rem 0.4rem", textAlign: "right" }}>{fmtHhi(r.hhi)}</td>
+                    <td style={{ padding: "0.45rem 0.4rem", textAlign: "right" }}>
+                      <span title={fmtHhi(r.hhi, r.market_structure_category).title}>
+                        {fmtHhi(r.hhi, r.market_structure_category).text}
+                      </span>
+                    </td>
                     <td style={{ padding: "0.45rem 0.4rem", textAlign: "left" }}>{r.value_chain_position || "—"}</td>
                     <td style={{ padding: "0.45rem 0.4rem", textAlign: "left" }}>{r.business_model || "—"}</td>
                     <td style={{ padding: "0.45rem 0.4rem", textAlign: "right" }}>{r.market_cap_tier || "—"}</td>
