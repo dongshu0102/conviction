@@ -692,6 +692,22 @@ export interface MasterLensAnalysis {
   model_used: string;
 }
 
+// Market structure — real HHI computed from actual, ingested peer
+// revenue (the genuine DOJ/FTC methodology), classified into one of
+// the four classic microeconomic categories. Deterministic first,
+// LLM narrative second — the narrative only explains the given
+// category, never invents it.
+export interface MarketStructureClassification {
+  ticker: string;
+  industry: string;
+  category: string;
+  hhi: number | null;
+  company_market_share: number | null;
+  peer_count: number;
+  narrative: string;
+  model_used: string;
+}
+
 export interface ConvictionSummary {
   ticker: string;
   institutional_holders: InstitutionalHolderSignal[];
@@ -1287,6 +1303,11 @@ export const api = {
   // time, matching the backend's own "computed fresh, never persisted"
   // design for this feature's first version.
   getMasterLensAnalysis: (ticker: string) => request<MasterLensAnalysis>(`/master-lens/${ticker}`),
+
+  // On-demand, not cached client-side — matches the backend's own
+  // "computed fresh, never persisted" design.
+  getMarketStructureClassification: (ticker: string) =>
+    request<MarketStructureClassification>(`/market-structure/${ticker}`),
 
   getConvictionScreenResults: (minSignalCount = 1) => {
     const params = new URLSearchParams({ min_signal_count: String(minSignalCount) });

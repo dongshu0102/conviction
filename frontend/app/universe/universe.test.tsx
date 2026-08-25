@@ -182,3 +182,82 @@ describe("Universe — delete theme", () => {
     });
   });
 });
+
+const SAMPLE_STRUCTURE = {
+  ticker: "NVDA",
+  industry: "Semiconductors",
+  category: "Oligopoly",
+  hhi: 4150.0,
+  company_market_share: 0.45,
+  peer_count: 3,
+  narrative: "A real, grounded explanation of the oligopoly classification.",
+  model_used: "test-model",
+};
+
+describe("Universe — market structure classification", () => {
+  it("shows a Structure button per member", async () => {
+    mockBaseLoads();
+    render(<UniversePage />);
+
+    await waitFor(() => screen.getByText("NVDA"));
+    expect(screen.getByText("Structure")).toBeInTheDocument();
+  });
+
+  it("clicking Structure fetches and shows the real, live classification", async () => {
+    mockBaseLoads();
+    const structureSpy = vi.spyOn(api, "getMarketStructureClassification").mockResolvedValue(SAMPLE_STRUCTURE);
+    render(<UniversePage />);
+
+    await waitFor(() => screen.getByText("NVDA"));
+    fireEvent.click(screen.getByText("Structure"));
+
+    await waitFor(() => expect(structureSpy).toHaveBeenCalledWith("NVDA"));
+    await waitFor(() => screen.getByText("Oligopoly"));
+    expect(screen.getByText(/A real, grounded explanation/)).toBeInTheDocument();
+    expect(screen.getByText(/HHI 4150/)).toBeInTheDocument();
+  });
+
+  it("clicking Structure again collapses it without re-fetching", async () => {
+    mockBaseLoads();
+    const structureSpy = vi.spyOn(api, "getMarketStructureClassification").mockResolvedValue(SAMPLE_STRUCTURE);
+    render(<UniversePage />);
+
+    await waitFor(() => screen.getByText("NVDA"));
+    fireEvent.click(screen.getByText("Structure"));
+    await waitFor(() => screen.getByText("Oligopoly"));
+
+    fireEvent.click(screen.getByText("Structure"));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Oligopoly")).not.toBeInTheDocument();
+    });
+    expect(structureSpy).toHaveBeenCalledTimes(1); // collapsing must never re-fetch
+  });
+
+  it("shows a real, honest error message when classification fails", async () => {
+    mockBaseLoads();
+    vi.spyOn(api, "getMarketStructureClassification").mockRejectedValue(new Error("no ingested peers"));
+    render(<UniversePage />);
+
+    await waitFor(() => screen.getByText("NVDA"));
+    fireEvent.click(screen.getByText("Structure"));
+
+    await waitFor(() => screen.getByText("no ingested peers"));
+  });
+
+  it("honestly shows an Unclassifiable result without fabricating a real HHI", async () => {
+    mockBaseLoads();
+    vi.spyOn(api, "getMarketStructureClassification").mockResolvedValue({
+      ...SAMPLE_STRUCTURE,
+      category: "Unclassifiable (insufficient ingested peer data)",
+      hhi: null, company_market_share: null, peer_count: 1,
+    });
+    render(<UniversePage />);
+
+    await waitFor(() => screen.getByText("NVDA"));
+    fireEvent.click(screen.getByText("Structure"));
+
+    await waitFor(() => screen.getByText("Unclassifiable (insufficient ingested peer data)"));
+    expect(screen.queryByText(/HHI/)).not.toBeInTheDocument();
+  });
+});

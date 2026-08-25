@@ -13,12 +13,13 @@
 import { AppShell } from "@/components/AppShell";
 import { GrowthLeaders } from "@/components/GrowthLeaders";
 import { SuggestTheme } from "@/components/SuggestTheme";
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   api,
   ApiError,
   getApiKey,
+  MarketStructureClassification,
   RankedFactorScore,
   RiskParityConstructionResponse,
   ThemeSynthesisReport,
@@ -243,6 +244,11 @@ export default function UniversePage() {
   const [deletingTheme, setDeletingTheme] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [expandedStructureTicker, setExpandedStructureTicker] = useState<string | null>(null);
+  const [structureData, setStructureData] = useState<MarketStructureClassification | null>(null);
+  const [structureLoading, setStructureLoading] = useState(false);
+  const [structureError, setStructureError] = useState<string | null>(null);
+
   const loadThemes = useCallback(async (selectAfter?: string) => {
     try {
       const res = await api.listThemes();
@@ -320,6 +326,29 @@ export default function UniversePage() {
       setError(err instanceof Error ? err.message : `Couldn't remove ${ticker}`);
     } finally {
       setRemovingMember(null);
+    }
+  }
+
+  async function handleToggleMarketStructure(ticker: string) {
+    // A second click on an already-expanded ticker collapses it, same
+    // accordion convention as Master Lens's own — a real, live LLM
+    // call sits behind this, so a stray double-click must never
+    // trigger it twice.
+    if (expandedStructureTicker === ticker) {
+      setExpandedStructureTicker(null);
+      return;
+    }
+    setExpandedStructureTicker(ticker);
+    setStructureData(null);
+    setStructureError(null);
+    setStructureLoading(true);
+    try {
+      const result = await api.getMarketStructureClassification(ticker);
+      setStructureData(result);
+    } catch (err) {
+      setStructureError(err instanceof Error ? err.message : "Couldn't classify this company's market structure.");
+    } finally {
+      setStructureLoading(false);
     }
   }
 
@@ -476,13 +505,15 @@ export default function UniversePage() {
                           <th style={{ padding: "0.35rem 0.5rem" }}>MOMENTUM</th>
                           <th style={{ padding: "0.35rem 0.5rem" }}>SIZE</th>
                           <th style={{ padding: "0.35rem 0.5rem" }}></th>
+                          <th style={{ padding: "0.35rem 0.5rem" }}></th>
                         </tr>
                       </thead>
                       <tbody>
                         {members.map((ticker) => {
                           const r = rankings.find((x) => x.ticker === ticker);
                           return (
-                            <tr key={ticker} style={{ borderTop: "1px solid var(--rule)" }}>
+                            <Fragment key={ticker}>
+                            <tr style={{ borderTop: "1px solid var(--rule)" }}>
                               <td style={{ padding: "0.5rem", textAlign: "left", fontWeight: 600 }}>{ticker}</td>
                               <td className={zClass(r?.composite_score ?? null)} style={{ padding: "0.5rem", textAlign: "right" }}>
                                 {fmtZ(r?.composite_score ?? null)}
@@ -492,6 +523,19 @@ export default function UniversePage() {
                               <td className={zClass(r?.growth_z ?? null)} style={{ padding: "0.5rem", textAlign: "right" }}>{fmtZ(r?.growth_z ?? null)}</td>
                               <td className={zClass(r?.momentum_z ?? null)} style={{ padding: "0.5rem", textAlign: "right" }}>{fmtZ(r?.momentum_z ?? null)}</td>
                               <td className={zClass(r?.size_z ?? null)} style={{ padding: "0.5rem", textAlign: "right" }}>{fmtZ(r?.size_z ?? null)}</td>
+                              <td style={{ padding: "0.5rem", textAlign: "right" }}>
+                                <button
+                                  onClick={() => handleToggleMarketStructure(ticker)}
+                                  title={`${expandedStructureTicker === ticker ? "Hide" : "Classify"} ${ticker}'s real market structure (Perfect Competition / Monopolistic Competition / Oligopoly / Monopoly)`}
+                                  style={{
+                                    background: "none", border: "none", cursor: "pointer",
+                                    color: expandedStructureTicker === ticker ? "var(--accent)" : "var(--text-soft)",
+                                    fontSize: "0.75rem", padding: "0 0.35rem",
+                                  }}
+                                >
+                                  Structure
+                                </button>
+                              </td>
                               <td style={{ padding: "0.5rem", textAlign: "right" }}>
                                 <button
                                   onClick={() => handleRemoveMember(ticker)}
@@ -506,6 +550,35 @@ export default function UniversePage() {
                                 </button>
                               </td>
                             </tr>
+                            {expandedStructureTicker === ticker && (
+                              <tr>
+                                <td colSpan={9} style={{ padding: "0.6rem 0.5rem 1rem", background: "var(--surface)" }}>
+                                  {structureLoading && (
+                                    <p style={{ color: "var(--text-soft)", fontSize: "0.82rem", margin: 0 }}>
+                                      Finding real, ingested industry peers and computing HHI…
+                                    </p>
+                                  )}
+                                  {structureError && (
+                                    <p className="num loss" style={{ fontSize: "0.82rem", margin: 0 }}>{structureError}</p>
+                                  )}
+                                  {structureData && structureData.ticker === ticker && (
+                                    <div>
+                                      <div style={{ display: "flex", alignItems: "baseline", gap: "0.75rem", marginBottom: "0.5rem" }}>
+                                        <span style={{ fontWeight: 700, fontSize: "0.95rem" }}>{structureData.category}</span>
+                                        <span className="num" style={{ fontSize: "0.75rem", color: "var(--text-soft)" }}>
+                                          {structureData.industry}
+                                          {structureData.hhi !== null && ` · HHI ${structureData.hhi.toFixed(0)}`}
+                                          {structureData.company_market_share !== null &&
+                                            ` · ${(structureData.company_market_share * 100).toFixed(1)}% of ${structureData.peer_count} ingested peers' revenue`}
+                                        </span>
+                                      </div>
+                                      <p style={{ fontSize: "0.85rem", lineHeight: 1.55, margin: 0 }}>{structureData.narrative}</p>
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            )}
+                            </Fragment>
                           );
                         })}
                       </tbody>
