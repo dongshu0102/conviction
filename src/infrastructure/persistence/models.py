@@ -587,3 +587,28 @@ class SyncedOrderModel(Base):
     synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class Nasdaq100ClassificationModel(Base):
+    """Latest-only cache across all six real screener dimensions, same
+    pattern as ConvictionScreenerResultModel: one row per ticker,
+    overwritten on each refresh, with a shared as_of timestamp so
+    staleness is honestly knowable from any single row. Every column
+    besides ticker/as_of/industry is deliberately nullable -- some are
+    genuinely None when the underlying computation couldn't produce a
+    real answer, never a fabricated placeholder."""
+
+    __tablename__ = "nasdaq100_classifications"
+
+    ticker: Mapped[str] = mapped_column(ForeignKey("companies.ticker"), primary_key=True)
+    as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    industry: Mapped[str] = mapped_column(nullable=False, index=True)
+
+    market_structure_category: Mapped[str | None] = mapped_column(index=True, nullable=True)
+    hhi: Mapped[float | None] = mapped_column(Float, nullable=True)
+    value_chain_position: Mapped[str | None] = mapped_column(index=True, nullable=True)
+    business_model: Mapped[str | None] = mapped_column(index=True, nullable=True)
+    market_cap_tier: Mapped[str | None] = mapped_column(index=True, nullable=True)
+    maturity_stage: Mapped[str | None] = mapped_column(index=True, nullable=True)
+    market_cap: Mapped[float | None] = mapped_column(Float, nullable=True)
+    revenue_growth: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
