@@ -1179,6 +1179,29 @@ class MarketStructureClassificationSchema(BaseModel):
     model_used: str
 
 
+class RunNasdaq100BatchResponseSchema(BaseModel):
+    status: str
+    message: str
+
+
+class Nasdaq100ClassificationRowSchema(BaseModel):
+    ticker: str
+    as_of: datetime
+    industry: str
+    market_structure_category: str | None
+    hhi: float | None
+    value_chain_position: str | None
+    business_model: str | None
+    market_cap_tier: str | None
+    maturity_stage: str | None
+    market_cap: float | None
+    revenue_growth: float | None
+
+
+class Nasdaq100ScreenerResponseSchema(BaseModel):
+    results: list[Nasdaq100ClassificationRowSchema]
+
+
 class CapitalFlowMonitorModuleDefSchema(BaseModel):
     id: str
     group: str
