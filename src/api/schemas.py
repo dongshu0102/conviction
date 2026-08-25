@@ -1166,6 +1166,19 @@ class MasterLensAnalysisSchema(BaseModel):
     model_used: str
 
 
+class MarketStructureClassificationSchema(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    ticker: str
+    industry: str
+    category: str
+    hhi: float | None
+    company_market_share: float | None
+    peer_count: int
+    narrative: str
+    model_used: str
+
+
 class CapitalFlowMonitorModuleDefSchema(BaseModel):
     id: str
     group: str
