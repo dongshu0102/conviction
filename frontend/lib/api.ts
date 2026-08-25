@@ -708,6 +708,29 @@ export interface MarketStructureClassification {
   model_used: string;
 }
 
+export interface RunNasdaq100BatchResponse {
+  status: string;
+  message: string;
+}
+
+export interface Nasdaq100ClassificationRow {
+  ticker: string;
+  as_of: string;
+  industry: string;
+  market_structure_category: string | null;
+  hhi: number | null;
+  value_chain_position: string | null;
+  business_model: string | null;
+  market_cap_tier: string | null;
+  maturity_stage: string | null;
+  market_cap: number | null;
+  revenue_growth: number | null;
+}
+
+export interface Nasdaq100ScreenerResponse {
+  results: Nasdaq100ClassificationRow[];
+}
+
 export interface ConvictionSummary {
   ticker: string;
   institutional_holders: InstitutionalHolderSignal[];
@@ -1308,6 +1331,23 @@ export const api = {
   // "computed fresh, never persisted" design.
   getMarketStructureClassification: (ticker: string) =>
     request<MarketStructureClassification>(`/market-structure/${ticker}`),
+
+  runNasdaq100Batch: () =>
+    request<RunNasdaq100BatchResponse>("/nasdaq100-screener/run", { method: "POST" }),
+
+  getNasdaq100ScreenerResults: (filters?: {
+    industry?: string; market_structure_category?: string; value_chain_position?: string;
+    business_model?: string; market_cap_tier?: string; maturity_stage?: string;
+  }) => {
+    const params = new URLSearchParams();
+    if (filters) {
+      for (const [key, value] of Object.entries(filters)) {
+        if (value) params.set(key, value);
+      }
+    }
+    const qs = params.toString();
+    return request<Nasdaq100ScreenerResponse>(`/nasdaq100-screener/results${qs ? `?${qs}` : ""}`);
+  },
 
   getConvictionScreenResults: (minSignalCount = 1) => {
     const params = new URLSearchParams({ min_signal_count: String(minSignalCount) });
