@@ -141,6 +141,9 @@ class PortfolioModel(Base):
     option_holdings: Mapped[list["OptionHoldingModel"]] = relationship(
         back_populates="portfolio", cascade="all, delete-orphan"
     )
+    bond_holdings: Mapped[list["BondHoldingModel"]] = relationship(
+        back_populates="portfolio", cascade="all, delete-orphan"
+    )
 
 
 class PortfolioHoldingModel(Base):
@@ -187,6 +190,34 @@ class OptionHoldingModel(Base):
     acquired_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     portfolio: Mapped["PortfolioModel"] = relationship(back_populates="option_holdings")
+
+
+class BondHoldingModel(Base):
+    __tablename__ = "bond_holdings"
+    __table_args__ = (
+        UniqueConstraint(
+            "portfolio_id", "issuer_name", "coupon_rate", "maturity_date",
+            name="uq_bond_holding_terms",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    portfolio_id: Mapped[str] = mapped_column(
+        ForeignKey("portfolios.portfolio_id"), nullable=False, index=True
+    )
+    # Stored when known, but deliberately NOT the unique key -- a
+    # manually-entered holding frequently won't have it, and a NULL
+    # cusip must never silently collide with another NULL cusip.
+    cusip: Mapped[str | None] = mapped_column(String(9), nullable=True)
+    issuer_name: Mapped[str] = mapped_column(nullable=False)
+    coupon_rate: Mapped[float] = mapped_column(Float, nullable=False)
+    maturity_date: Mapped[date] = mapped_column(Date, nullable=False)
+    face_value: Mapped[float] = mapped_column(Float, nullable=False, default=1000.0)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    cost_basis_price: Mapped[float] = mapped_column(Float, nullable=False)
+    acquired_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    portfolio: Mapped["PortfolioModel"] = relationship(back_populates="bond_holdings")
 
 
 class WatchlistItemModel(Base):

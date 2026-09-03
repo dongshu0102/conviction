@@ -353,6 +353,35 @@ class FakePortfolioRepository:
         self._portfolios[portfolio_id] = replace(portfolio, option_holdings=remaining)
         return removed
 
+    def _same_bond(self, a, b) -> bool:
+        return (
+            a.issuer_name == b.issuer_name
+            and a.coupon_rate == b.coupon_rate
+            and a.maturity_date == b.maturity_date
+        )
+
+    def upsert_bond_holding(self, portfolio_id: str, holding) -> None:
+        from dataclasses import replace
+
+        portfolio = self._portfolios[portfolio_id]
+        remaining = [
+            h for h in portfolio.bond_holdings if not self._same_bond(h.bond, holding.bond)
+        ]
+        self._portfolios[portfolio_id] = replace(
+            portfolio, bond_holdings=remaining + [holding]
+        )
+
+    def remove_bond_holding(self, portfolio_id: str, bond) -> bool:
+        from dataclasses import replace
+
+        portfolio = self._portfolios[portfolio_id]
+        remaining = [
+            h for h in portfolio.bond_holdings if not self._same_bond(h.bond, bond)
+        ]
+        removed = len(remaining) != len(portfolio.bond_holdings)
+        self._portfolios[portfolio_id] = replace(portfolio, bond_holdings=remaining)
+        return removed
+
 
 class FakeOptionsDataProvider:
     def __init__(self, quotes: dict | None = None) -> None:

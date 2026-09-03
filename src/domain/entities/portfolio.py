@@ -20,6 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
+from src.domain.entities.bond import BondHolding
 from src.domain.entities.option import OptionHolding
 
 
@@ -51,6 +52,10 @@ class Portfolio:
     # A portfolio with zero option_holdings behaves exactly as it did
     # before this field existed.
     option_holdings: list[OptionHolding] = field(default_factory=list)
+    # Same additive principle as option_holdings — a portfolio with
+    # zero bond_holdings behaves exactly as it did before this field
+    # existed.
+    bond_holdings: list[BondHolding] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not self.name or not self.name.strip():

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
+from src.domain.entities.bond import BondHolding, BondIdentity
 from src.domain.entities.option import OptionContract, OptionHolding
 from src.domain.entities.portfolio import Portfolio, PortfolioHolding
 
@@ -41,3 +42,14 @@ class PortfolioRepository(ABC):
 
     @abstractmethod
     def remove_option_holding(self, portfolio_id: str, contract: OptionContract) -> bool: ...
+
+    @abstractmethod
+    def upsert_bond_holding(self, portfolio_id: str, holding: BondHolding) -> None:
+        """Same state-not-transaction-log principle as upsert_holding,
+        keyed by the bond's own full, real identifying terms (issuer +
+        coupon rate + maturity date) rather than a single ID, since a
+        bond's cusip is frequently unknown for a manually-entered
+        holding."""
+
+    @abstractmethod
+    def remove_bond_holding(self, portfolio_id: str, bond: BondIdentity) -> bool: ...
