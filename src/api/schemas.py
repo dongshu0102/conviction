@@ -951,6 +951,52 @@ class OptionPortfolioValuationSchema(BaseModel):
     positions_excluded: list[str]
 
 
+class BondHoldingRequestSchema(BaseModel):
+    issuer_name: str
+    coupon_rate: float
+    maturity_date: date
+    quantity: int
+    cost_basis_price: float
+    cusip: str | None = None
+    face_value: float = 1000.0
+
+
+class BondHoldingRemoveRequestSchema(BaseModel):
+    issuer_name: str
+    coupon_rate: float
+    maturity_date: date
+
+
+class BondHoldingResultSchema(BaseModel):
+    issuer_name: str
+    coupon_rate: float
+    maturity_date: date
+    cusip: str | None
+    quantity: int
+    status: str
+
+
+class BondPositionSchema(BaseModel):
+    issuer_name: str
+    coupon_rate: float
+    maturity_date: date
+    cusip: str | None
+    quantity: int
+    cost_basis_price: float
+    current_price: float | None
+    current_yield: float | None
+    yield_to_maturity: float | None
+    years_to_maturity: float
+    total_face_value: float
+    total_cost_basis: float
+
+
+class BondPortfolioValuationSchema(BaseModel):
+    total_face_value: float
+    total_cost_basis: float
+    positions: list[BondPositionSchema]
+
+
 class HedgingSuggestionSchema(BaseModel):
     underlying_ticker: str
     net_delta: float

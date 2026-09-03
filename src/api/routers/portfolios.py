@@ -21,6 +21,11 @@ from src.api.routers.companies import (
     get_data_provider,
 )
 from src.api.schemas import (
+    BondHoldingRemoveRequestSchema,
+    BondHoldingRequestSchema,
+    BondHoldingResultSchema,
+    BondPortfolioValuationSchema,
+    BondPositionSchema,
     HedgingPlanSchema,
     HedgingSuggestionSchema,
     OptionHoldingRemoveRequestSchema,
@@ -46,10 +51,17 @@ from src.api.schemas import (
 )
 from src.application.interfaces.data_provider import DataProviderError
 from src.application.interfaces.options_data_provider import OptionsDataProviderError
+from src.application.use_cases.compute_bond_portfolio_valuation import (
+    ComputeBondPortfolioValuationUseCase,
+)
 from src.application.use_cases.compute_option_portfolio_valuation import (
     ComputeOptionPortfolioValuationUseCase,
 )
 from src.application.use_cases.compute_portfolio_greeks import ComputePortfolioGreeksUseCase
+from src.application.use_cases.manage_bond_holdings import (
+    AddBondHoldingUseCase,
+    RemoveBondHoldingUseCase,
+)
 from src.application.use_cases.manage_option_holdings import (
     AddOptionHoldingUseCase,
     InvalidOptionTypeError,
@@ -392,6 +404,24 @@ def get_remove_option_use_case(
     return RemoveOptionHoldingUseCase(repo)
 
 
+def get_add_bond_use_case(
+    repo: SqlAlchemyPortfolioRepository = Depends(get_portfolio_repository),
+) -> AddBondHoldingUseCase:
+    return AddBondHoldingUseCase(repo)
+
+
+def get_remove_bond_use_case(
+    repo: SqlAlchemyPortfolioRepository = Depends(get_portfolio_repository),
+) -> RemoveBondHoldingUseCase:
+    return RemoveBondHoldingUseCase(repo)
+
+
+def get_bond_valuation_use_case(
+    repo: SqlAlchemyPortfolioRepository = Depends(get_portfolio_repository),
+) -> ComputeBondPortfolioValuationUseCase:
+    return ComputeBondPortfolioValuationUseCase(repo)
+
+
 def get_greeks_use_case(
     repo: SqlAlchemyPortfolioRepository = Depends(get_portfolio_repository),
     options_provider: MarketDataAppProvider = Depends(get_options_provider),
@@ -509,6 +539,66 @@ def get_option_portfolio_valuation(
             for p in result.positions
         ],
         positions_excluded=result.positions_excluded,
+    )
+
+
+@router.post("/{portfolio_id}/bonds", response_model=BondHoldingResultSchema)
+def add_bond_holding(
+    portfolio_id: str,
+    body: BondHoldingRequestSchema,
+    user_id: str = Depends(get_authenticated_user_id),
+    get_use_case: GetPortfolioUseCase = Depends(get_get_use_case),
+    use_case: AddBondHoldingUseCase = Depends(get_add_bond_use_case),
+) -> BondHoldingResultSchema:
+    _verify_ownership(portfolio_id, user_id, get_use_case)
+    holding = use_case.execute(
+        portfolio_id, body.issuer_name, body.coupon_rate, body.maturity_date,
+        body.quantity, body.cost_basis_price, body.cusip, body.face_value,
+    )
+    return BondHoldingResultSchema(
+        issuer_name=holding.bond.issuer_name, coupon_rate=holding.bond.coupon_rate,
+        maturity_date=holding.bond.maturity_date, cusip=holding.bond.cusip,
+        quantity=holding.quantity, status="added",
+    )
+
+
+@router.delete("/{portfolio_id}/bonds")
+def remove_bond_holding(
+    portfolio_id: str,
+    body: BondHoldingRemoveRequestSchema,
+    user_id: str = Depends(get_authenticated_user_id),
+    get_use_case: GetPortfolioUseCase = Depends(get_get_use_case),
+    use_case: RemoveBondHoldingUseCase = Depends(get_remove_bond_use_case),
+) -> dict[str, str]:
+    _verify_ownership(portfolio_id, user_id, get_use_case)
+    removed = use_case.execute(portfolio_id, body.issuer_name, body.coupon_rate, body.maturity_date)
+    if not removed:
+        raise HTTPException(status_code=404, detail="No matching bond position found to remove.")
+    return {"status": "removed"}
+
+
+@router.get("/{portfolio_id}/bonds/valuation", response_model=BondPortfolioValuationSchema)
+def get_bond_portfolio_valuation(
+    portfolio_id: str,
+    user_id: str = Depends(get_authenticated_user_id),
+    get_use_case: GetPortfolioUseCase = Depends(get_get_use_case),
+    use_case: ComputeBondPortfolioValuationUseCase = Depends(get_bond_valuation_use_case),
+) -> BondPortfolioValuationSchema:
+    _verify_ownership(portfolio_id, user_id, get_use_case)
+    result = use_case.execute(portfolio_id)
+    return BondPortfolioValuationSchema(
+        total_face_value=result.total_face_value, total_cost_basis=result.total_cost_basis,
+        positions=[
+            BondPositionSchema(
+                issuer_name=p.bond.issuer_name, coupon_rate=p.bond.coupon_rate,
+                maturity_date=p.bond.maturity_date, cusip=p.bond.cusip, quantity=p.quantity,
+                cost_basis_price=p.cost_basis_price, current_price=p.current_price,
+                current_yield=p.current_yield, yield_to_maturity=p.yield_to_maturity,
+                years_to_maturity=p.years_to_maturity, total_face_value=p.total_face_value,
+                total_cost_basis=p.total_cost_basis,
+            )
+            for p in result.positions
+        ],
     )
 
 
