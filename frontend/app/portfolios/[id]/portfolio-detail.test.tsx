@@ -11,11 +11,18 @@ import { api, PortfolioValuation, PortfolioRiskAnalysis } from "@/lib/api";
 
 const pushMock = vi.fn();
 const replaceMock = vi.fn();
+// A stable object reference, not a fresh {push, replace} literal on
+// every call -- the same, confirmed root cause found repeatedly
+// tonight (Conviction Screener, Brokerage, Universe): this page's own
+// useEffect depends on [id, router], so an unstable mock reference
+// would re-trigger every mount-time fetch on every client-side state
+// change my new bond tests exercise (adding/removing a holding).
+const mockRouter = { push: pushMock, replace: replaceMock };
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/portfolios/port-1",
   useParams: () => ({ id: "port-1" }),
-  useRouter: () => ({ push: pushMock, replace: replaceMock }),
+  useRouter: () => mockRouter,
 }));
 
 const SAMPLE_VALUATION: PortfolioValuation = {
@@ -65,6 +72,9 @@ function mockBaseLoads() {
     total_unrealized_gain_pct: 0,
     positions: [],
     positions_excluded: [],
+  });
+  vi.spyOn(api, "getBondPortfolioValuation").mockResolvedValue({
+    total_face_value: 0, total_cost_basis: 0, positions: [],
   });
 }
 
@@ -272,5 +282,70 @@ describe("Portfolio detail page", () => {
     fireEvent.click(screen.getByText("Rebalancing Suggestion").closest("section")!.querySelector("button")!);
 
     await waitFor(() => screen.getByText("Trim 4 sh"));
+  });
+
+  it("shows the empty state when there are no bond holdings", async () => {
+    mockBaseLoads();
+    render(<PortfolioDetailPage />);
+    await waitFor(() => screen.getByText("No bond holdings yet — add one below."));
+  });
+
+  it("renders a real bond position with real YTM and its remove button calls the API with the correct fields", async () => {
+    mockBaseLoads();
+    vi.spyOn(api, "getBondPortfolioValuation").mockResolvedValue({
+      total_face_value: 10_000, total_cost_basis: 9_850,
+      positions: [{
+        issuer_name: "Apple Inc.", coupon_rate: 0.045, maturity_date: "2033-05-01",
+        cusip: "037833DT4", quantity: 10, cost_basis_price: 98.5, current_price: 98.5,
+        current_yield: 0.0457, yield_to_maturity: 0.0472, years_to_maturity: 7.0,
+        total_face_value: 10_000, total_cost_basis: 9_850,
+      }],
+    });
+    const removeSpy = vi.spyOn(api, "removeBondHolding").mockResolvedValue(undefined as any);
+    render(<PortfolioDetailPage />);
+
+    await waitFor(() => screen.getByText("Apple Inc."));
+    expect(screen.getByText(/4\.72% YTM/)).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Remove Apple Inc."));
+
+    await waitFor(() => {
+      expect(removeSpy).toHaveBeenCalledWith("port-1", "Apple Inc.", 0.045, "2033-05-01");
+    });
+  });
+
+  it("honestly shows YTM n/a rather than a fabricated number when yield_to_maturity is genuinely null", async () => {
+    mockBaseLoads();
+    vi.spyOn(api, "getBondPortfolioValuation").mockResolvedValue({
+      total_face_value: 10_000, total_cost_basis: 10_000,
+      positions: [{
+        issuer_name: "Matured Corp.", coupon_rate: 0.05, maturity_date: "2020-01-01",
+        cusip: null, quantity: 10, cost_basis_price: 100.0, current_price: 100.0,
+        current_yield: 0.05, yield_to_maturity: null, years_to_maturity: -6.0,
+        total_face_value: 10_000, total_cost_basis: 10_000,
+      }],
+    });
+    render(<PortfolioDetailPage />);
+
+    await waitFor(() => screen.getByText(/YTM n\/a/));
+  });
+
+  it("submitting the add-bond form calls api.addBondHolding with the correct, real fields", async () => {
+    mockBaseLoads();
+    const addSpy = vi.spyOn(api, "addBondHolding").mockResolvedValue(undefined as any);
+    render(<PortfolioDetailPage />);
+
+    await waitFor(() => screen.getByPlaceholderText("Issuer name"));
+    fireEvent.change(screen.getByPlaceholderText("Issuer name"), { target: { value: "Apple Inc." } });
+    fireEvent.change(screen.getByPlaceholderText("Coupon %"), { target: { value: "4.5" } });
+    fireEvent.change(screen.getByPlaceholderText("Maturity"), { target: { value: "2033-05-01" } });
+    fireEvent.change(screen.getByPlaceholderText("Quantity"), { target: { value: "10" } });
+    fireEvent.change(screen.getByPlaceholderText("Price (% of face)"), { target: { value: "98.5" } });
+    fireEvent.click(screen.getAllByText("Add")[2]);
+
+    await waitFor(() => {
+      // 4.5% entered by a human, converted to the real 0.045 decimal
+      // convention this app's own API uses everywhere.
+      expect(addSpy).toHaveBeenCalledWith("port-1", "Apple Inc.", 0.045, "2033-05-01", 10, 98.5, undefined);
+    });
   });
 });

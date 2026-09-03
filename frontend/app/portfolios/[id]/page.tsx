@@ -7,7 +7,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import { AppShell } from "@/components/AppShell";
 import {
   api, getApiKey, PortfolioRiskAnalysis, PortfolioValuation, OptionPortfolioValuation,
-  PortfolioGreeks, HedgingPlan, Recommendations, RebalancePlan,
+  BondPortfolioValuation, PortfolioGreeks, HedgingPlan, Recommendations, RebalancePlan,
 } from "@/lib/api";
 import { LedgerRow } from "@/components/LedgerRow";
 
@@ -193,6 +193,115 @@ function AddOptionForm({ portfolioId, onAdded }: { portfolioId: string; onAdded:
   );
 }
 
+function AddBondForm({ portfolioId, onAdded }: { portfolioId: string; onAdded: () => void }) {
+  const [issuer, setIssuer] = useState("");
+  const [coupon, setCoupon] = useState("");
+  const [maturity, setMaturity] = useState("");
+  const [quantity, setQuantity] = useState("");
+  const [costBasis, setCostBasis] = useState("");
+  const [cusip, setCusip] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const couponNum = parseFloat(coupon);
+    const quantityNum = parseInt(quantity, 10);
+    const costNum = parseFloat(costBasis);
+    if (
+      !issuer.trim() || isNaN(couponNum) || couponNum < 0 || !maturity ||
+      !quantityNum || quantityNum <= 0 || isNaN(costNum) || costNum <= 0
+    ) {
+      setError("Enter an issuer, non-negative coupon rate (%), maturity date, positive quantity, and a positive price (% of face value).");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      // Coupon entered as a real, human percentage (e.g. "4.5") — converted
+      // to the decimal convention this app's own API uses everywhere (0.045).
+      await api.addBondHolding(
+        portfolioId, issuer.trim(), couponNum / 100, maturity, quantityNum, costNum, cusip.trim() || undefined,
+      );
+      setIssuer("");
+      setCoupon("");
+      setMaturity("");
+      setQuantity("");
+      setCostBasis("");
+      setCusip("");
+      onAdded();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add bond holding");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} style={{ marginTop: "1rem" }}>
+      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+        <input
+          type="text"
+          placeholder="Issuer name"
+          value={issuer}
+          onChange={(e) => setIssuer(e.target.value)}
+          style={{ flex: "2 1 140px", fontSize: "0.9rem", padding: "0.55rem 0.75rem" }}
+        />
+        <input
+          type="number"
+          placeholder="Coupon %"
+          step="0.01"
+          value={coupon}
+          onChange={(e) => setCoupon(e.target.value)}
+          style={{ flex: "1 1 90px", fontSize: "0.9rem", padding: "0.55rem 0.75rem" }}
+        />
+        <input
+          type="date"
+          placeholder="Maturity"
+          value={maturity}
+          onChange={(e) => setMaturity(e.target.value)}
+          style={{ flex: "1 1 140px", fontSize: "0.9rem", padding: "0.55rem 0.75rem" }}
+        />
+        <input
+          type="number"
+          placeholder="Quantity"
+          value={quantity}
+          onChange={(e) => setQuantity(e.target.value)}
+          style={{ flex: "1 1 90px", fontSize: "0.9rem", padding: "0.55rem 0.75rem" }}
+        />
+        <input
+          type="number"
+          placeholder="Price (% of face)"
+          step="0.01"
+          value={costBasis}
+          onChange={(e) => setCostBasis(e.target.value)}
+          style={{ flex: "1 1 130px", fontSize: "0.9rem", padding: "0.55rem 0.75rem" }}
+        />
+        <input
+          type="text"
+          placeholder="CUSIP (optional)"
+          value={cusip}
+          onChange={(e) => setCusip(e.target.value)}
+          style={{ flex: "1 1 120px", fontSize: "0.9rem", padding: "0.55rem 0.75rem" }}
+        />
+        <button
+          type="submit"
+          className="btn-primary"
+          disabled={loading}
+          style={{ padding: "0.55rem 1.1rem", fontSize: "0.9rem", whiteSpace: "nowrap" }}
+        >
+          {loading ? "…" : "Add"}
+        </button>
+      </div>
+      {error && (
+        <p className="num loss" style={{ fontSize: "0.78rem", marginTop: "0.5rem" }}>
+          {error}
+        </p>
+      )}
+    </form>
+  );
+}
+
 export default function PortfolioDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -201,12 +310,14 @@ export default function PortfolioDetailPage() {
   const [valuation, setValuation] = useState<PortfolioValuation | null>(null);
   const [risk, setRisk] = useState<PortfolioRiskAnalysis | null>(null);
   const [options, setOptions] = useState<OptionPortfolioValuation | null>(null);
+  const [bonds, setBonds] = useState<BondPortfolioValuation | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [removingTicker, setRemovingTicker] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [removingOption, setRemovingOption] = useState<string | null>(null);
+  const [removingBond, setRemovingBond] = useState<string | null>(null);
   const [greeks, setGreeks] = useState<PortfolioGreeks | null>(null);
   const [greeksLoading, setGreeksLoading] = useState(false);
   const [greeksError, setGreeksError] = useState<string | null>(null);
@@ -232,10 +343,15 @@ export default function PortfolioDetailPage() {
     // options positions at all).
     api.getPortfolioRisk(id).then(setRisk).catch(() => setRisk(null));
     loadOptions();
+    loadBonds();
   }, [id, router]);
 
   function loadOptions() {
     return api.getOptionPortfolioValuation(id).then(setOptions).catch(() => setOptions(null));
+  }
+
+  function loadBonds() {
+    return api.getBondPortfolioValuation(id).then(setBonds).catch(() => setBonds(null));
   }
 
   function loadValuation() {
@@ -269,6 +385,19 @@ export default function PortfolioDetailPage() {
       setError(err instanceof Error ? err.message : `Couldn't remove ${position.contract}`);
     } finally {
       setRemovingOption(null);
+    }
+  }
+
+  async function handleRemoveBond(position: BondPortfolioValuation["positions"][number]) {
+    const key = `${position.issuer_name}-${position.coupon_rate}-${position.maturity_date}`;
+    setRemovingBond(key);
+    try {
+      await api.removeBondHolding(id, position.issuer_name, position.coupon_rate, position.maturity_date);
+      await loadBonds();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Couldn't remove ${position.issuer_name}`);
+    } finally {
+      setRemovingBond(null);
     }
   }
 
@@ -519,6 +648,48 @@ export default function PortfolioDetailPage() {
             </>
           )}
           <AddOptionForm portfolioId={id} onAdded={loadOptions} />
+        </div>
+      </section>
+
+      <section style={{ marginTop: "2.5rem" }}>
+        <p className="eyebrow" style={{ marginBottom: "0.75rem" }}>
+          Bonds
+        </p>
+        <div className="card">
+          {(!bonds || bonds.positions.length === 0) && (
+            <p style={{ color: "var(--text-soft)" }}>No bond holdings yet — add one below.</p>
+          )}
+          {bonds && bonds.positions.length > 0 && (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "1rem" }}>
+                <p className="eyebrow" style={{ fontSize: "0.65rem", margin: 0 }}>Total face value</p>
+                <p className="num" style={{ margin: 0, fontSize: "1.1rem" }}>
+                  {usd(bonds.total_face_value)}
+                  <span className="num" style={{ fontSize: "0.8rem", color: "var(--text-soft)" }}>
+                    {" "}(cost basis {usd(bonds.total_cost_basis)})
+                  </span>
+                </p>
+              </div>
+              {bonds.positions.map((p) => {
+                const key = `${p.issuer_name}-${p.coupon_rate}-${p.maturity_date}`;
+                const ytmText = p.yield_to_maturity !== null ? `${(p.yield_to_maturity * 100).toFixed(2)}% YTM` : "YTM n/a";
+                return (
+                  <LedgerRow
+                    key={key}
+                    label={p.issuer_name}
+                    sublabel={`${(p.coupon_rate * 100).toFixed(2)}% coupon · matures ${p.maturity_date} · ${ytmText}`}
+                    value={usd(p.total_face_value)}
+                    onRemove={() => handleRemoveBond(p)}
+                    removing={removingBond === key}
+                  />
+                );
+              })}
+              <p className="num" style={{ color: "var(--text-soft)", fontSize: "0.75rem", marginTop: "0.75rem" }}>
+                No live bond price source is available — yields shown are estimated directly from the price paid, not a current market quote.
+              </p>
+            </>
+          )}
+          <AddBondForm portfolioId={id} onAdded={loadBonds} />
         </div>
       </section>
 

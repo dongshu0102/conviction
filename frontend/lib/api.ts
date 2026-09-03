@@ -194,6 +194,27 @@ export interface OptionPortfolioValuation {
   positions_excluded: string[];
 }
 
+export interface BondPosition {
+  issuer_name: string;
+  coupon_rate: number;
+  maturity_date: string;
+  cusip: string | null;
+  quantity: number;
+  cost_basis_price: number;
+  current_price: number | null;
+  current_yield: number | null;
+  yield_to_maturity: number | null;
+  years_to_maturity: number;
+  total_face_value: number;
+  total_cost_basis: number;
+}
+
+export interface BondPortfolioValuation {
+  total_face_value: number;
+  total_cost_basis: number;
+  positions: BondPosition[];
+}
+
 export interface PositionValue {
   ticker: string;
   shares: number;
@@ -1091,6 +1112,41 @@ export const api = {
     }),
   getOptionPortfolioValuation: (portfolioId: string) =>
     request<OptionPortfolioValuation>(`/portfolios/${portfolioId}/options/valuation`),
+  addBondHolding: (
+    portfolioId: string,
+    issuerName: string,
+    couponRate: number,
+    maturityDate: string,
+    quantity: number,
+    costBasisPrice: number,
+    cusip?: string,
+    faceValue: number = 1000.0,
+  ) =>
+    request(`/portfolios/${portfolioId}/bonds`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        issuer_name: issuerName,
+        coupon_rate: couponRate,
+        maturity_date: maturityDate,
+        quantity,
+        cost_basis_price: costBasisPrice,
+        cusip: cusip || null,
+        face_value: faceValue,
+      }),
+    }),
+  removeBondHolding: (
+    portfolioId: string, issuerName: string, couponRate: number, maturityDate: string,
+  ) =>
+    request(`/portfolios/${portfolioId}/bonds`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        issuer_name: issuerName, coupon_rate: couponRate, maturity_date: maturityDate,
+      }),
+    }),
+  getBondPortfolioValuation: (portfolioId: string) =>
+    request<BondPortfolioValuation>(`/portfolios/${portfolioId}/bonds/valuation`),
   getPortfolioGreeks: (portfolioId: string) =>
     request<PortfolioGreeks>(`/portfolios/${portfolioId}/options/greeks`),
   getHedgingSuggestion: (portfolioId: string) =>
