@@ -40,6 +40,7 @@ const NAV_SECTIONS: { label: string | null; items: { href: string; label: string
       { href: "/terminal", label: "Watchlist", icon: "▤" },
       { href: "/portfolios", label: "Portfolios", icon: "▣" },
       { href: "/valuation", label: "Valuation", icon: "◇" },
+      { href: "/treasury-yields", label: "Treasury Yields", icon: "∿" },
       { href: "/capital-flow", label: "Capital Flow", icon: "⇄" },
       { href: "/capital-flow-monitor", label: "Flow Monitor", icon: "▦" },
     ],
