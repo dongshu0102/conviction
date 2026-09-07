@@ -21,6 +21,8 @@ from src.api.schemas import (
     UpdateWatchlistItemRequestSchema,
     WatchlistItemSchema,
     WatchlistNewsResponseSchema,
+    WatchlistQuoteRefreshItemSchema,
+    WatchlistQuoteRefreshResponseSchema,
     WatchlistSummarySchema,
 )
 from src.application.use_cases.get_upcoming_earnings import (
@@ -37,6 +39,9 @@ from src.application.use_cases.manage_watchlist import (
     UpdateWatchlistItemUseCase,
 )
 from src.application.use_cases.triage_watchlist import TriageWatchlistUseCase
+from src.application.use_cases.refresh_watchlist_quotes import RefreshWatchlistQuotesUseCase
+from src.infrastructure.data_providers.marketdata_stock_provider import MarketDataStockProvider
+from src.infrastructure.config import get_settings
 from src.infrastructure.persistence.monitoring_repository_impl import (
     SqlAlchemyPriceSnapshotRepository,
 )
@@ -188,6 +193,35 @@ def triage_watchlist(
                 notes=t.notes,
             )
             for t in result.items
+        ],
+        tickers_excluded=result.tickers_excluded,
+    )
+
+
+def get_refresh_quotes_use_case(
+    watchlist_repo: SqlAlchemyWatchlistRepository = Depends(get_watchlist_repository),
+) -> RefreshWatchlistQuotesUseCase:
+    return RefreshWatchlistQuotesUseCase(
+        watchlist_repo, MarketDataStockProvider(settings=get_settings())
+    )
+
+
+@router.get("/refresh-quotes", response_model=WatchlistQuoteRefreshResponseSchema)
+def refresh_watchlist_quotes(
+    list_name: str | None = Query(default=None),
+    user_id: str = Depends(get_authenticated_user_id),
+    use_case: RefreshWatchlistQuotesUseCase = Depends(get_refresh_quotes_use_case),
+) -> WatchlistQuoteRefreshResponseSchema:
+    result = use_case.execute(user_id, list_name)
+    return WatchlistQuoteRefreshResponseSchema(
+        as_of=result.as_of,
+        items=[
+            WatchlistQuoteRefreshItemSchema(
+                ticker=i.ticker, list_name=i.list_name, current_price=i.current_price,
+                added_price=i.added_price, change_since_added_pct=i.change_since_added_pct,
+                target_price=i.target_price, target_reached=i.target_reached,
+            )
+            for i in result.items
         ],
         tickers_excluded=result.tickers_excluded,
     )

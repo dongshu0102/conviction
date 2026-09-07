@@ -1168,6 +1168,32 @@ class TriageResponseSchema(BaseModel):
     tickers_excluded: list[str]
 
 
+class StockCandleSchema(BaseModel):
+    ticker: str
+    timestamp: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+
+
+class WatchlistQuoteRefreshItemSchema(BaseModel):
+    ticker: str
+    list_name: str
+    current_price: float
+    added_price: float | None
+    change_since_added_pct: float | None
+    target_price: float | None
+    target_reached: bool
+
+
+class WatchlistQuoteRefreshResponseSchema(BaseModel):
+    as_of: datetime
+    items: list[WatchlistQuoteRefreshItemSchema]
+    tickers_excluded: list[str]
+
+
 class NewsArticleSchema(BaseModel):
     ticker: str
     title: str

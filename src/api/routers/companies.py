@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import asdict
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -38,6 +39,7 @@ from src.api.schemas import (
     ScreenedStockSchema,
     ScreenRequestSchema,
     ScreenResultSchema,
+    StockCandleSchema,
     SP500ConstituentsSchema,
     TaylorRuleResultSchema,
     TreasuryRatesSchema,
@@ -99,6 +101,9 @@ from src.infrastructure.config import get_settings
 from src.domain.entities.factor_scores import FactorWeights
 from src.infrastructure.data_providers.fmp_provider import FinancialModelingPrepProvider
 from src.infrastructure.data_providers.fred_provider import FredProvider
+from src.infrastructure.data_providers.marketdata_stock_provider import MarketDataStockProvider
+from src.application.interfaces.stock_data_provider import StockDataProviderError
+from src.application.use_cases.get_stock_candles import GetStockCandlesUseCase
 from src.infrastructure.persistence.company_repository_impl import (
     SqlAlchemyCompanyRepository,
 )
@@ -836,6 +841,33 @@ def get_ticker_news(
             source=a.source, url=a.url, snippet=a.snippet,
         )
         for a in articles
+    ]
+
+
+# --- Historical price candles (MarketData.app) --------------------------------
+
+def get_stock_candles_use_case() -> GetStockCandlesUseCase:
+    return GetStockCandlesUseCase(MarketDataStockProvider(settings=get_settings()))
+
+
+@router.get("/{ticker}/candles", response_model=list[StockCandleSchema])
+def get_candles(
+    ticker: str,
+    resolution: str = Query(default="D"),
+    from_date: date = Query(alias="from"),
+    to_date: date = Query(alias="to"),
+    use_case: GetStockCandlesUseCase = Depends(get_stock_candles_use_case),
+) -> list[StockCandleSchema]:
+    try:
+        candles = use_case.execute(ticker, resolution, from_date, to_date)
+    except StockDataProviderError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return [
+        StockCandleSchema(
+            ticker=c.ticker, timestamp=c.timestamp, open=c.open,
+            high=c.high, low=c.low, close=c.close, volume=c.volume,
+        )
+        for c in candles
     ]
 
 
