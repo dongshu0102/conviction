@@ -7,6 +7,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.api.schemas import (
+    AnalystRatingsSchema,
     BalanceSheetSchema,
     CompsResponseSchema,
     DcfAssumptionsSchema,
@@ -105,6 +106,7 @@ from src.infrastructure.data_providers.fmp_provider import FinancialModelingPrep
 from src.infrastructure.data_providers.fred_provider import FredProvider
 from src.infrastructure.data_providers.marketdata_stock_provider import MarketDataStockProvider
 from src.application.interfaces.stock_data_provider import StockDataProviderError
+from src.application.use_cases.get_analyst_ratings import GetAnalystRatingsUseCase
 from src.application.use_cases.get_stock_candles import GetStockCandlesUseCase
 from src.application.use_cases.screen_market import ScreenMarketUseCase
 from src.infrastructure.persistence.company_repository_impl import (
@@ -907,6 +909,39 @@ def get_ticker_news(
         )
         for a in articles
     ]
+
+
+def get_analyst_ratings_use_case(
+    provider: FinancialModelingPrepProvider = Depends(get_data_provider),
+) -> GetAnalystRatingsUseCase:
+    return GetAnalystRatingsUseCase(provider)
+
+
+@router.get("/{ticker}/analyst-ratings", response_model=AnalystRatingsSchema | None)
+def get_analyst_ratings(
+    ticker: str,
+    use_case: GetAnalystRatingsUseCase = Depends(get_analyst_ratings_use_case),
+) -> AnalystRatingsSchema | None:
+    """Real, human Wall Street analyst ratings and price targets --
+    None, honestly, when the ticker has no real analyst coverage at
+    all, rather than a fabricated result."""
+    try:
+        ratings = use_case.execute(ticker)
+    except DataProviderError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if ratings is None:
+        return None
+    return AnalystRatingsSchema(
+        ticker=ratings.ticker, strong_buy=ratings.strong_buy, buy=ratings.buy,
+        hold=ratings.hold, sell=ratings.sell, strong_sell=ratings.strong_sell,
+        consensus=ratings.consensus, total_analysts=ratings.total_analysts,
+        last_month_avg_price_target=ratings.last_month_avg_price_target,
+        last_month_count=ratings.last_month_count,
+        last_quarter_avg_price_target=ratings.last_quarter_avg_price_target,
+        last_quarter_count=ratings.last_quarter_count,
+        last_year_avg_price_target=ratings.last_year_avg_price_target,
+        last_year_count=ratings.last_year_count,
+    )
 
 
 # --- Historical price candles (MarketData.app) --------------------------------

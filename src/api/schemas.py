@@ -1221,6 +1221,23 @@ class NewsArticleSchema(BaseModel):
     snippet: str | None
 
 
+class AnalystRatingsSchema(BaseModel):
+    ticker: str
+    strong_buy: int
+    buy: int
+    hold: int
+    sell: int
+    strong_sell: int
+    consensus: str
+    total_analysts: int
+    last_month_avg_price_target: float | None
+    last_month_count: int
+    last_quarter_avg_price_target: float | None
+    last_quarter_count: int
+    last_year_avg_price_target: float | None
+    last_year_count: int
+
+
 class WatchlistNewsResponseSchema(BaseModel):
     news: dict[str, list[NewsArticleSchema]]
     tickers_failed: list[str]
