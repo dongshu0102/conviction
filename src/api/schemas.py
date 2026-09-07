@@ -759,6 +759,13 @@ class RateSignalsSchema(BaseModel):
     sahm_rule_unavailable_reason: str | None
 
 
+class EconomicCycleStateSchema(BaseModel):
+    state: str
+    yield_curve_inverted: bool | None
+    sahm_rule_triggered: bool | None
+    reasoning: list[str]
+
+
 class SpeculativeGrowthAssessmentSchema(BaseModel):
     ticker: str
     as_of: datetime

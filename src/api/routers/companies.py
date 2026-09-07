@@ -14,6 +14,7 @@ from src.api.schemas import (
     DcfAssumptionsSchema,
     DcfProjectionYearSchema,
     DcfResponseSchema,
+    EconomicCycleStateSchema,
     EconomicIndicatorSchema,
     EtfIngestResultSchema,
     FactorRankingResponseSchema,
@@ -107,6 +108,7 @@ from src.infrastructure.data_providers.fmp_provider import FinancialModelingPrep
 from src.infrastructure.data_providers.fred_provider import FredProvider
 from src.infrastructure.data_providers.marketdata_stock_provider import MarketDataStockProvider
 from src.application.interfaces.stock_data_provider import StockDataProviderError
+from src.application.use_cases.classify_economic_cycle import ClassifyEconomicCycleUseCase
 from src.application.use_cases.get_analyst_ratings import GetAnalystRatingsUseCase
 from src.application.use_cases.get_stock_candles import GetStockCandlesUseCase
 from src.application.use_cases.screen_market import ScreenMarketUseCase
@@ -493,6 +495,31 @@ def get_rate_signals(
             ) if sr else None
         ),
         sahm_rule_unavailable_reason=signals.sahm_rule_unavailable_reason,
+    )
+
+
+def get_economic_cycle_use_case(
+    rate_signals_use_case: GetRateSignalsUseCase = Depends(get_rate_signals_use_case),
+) -> ClassifyEconomicCycleUseCase:
+    return ClassifyEconomicCycleUseCase(rate_signals_use_case)
+
+
+@router.get("/economic-cycle", response_model=EconomicCycleStateSchema)
+def get_economic_cycle(
+    use_case: ClassifyEconomicCycleUseCase = Depends(get_economic_cycle_use_case),
+) -> EconomicCycleStateSchema:
+    """Classifies the real, current economic cycle state (Expansion,
+    Late-cycle warning, Contraction, or honestly Insufficient data) by
+    combining this app's own real, already-verified yield curve
+    inversion and Sahm Rule signals. A rules-based state, not a single
+    weighted score -- both underlying real signals are always shown
+    directly alongside the state, never hidden behind it. Registered
+    before /{ticker} for the same routing-order reason as
+    /rate-signals above."""
+    result = use_case.execute()
+    return EconomicCycleStateSchema(
+        state=result.state, yield_curve_inverted=result.yield_curve_inverted,
+        sahm_rule_triggered=result.sahm_rule_triggered, reasoning=result.reasoning,
     )
 
 
