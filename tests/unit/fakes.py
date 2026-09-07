@@ -398,6 +398,22 @@ class FakeOptionsDataProvider:
         return self._quotes.get(self._key(contract))
 
 
+class FakeStockDataProvider:
+    def __init__(self, candles: dict | None = None, bulk_quotes: list | None = None, raise_on_bulk: bool = False) -> None:
+        self._candles = candles or {}  # ticker -> list[StockCandle]
+        self._bulk_quotes = bulk_quotes or []
+        self._raise_on_bulk = raise_on_bulk
+
+    def get_candles(self, ticker: str, resolution: str, from_date, to_date) -> list:
+        return self._candles.get(ticker, [])
+
+    def get_bulk_quotes(self, tickers: list[str]) -> list:
+        if self._raise_on_bulk:
+            from src.application.interfaces.stock_data_provider import StockDataProviderError
+            raise StockDataProviderError("fake bulk quotes failure")
+        return [q for q in self._bulk_quotes if q.ticker in tickers]
+
+
 class FakePriceSnapshotRepository:
     def __init__(self) -> None:
         self._snapshots: dict = {}  # ticker -> PriceSnapshot
