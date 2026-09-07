@@ -37,6 +37,7 @@ const NAV_SECTIONS: { label: string | null; items: { href: string; label: string
       { href: "/chat", label: "Chat", icon: "◐" },
       { href: "/universe", label: "Universe", icon: "◈" },
       { href: "/nasdaq100-screener", label: "Nasdaq-100 Screener", icon: "▧" },
+      { href: "/market-workflow", label: "Market Workflow", icon: "◫" },
       { href: "/terminal", label: "Watchlist", icon: "▤" },
       { href: "/portfolios", label: "Portfolios", icon: "▣" },
       { href: "/valuation", label: "Valuation", icon: "◇" },

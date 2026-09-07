@@ -73,6 +73,69 @@ export interface WatchlistItem {
   added_pe: number | null;
 }
 
+export interface MarketScreenCandidate {
+  ticker: string;
+  company_name: string;
+  market_cap: number;
+  price: number;
+  beta: number | null;
+  last_annual_dividend: number | null;
+  volume: number;
+  sector: string | null;
+  industry: string | null;
+  exchange: string;
+  country: string | null;
+}
+
+export interface MarketScreenResponse {
+  candidates: MarketScreenCandidate[];
+}
+
+export interface AnalystGrade {
+  grading_company: string;
+  date: string;
+  previous_grade: string;
+  new_grade: string;
+  action: string;
+}
+
+export interface AnalystRatings {
+  ticker: string;
+  recent_grades: AnalystGrade[];
+  last_month_avg_price_target: number | null;
+  last_month_count: number;
+  last_quarter_avg_price_target: number | null;
+  last_quarter_count: number;
+  last_year_avg_price_target: number | null;
+  last_year_count: number;
+}
+
+export interface StockCandle {
+  ticker: string;
+  timestamp: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export interface WatchlistQuoteRefreshItem {
+  ticker: string;
+  list_name: string;
+  current_price: number;
+  added_price: number | null;
+  change_since_added_pct: number | null;
+  target_price: number | null;
+  target_reached: boolean;
+}
+
+export interface WatchlistQuoteRefreshResponse {
+  as_of: string;
+  items: WatchlistQuoteRefreshItem[];
+  tickers_excluded: string[];
+}
+
 export interface TriageSignals {
   day_move_pct: number | null;
   move_since_added_pct: number | null;
@@ -1039,6 +1102,31 @@ export const api = {
       method: "POST",
     }),
   getWatchlist: () => request<WatchlistItem[]>("/watchlist"),
+  screenMarket: (filters: {
+    sector?: string; industry?: string; exchange?: string; country?: string;
+    market_cap_more_than?: number; market_cap_lower_than?: number;
+    price_more_than?: number; price_lower_than?: number;
+    beta_more_than?: number; beta_lower_than?: number;
+    dividend_more_than?: number; dividend_lower_than?: number;
+    volume_more_than?: number; volume_lower_than?: number;
+    limit?: number;
+  }) => {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(filters)) {
+      if (value !== undefined) params.set(key, String(value));
+    }
+    return request<MarketScreenResponse>(`/companies/screen-market?${params.toString()}`);
+  },
+  getAnalystRatings: (ticker: string) =>
+    request<AnalystRatings | null>(`/companies/${ticker}/analyst-ratings`),
+  getStockCandles: (ticker: string, fromDate: string, toDate: string, resolution = "D") =>
+    request<StockCandle[]>(
+      `/companies/${ticker}/candles?resolution=${resolution}&from=${fromDate}&to=${toDate}`
+    ),
+  refreshWatchlistQuotes: (listName?: string) =>
+    request<WatchlistQuoteRefreshResponse>(
+      `/watchlist/refresh-quotes${listName ? `?list_name=${encodeURIComponent(listName)}` : ""}`
+    ),
   addToWatchlist: (ticker: string, listName?: string) =>
     request<WatchlistItem>(
       `/watchlist/${encodeURIComponent(ticker.toUpperCase())}${

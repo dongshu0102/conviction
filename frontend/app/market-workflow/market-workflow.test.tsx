@@ -1,0 +1,136 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import MarketWorkflowPage from "./page";
+import { api } from "@/lib/api";
+
+const pushMock = vi.fn();
+// A stable object reference, not a fresh {push: pushMock} literal on
+// every call -- the same, confirmed root cause found repeatedly
+// tonight: this page's own handlers depend on router, so an unstable
+// mock reference would re-trigger effects on every step change.
+const mockRouter = { push: pushMock };
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/market-workflow",
+  useRouter: () => mockRouter,
+}));
+
+beforeEach(() => {
+  localStorage.setItem("conviction_api_key", "fi_live_test123");
+  vi.restoreAllMocks();
+  pushMock.mockClear();
+});
+
+const SAMPLE_CANDIDATES = [
+  {
+    ticker: "AAPL", company_name: "Apple Inc.", market_cap: 4_699_513_299_320.0,
+    price: 319.97, beta: 1.085, last_annual_dividend: 1.06, volume: 39_606_884,
+    sector: "Technology", industry: "Consumer Electronics", exchange: "NASDAQ", country: "US",
+  },
+];
+
+const SAMPLE_RATINGS = {
+  ticker: "AAPL",
+  recent_grades: [
+    { grading_company: "DA Davidson", date: "2026-09-02", previous_grade: "Neutral", new_grade: "Neutral", action: "maintain" },
+  ],
+  last_month_avg_price_target: 331.83, last_month_count: 2,
+  last_quarter_avg_price_target: 331.69, last_quarter_count: 17,
+  last_year_avg_price_target: 309.56, last_year_count: 69,
+};
+
+const SAMPLE_CANDLES = [
+  { ticker: "AAPL", timestamp: "2026-09-01T04:00:00Z", open: 310, high: 315, low: 308, close: 312, volume: 1000000 },
+];
+
+describe("Market Workflow page", () => {
+  it("Step 1: screening renders real candidates with a Rank action", async () => {
+    vi.spyOn(api, "screenMarket").mockResolvedValue({ candidates: SAMPLE_CANDIDATES });
+    render(<MarketWorkflowPage />);
+
+    fireEvent.click(screen.getByText("Screen"));
+
+    await waitFor(() => screen.getByText("AAPL"));
+    expect(screen.getByText("Apple Inc.")).toBeInTheDocument();
+    expect(screen.getByText("Rank →")).toBeInTheDocument();
+  });
+
+  it("Step 1: shows an honest error message when screening fails", async () => {
+    vi.spyOn(api, "screenMarket").mockRejectedValue(new Error("FMP request failed"));
+    render(<MarketWorkflowPage />);
+
+    fireEvent.click(screen.getByText("Screen"));
+
+    await waitFor(() => screen.getByText("FMP request failed"));
+  });
+
+  it("clicking Rank moves to Step 2 and shows real analyst ratings", async () => {
+    vi.spyOn(api, "screenMarket").mockResolvedValue({ candidates: SAMPLE_CANDIDATES });
+    vi.spyOn(api, "getAnalystRatings").mockResolvedValue(SAMPLE_RATINGS);
+    render(<MarketWorkflowPage />);
+
+    fireEvent.click(screen.getByText("Screen"));
+    await waitFor(() => screen.getByText("Rank →"));
+    fireEvent.click(screen.getByText("Rank →"));
+
+    await waitFor(() => screen.getByText("DA Davidson"));
+    expect(screen.getByText(/17 analysts/)).toBeInTheDocument();
+  });
+
+  it("honestly shows no coverage message when analyst ratings are genuinely null", async () => {
+    vi.spyOn(api, "screenMarket").mockResolvedValue({ candidates: SAMPLE_CANDIDATES });
+    vi.spyOn(api, "getAnalystRatings").mockResolvedValue(null);
+    render(<MarketWorkflowPage />);
+
+    fireEvent.click(screen.getByText("Screen"));
+    await waitFor(() => screen.getByText("Rank →"));
+    fireEvent.click(screen.getByText("Rank →"));
+
+    await waitFor(() => screen.getByText(/No real analyst coverage found/));
+  });
+
+  it("clicking Validate moves to Step 3 and loads real price candles", async () => {
+    vi.spyOn(api, "screenMarket").mockResolvedValue({ candidates: SAMPLE_CANDIDATES });
+    vi.spyOn(api, "getAnalystRatings").mockResolvedValue(SAMPLE_RATINGS);
+    vi.spyOn(api, "getStockCandles").mockResolvedValue(SAMPLE_CANDLES);
+    render(<MarketWorkflowPage />);
+
+    fireEvent.click(screen.getByText("Screen"));
+    await waitFor(() => screen.getByText("Rank →"));
+    fireEvent.click(screen.getByText("Rank →"));
+    await waitFor(() => screen.getByText("Validate price trend →"));
+    fireEvent.click(screen.getByText("Validate price trend →"));
+
+    await waitFor(() => expect(api.getStockCandles).toHaveBeenCalledWith(
+      "AAPL", expect.any(String), expect.any(String)
+    ));
+  });
+
+  it("clicking Add to watchlist calls the real API and moves to Step 4", async () => {
+    vi.spyOn(api, "screenMarket").mockResolvedValue({ candidates: SAMPLE_CANDIDATES });
+    vi.spyOn(api, "getAnalystRatings").mockResolvedValue(SAMPLE_RATINGS);
+    vi.spyOn(api, "getStockCandles").mockResolvedValue(SAMPLE_CANDLES);
+    const addSpy = vi.spyOn(api, "addToWatchlist").mockResolvedValue({} as any);
+    render(<MarketWorkflowPage />);
+
+    fireEvent.click(screen.getByText("Screen"));
+    await waitFor(() => screen.getByText("Rank →"));
+    fireEvent.click(screen.getByText("Rank →"));
+    await waitFor(() => screen.getByText("Validate price trend →"));
+    fireEvent.click(screen.getByText("Validate price trend →"));
+    await waitFor(() => screen.getByText("Add to watchlist →"));
+    fireEvent.click(screen.getByText("Add to watchlist →"));
+
+    await waitFor(() => expect(addSpy).toHaveBeenCalledWith("AAPL"));
+    await waitFor(() => screen.getByText(/added to your watchlist/));
+  });
+
+  it("redirects to /login when there is no API key", async () => {
+    localStorage.removeItem("conviction_api_key");
+    render(<MarketWorkflowPage />);
+
+    fireEvent.click(screen.getByText("Screen"));
+
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/login"));
+  });
+});
