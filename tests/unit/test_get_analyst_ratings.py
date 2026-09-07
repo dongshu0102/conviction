@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from datetime import date
+
 from src.application.use_cases.get_analyst_ratings import GetAnalystRatingsUseCase
-from src.domain.entities.analyst_ratings import AnalystRatings
+from src.domain.entities.analyst_ratings import AnalystGrade, AnalystRatings
 
 
 class _FakeAnalystRatingsProvider:
@@ -16,7 +18,13 @@ class _FakeAnalystRatingsProvider:
 
 def _ratings(ticker: str = "AAPL") -> AnalystRatings:
     return AnalystRatings(
-        ticker=ticker, strong_buy=1, buy=70, hold=32, sell=9, strong_sell=0, consensus="Buy",
+        ticker=ticker,
+        recent_grades=[
+            AnalystGrade(
+                grading_company="DA Davidson", date=date(2026, 9, 2),
+                previous_grade="Neutral", new_grade="Neutral", action="maintain",
+            ),
+        ],
         last_month_avg_price_target=331.83, last_month_count=2,
         last_quarter_avg_price_target=331.69, last_quarter_count=17,
         last_year_avg_price_target=309.56, last_year_count=69,
@@ -30,7 +38,7 @@ def test_returns_real_ratings_from_the_provider() -> None:
     result = use_case.execute("AAPL")
 
     assert result is not None
-    assert result.consensus == "Buy"
+    assert result.recent_grades[0].grading_company == "DA Davidson"
 
 
 def test_normalizes_ticker_case_and_whitespace() -> None:

@@ -7,6 +7,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.api.schemas import (
+    AnalystGradeSchema,
     AnalystRatingsSchema,
     BalanceSheetSchema,
     CompsResponseSchema,
@@ -932,9 +933,14 @@ def get_analyst_ratings(
     if ratings is None:
         return None
     return AnalystRatingsSchema(
-        ticker=ratings.ticker, strong_buy=ratings.strong_buy, buy=ratings.buy,
-        hold=ratings.hold, sell=ratings.sell, strong_sell=ratings.strong_sell,
-        consensus=ratings.consensus, total_analysts=ratings.total_analysts,
+        ticker=ratings.ticker,
+        recent_grades=[
+            AnalystGradeSchema(
+                grading_company=g.grading_company, date=g.date,
+                previous_grade=g.previous_grade, new_grade=g.new_grade, action=g.action,
+            )
+            for g in ratings.recent_grades
+        ],
         last_month_avg_price_target=ratings.last_month_avg_price_target,
         last_month_count=ratings.last_month_count,
         last_quarter_avg_price_target=ratings.last_quarter_avg_price_target,

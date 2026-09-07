@@ -1221,15 +1221,17 @@ class NewsArticleSchema(BaseModel):
     snippet: str | None
 
 
+class AnalystGradeSchema(BaseModel):
+    grading_company: str
+    date: date
+    previous_grade: str
+    new_grade: str
+    action: str
+
+
 class AnalystRatingsSchema(BaseModel):
     ticker: str
-    strong_buy: int
-    buy: int
-    hold: int
-    sell: int
-    strong_sell: int
-    consensus: str
-    total_analysts: int
+    recent_grades: list[AnalystGradeSchema]
     last_month_avg_price_target: float | None
     last_month_count: int
     last_quarter_avg_price_target: float | None

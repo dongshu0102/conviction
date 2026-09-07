@@ -34,7 +34,7 @@ from src.domain.entities.general_news import GeneralNewsHeadline
 from src.domain.entities.institutional_holding import InstitutionalHolding
 from src.domain.entities.beneficial_ownership_disclosure import BeneficialOwnershipDisclosure
 from src.domain.entities.insider_transaction import InsiderTransaction
-from src.domain.entities.analyst_ratings import AnalystRatings
+from src.domain.entities.analyst_ratings import AnalystGrade, AnalystRatings
 from src.domain.entities.market_quote import MarketQuote, PriceBar
 from src.domain.entities.market_risk_premium import MarketRiskPremium
 from src.domain.entities.market_screen import MarketScreenCandidate
@@ -416,26 +416,44 @@ class FinancialModelingPrepProvider(FinancialDataProvider):
         ]
 
     def get_analyst_ratings(self, ticker: str) -> AnalystRatings | None:
-        """Combines FMP's own /grades-summary (real buy/sell/hold
-        consensus) and /price-target-summary (real price targets)
-        into one, real result -- confirmed directly against both
-        endpoints' real, live response shapes before writing this.
-        Returns None, honestly, when a ticker has no real analyst
-        coverage at all (an empty list from either endpoint), rather
-        than a result with fabricated zeros."""
-        grades_payload = self._get("/grades-summary", symbol=ticker)
-        if not grades_payload:
-            return None
-        g = grades_payload[0]
+        """Combines FMP's own /grades (real, raw, per-analyst grade
+        actions) and /price-target-summary (real price targets) into
+        one, real result. Deliberately NOT /grades-summary: confirmed
+        directly, in production, that this account's real key returns
+        a genuinely empty result from /grades-summary despite being a
+        real, valid key on the Ultimate plan -- /grades-summary sits
+        behind a separate, real entitlement this account doesn't have,
+        confirmed directly by comparing it against the real, working
+        /grades and /price-target-summary responses for the same,
+        exact ticker. Real, raw grade actions from /grades are used
+        instead of an invented consensus tally.
 
+        Returns None, honestly, when a ticker has no real analyst
+        coverage at all (both real endpoints come back empty), rather
+        than a result with fabricated data."""
+        grades_payload = self._get("/grades", symbol=ticker)
         targets_payload = self._get("/price-target-summary", symbol=ticker)
+        if not grades_payload and not targets_payload:
+            return None
+
+        # Most-recent-first, capped at a real, reasonable number --
+        # /grades can genuinely return a long, real history.
+        recent_grades = [
+            AnalystGrade(
+                grading_company=row.get("gradingCompany", "Unknown"),
+                date=date.fromisoformat(row["date"]),
+                previous_grade=row.get("previousGrade", ""),
+                new_grade=row.get("newGrade", ""),
+                action=row.get("action", ""),
+            )
+            for row in grades_payload[:20]
+        ]
+
         t = targets_payload[0] if targets_payload else {}
 
         return AnalystRatings(
             ticker=ticker,
-            strong_buy=g.get("strongBuy", 0), buy=g.get("buy", 0), hold=g.get("hold", 0),
-            sell=g.get("sell", 0), strong_sell=g.get("strongSell", 0),
-            consensus=g.get("consensus", "N/A"),
+            recent_grades=recent_grades,
             last_month_avg_price_target=t.get("lastMonthAvgPriceTarget"),
             last_month_count=t.get("lastMonthCount", 0),
             last_quarter_avg_price_target=t.get("lastQuarterAvgPriceTarget"),

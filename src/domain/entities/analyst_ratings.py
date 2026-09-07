@@ -2,36 +2,48 @@
 price targets -- Step 2's "analyst ratings" from the original
 screen/rank/validate/monitor workflow.
 
-Deliberately built from FMP's own /grades-summary and
-/price-target-summary endpoints, not /ratings-snapshot: ratings-snapshot
-is FMP's own internal, algorithmically-computed score derived from
-fundamentals (DCF/ROE/ROA/debt-to-equity/etc), not real analyst
-opinions at all -- confirmed directly by testing all three live before
-choosing, not assumed from the endpoint name alone. grades-summary and
-price-target-summary are the real, genuine buy/sell/hold consensus and
-price targets from actual analysts at real publishers.
+REVISED after a real, direct production finding: this app's real FMP
+account has access to /grades (raw, per-analyst grade actions) and
+/price-target-summary, but NOT /grades-summary (FMP's own pre-computed
+buy/sell/hold consensus count) -- confirmed directly by hitting FMP's
+real, live API with the real, production key, not assumed from the
+account's plan name alone. AnalystRatings is therefore built from the
+real, raw grade actions this account genuinely has, rather than a
+consensus count it doesn't -- no invented buy/sell/hold tally standing
+in for data this account can't actually see.
+
+Also deliberately NOT built from /ratings-snapshot: that's FMP's own
+internal, algorithmically-computed score derived from fundamentals
+(DCF/ROE/ROA/debt-to-equity/etc), not real analyst opinions at all --
+confirmed directly by testing all three real candidates live before
+choosing.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import date
+
+
+@dataclass(frozen=True, slots=True)
+class AnalystGrade:
+    """One real, individual analyst firm's grade action on one real
+    date -- the raw material this account actually has access to,
+    not a pre-aggregated summary."""
+
+    grading_company: str
+    date: date
+    previous_grade: str
+    new_grade: str
+    action: str  # e.g. "upgrade", "downgrade", "maintain", "initiate" -- FMP's own real, raw value
 
 
 @dataclass(frozen=True, slots=True)
 class AnalystRatings:
     ticker: str
-    strong_buy: int
-    buy: int
-    hold: int
-    sell: int
-    strong_sell: int
-    consensus: str
-    last_month_avg_price_target: float | None
-    last_month_count: int
-    last_quarter_avg_price_target: float | None
-    last_quarter_count: int
-    last_year_avg_price_target: float | None
-    last_year_count: int
-
-    @property
-    def total_analysts(self) -> int:
-        return self.strong_buy + self.buy + self.hold + self.sell + self.strong_sell
+    recent_grades: list[AnalystGrade] = field(default_factory=list)
+    last_month_avg_price_target: float | None = None
+    last_month_count: int = 0
+    last_quarter_avg_price_target: float | None = None
+    last_quarter_count: int = 0
+    last_year_avg_price_target: float | None = None
+    last_year_count: int = 0
