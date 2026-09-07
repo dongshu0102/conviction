@@ -1037,6 +1037,24 @@ class ScreenResultSchema(BaseModel):
     results: list[ScreenedStockSchema]
 
 
+class MarketScreenCandidateSchema(BaseModel):
+    ticker: str
+    company_name: str
+    market_cap: float
+    price: float
+    beta: float | None
+    last_annual_dividend: float | None
+    volume: int
+    sector: str | None
+    industry: str | None
+    exchange: str
+    country: str | None
+
+
+class MarketScreenResponseSchema(BaseModel):
+    candidates: list[MarketScreenCandidateSchema]
+
+
 class RecommendationPickSchema(BaseModel):
     ticker: str
     gap_sector: str

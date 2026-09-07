@@ -22,6 +22,8 @@ from src.api.schemas import (
     IrrScenarioSchema,
     MacroSnapshotSchema,
     MarketRiskPremiumSchema,
+    MarketScreenCandidateSchema,
+    MarketScreenResponseSchema,
     RankedFactorScoreSchema,
     RateSignalsSchema,
     SahmRuleResultSchema,
@@ -104,6 +106,7 @@ from src.infrastructure.data_providers.fred_provider import FredProvider
 from src.infrastructure.data_providers.marketdata_stock_provider import MarketDataStockProvider
 from src.application.interfaces.stock_data_provider import StockDataProviderError
 from src.application.use_cases.get_stock_candles import GetStockCandlesUseCase
+from src.application.use_cases.screen_market import ScreenMarketUseCase
 from src.infrastructure.persistence.company_repository_impl import (
     SqlAlchemyCompanyRepository,
 )
@@ -487,6 +490,68 @@ def get_rate_signals(
             ) if sr else None
         ),
         sahm_rule_unavailable_reason=signals.sahm_rule_unavailable_reason,
+    )
+
+
+def get_screen_market_use_case(
+    provider: FinancialModelingPrepProvider = Depends(get_data_provider),
+) -> ScreenMarketUseCase:
+    return ScreenMarketUseCase(provider)
+
+
+# NOTE: deliberately declared here, BEFORE the generic GET /{ticker}
+# route below -- FastAPI/Starlette matches routes in registration
+# order, so a more-specific literal path declared AFTER a /{ticker}
+# catch-all would be silently shadowed (a request to
+# /companies/screen-market would be matched as ticker="screen-market"
+# and never reach this route at all). Same real routing-conflict
+# discipline already applied to /orders/history vs /orders/{order_id}
+# earlier tonight -- confirmed directly via the real, registered route
+# order, not assumed safe.
+@router.get("/screen-market", response_model=MarketScreenResponseSchema)
+def screen_market(
+    sector: str | None = Query(default=None),
+    industry: str | None = Query(default=None),
+    exchange: str | None = Query(default=None),
+    country: str | None = Query(default=None),
+    market_cap_more_than: float | None = Query(default=None),
+    market_cap_lower_than: float | None = Query(default=None),
+    price_more_than: float | None = Query(default=None),
+    price_lower_than: float | None = Query(default=None),
+    beta_more_than: float | None = Query(default=None),
+    beta_lower_than: float | None = Query(default=None),
+    dividend_more_than: float | None = Query(default=None),
+    dividend_lower_than: float | None = Query(default=None),
+    volume_more_than: float | None = Query(default=None),
+    volume_lower_than: float | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=1000),
+    use_case: ScreenMarketUseCase = Depends(get_screen_market_use_case),
+) -> MarketScreenResponseSchema:
+    """Screens the real, whole market server-side via FMP's own
+    screener -- the "which stocks?" entry point POST /screen is meant
+    to run on afterward for value/quality ranking."""
+    try:
+        candidates = use_case.execute(
+            sector=sector, industry=industry, exchange=exchange, country=country,
+            market_cap_more_than=market_cap_more_than, market_cap_lower_than=market_cap_lower_than,
+            price_more_than=price_more_than, price_lower_than=price_lower_than,
+            beta_more_than=beta_more_than, beta_lower_than=beta_lower_than,
+            dividend_more_than=dividend_more_than, dividend_lower_than=dividend_lower_than,
+            volume_more_than=volume_more_than, volume_lower_than=volume_lower_than,
+            limit=limit,
+        )
+    except DataProviderError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return MarketScreenResponseSchema(
+        candidates=[
+            MarketScreenCandidateSchema(
+                ticker=c.ticker, company_name=c.company_name, market_cap=c.market_cap,
+                price=c.price, beta=c.beta, last_annual_dividend=c.last_annual_dividend,
+                volume=c.volume, sector=c.sector, industry=c.industry,
+                exchange=c.exchange, country=c.country,
+            )
+            for c in candidates
+        ],
     )
 
 
