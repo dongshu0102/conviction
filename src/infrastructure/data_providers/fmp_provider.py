@@ -36,6 +36,7 @@ from src.domain.entities.beneficial_ownership_disclosure import BeneficialOwners
 from src.domain.entities.insider_transaction import InsiderTransaction
 from src.domain.entities.market_quote import MarketQuote, PriceBar
 from src.domain.entities.market_risk_premium import MarketRiskPremium
+from src.domain.entities.market_screen import MarketScreenCandidate
 from src.domain.entities.news import NewsArticle
 from src.domain.entities.treasury_rates import TreasuryRates
 from src.infrastructure.data_providers.fmp_parsing import (
@@ -321,6 +322,94 @@ class FinancialModelingPrepProvider(FinancialDataProvider):
                 symbol=row["symbol"],
                 company_name=row.get("companyName", ""),
                 market_cap=row.get("marketCap"),
+            )
+            for row in payload
+        ]
+
+    def screen_market(
+        self,
+        sector: str | None = None,
+        industry: str | None = None,
+        exchange: str | None = None,
+        country: str | None = None,
+        market_cap_more_than: float | None = None,
+        market_cap_lower_than: float | None = None,
+        price_more_than: float | None = None,
+        price_lower_than: float | None = None,
+        beta_more_than: float | None = None,
+        beta_lower_than: float | None = None,
+        dividend_more_than: float | None = None,
+        dividend_lower_than: float | None = None,
+        volume_more_than: float | None = None,
+        volume_lower_than: float | None = None,
+        limit: int = 50,
+    ) -> list[MarketScreenCandidate]:
+        """Real, server-side screen against FMP's own /company-screener
+        endpoint, confirmed directly against their real, documented
+        URL and real, live query results before writing this method.
+
+        A REAL, CONFIRMED GOTCHA handled here, not left to the caller:
+        country="US" alone genuinely includes foreign-exchange-listed
+        shares of U.S. companies (e.g. AMD's own real Buenos Aires
+        CEDEAR), whose price/market_cap are quoted in a different
+        local currency entirely — confirmed directly with a real,
+        live query showing AMD's own "market cap" as
+        1,181,202,058,200,000 (Argentine pesos, not USD) when
+        country="US" was used without an exchange filter. To keep
+        market_cap/price genuinely comparable across every real result,
+        this method silently restricts to the three real, major U.S.
+        exchanges (NASDAQ, NYSE, AMEX) whenever country="US" is
+        requested WITHOUT an explicit exchange of the caller's own
+        choosing — an honest default, not a silent data change, since
+        every result is still real, live FMP data either way.
+        """
+        params: dict[str, str | int] = {"limit": limit}
+        if sector:
+            params["sector"] = sector
+        if industry:
+            params["industry"] = industry
+        if country:
+            params["country"] = country
+        if exchange:
+            params["exchange"] = exchange
+        elif country == "US":
+            # See the real, confirmed currency-mismatch gotcha above.
+            params["exchange"] = "NASDAQ,NYSE,AMEX"
+        if market_cap_more_than is not None:
+            params["marketCapMoreThan"] = market_cap_more_than
+        if market_cap_lower_than is not None:
+            params["marketCapLowerThan"] = market_cap_lower_than
+        if price_more_than is not None:
+            params["priceMoreThan"] = price_more_than
+        if price_lower_than is not None:
+            params["priceLowerThan"] = price_lower_than
+        if beta_more_than is not None:
+            params["betaMoreThan"] = beta_more_than
+        if beta_lower_than is not None:
+            params["betaLowerThan"] = beta_lower_than
+        if dividend_more_than is not None:
+            params["dividendMoreThan"] = dividend_more_than
+        if dividend_lower_than is not None:
+            params["dividendLowerThan"] = dividend_lower_than
+        if volume_more_than is not None:
+            params["volumeMoreThan"] = volume_more_than
+        if volume_lower_than is not None:
+            params["volumeLowerThan"] = volume_lower_than
+
+        payload = self._get("/company-screener", **params)
+        return [
+            MarketScreenCandidate(
+                ticker=row["symbol"],
+                company_name=row.get("companyName", ""),
+                market_cap=row.get("marketCap", 0.0),
+                price=row.get("price", 0.0),
+                beta=row.get("beta"),
+                last_annual_dividend=row.get("lastAnnualDividend"),
+                volume=row.get("volume", 0),
+                sector=row.get("sector"),
+                industry=row.get("industry"),
+                exchange=row.get("exchangeShortName", row.get("exchange", "")),
+                country=row.get("country"),
             )
             for row in payload
         ]

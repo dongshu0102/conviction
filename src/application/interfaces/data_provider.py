@@ -81,6 +81,30 @@ class FinancialDataProvider(ABC):
         not assumed available on every provider."""
         raise NotImplementedError("This data provider does not support search_cusip")
 
+    def screen_market(
+        self,
+        sector: str | None = None,
+        industry: str | None = None,
+        exchange: str | None = None,
+        country: str | None = None,
+        market_cap_more_than: float | None = None,
+        market_cap_lower_than: float | None = None,
+        price_more_than: float | None = None,
+        price_lower_than: float | None = None,
+        beta_more_than: float | None = None,
+        beta_lower_than: float | None = None,
+        dividend_more_than: float | None = None,
+        dividend_lower_than: float | None = None,
+        volume_more_than: float | None = None,
+        volume_lower_than: float | None = None,
+        limit: int = 50,
+    ):
+        """Real, server-side screen across the whole market (not one
+        FMP call per ticker) -- the "which stocks?" entry point
+        ScreenedStock/ScreenResult (stock_screen.py) is meant to run
+        on afterward. FMP-specific capability."""
+        raise NotImplementedError("This data provider does not support screen_market")
+
     def get_institutional_holdings_by_filer(
         self, cik: str, year: int, quarter: int, filer_name: str,
     ) -> list:
