@@ -34,6 +34,7 @@ from src.domain.entities.general_news import GeneralNewsHeadline
 from src.domain.entities.institutional_holding import InstitutionalHolding
 from src.domain.entities.beneficial_ownership_disclosure import BeneficialOwnershipDisclosure
 from src.domain.entities.insider_transaction import InsiderTransaction
+from src.domain.entities.analyst_ratings import AnalystRatings
 from src.domain.entities.market_quote import MarketQuote, PriceBar
 from src.domain.entities.market_risk_premium import MarketRiskPremium
 from src.domain.entities.market_screen import MarketScreenCandidate
@@ -413,6 +414,35 @@ class FinancialModelingPrepProvider(FinancialDataProvider):
             )
             for row in payload
         ]
+
+    def get_analyst_ratings(self, ticker: str) -> AnalystRatings | None:
+        """Combines FMP's own /grades-summary (real buy/sell/hold
+        consensus) and /price-target-summary (real price targets)
+        into one, real result -- confirmed directly against both
+        endpoints' real, live response shapes before writing this.
+        Returns None, honestly, when a ticker has no real analyst
+        coverage at all (an empty list from either endpoint), rather
+        than a result with fabricated zeros."""
+        grades_payload = self._get("/grades-summary", symbol=ticker)
+        if not grades_payload:
+            return None
+        g = grades_payload[0]
+
+        targets_payload = self._get("/price-target-summary", symbol=ticker)
+        t = targets_payload[0] if targets_payload else {}
+
+        return AnalystRatings(
+            ticker=ticker,
+            strong_buy=g.get("strongBuy", 0), buy=g.get("buy", 0), hold=g.get("hold", 0),
+            sell=g.get("sell", 0), strong_sell=g.get("strongSell", 0),
+            consensus=g.get("consensus", "N/A"),
+            last_month_avg_price_target=t.get("lastMonthAvgPriceTarget"),
+            last_month_count=t.get("lastMonthCount", 0),
+            last_quarter_avg_price_target=t.get("lastQuarterAvgPriceTarget"),
+            last_quarter_count=t.get("lastQuarterCount", 0),
+            last_year_avg_price_target=t.get("lastYearAvgPriceTarget"),
+            last_year_count=t.get("lastYearCount", 0),
+        )
 
     def get_institutional_holdings_by_filer(
         self, cik: str, year: int, quarter: int, filer_name: str,

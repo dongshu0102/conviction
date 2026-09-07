@@ -105,6 +105,14 @@ class FinancialDataProvider(ABC):
         on afterward. FMP-specific capability."""
         raise NotImplementedError("This data provider does not support screen_market")
 
+    def get_analyst_ratings(self, ticker: str):
+        """Real, human Wall Street analyst buy/sell/hold consensus and
+        price targets -- not FMP's own internal, algorithmically-
+        computed rating (ratings-snapshot), which is a genuinely
+        different thing despite the similar name. FMP-specific
+        capability."""
+        raise NotImplementedError("This data provider does not support get_analyst_ratings")
+
     def get_institutional_holdings_by_filer(
         self, cik: str, year: int, quarter: int, filer_name: str,
     ) -> list:
