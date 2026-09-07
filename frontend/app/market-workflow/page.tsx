@@ -6,12 +6,12 @@
 // analyst ratings, validate real price trends, then add to the
 // watchlist to monitor going forward.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { AppShell } from "@/components/AppShell";
 import {
-  api, getApiKey, ApiError, MarketScreenCandidate, AnalystRatings, StockCandle,
+  api, getApiKey, ApiError, MarketScreenCandidate, AnalystRatings, StockCandle, EconomicCycleState,
 } from "@/lib/api";
 
 const usd = (n: number) =>
@@ -28,6 +28,18 @@ type Step = 1 | 2 | 3 | 4;
 export default function MarketWorkflowPage() {
   const router = useRouter();
   const [step, setStep] = useState<Step>(1);
+
+  // Economic cycle context — real, macro-level, applies to the whole
+  // session regardless of which step is active.
+  const [cycle, setCycle] = useState<EconomicCycleState | null>(null);
+  const [cycleError, setCycleError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!getApiKey()) return;
+    api.getEconomicCycle()
+      .then(setCycle)
+      .catch((err) => setCycleError(err instanceof Error ? err.message : "Couldn't load economic cycle"));
+  }, []);
 
   // Step 1: Screen
   const [sector, setSector] = useState("Technology");
@@ -148,6 +160,44 @@ export default function MarketWorkflowPage() {
         <p style={{ color: "var(--text-soft)", fontSize: "0.85rem", marginBottom: "1.5rem" }}>
           Screen the real market, rank finalists with real analyst ratings, validate real price trends, then monitor on your watchlist — the full pipeline, in one place.
         </p>
+
+        {cycleError && (
+          <p className="num loss" style={{ fontSize: "0.78rem", marginBottom: "1rem" }}>{cycleError}</p>
+        )}
+
+        {cycle && (
+          <div
+            className="card"
+            style={{
+              display: "flex", justifyContent: "space-between", alignItems: "baseline",
+              marginBottom: "1.5rem", padding: "0.75rem 1rem",
+            }}
+          >
+            <div>
+              <span className="eyebrow" style={{ fontSize: "0.65rem", marginRight: "0.6rem" }}>
+                Economic cycle
+              </span>
+              <span
+                className={
+                  "num " + (
+                    cycle.state === "Contraction" ? "loss"
+                    : cycle.state === "Expansion" ? "gain"
+                    : ""
+                  )
+                }
+                style={{
+                  fontSize: "0.88rem", fontWeight: 600,
+                  color: cycle.state === "Late-cycle warning" ? "var(--accent)" : undefined,
+                }}
+              >
+                {cycle.state}
+              </span>
+            </div>
+            <span style={{ color: "var(--text-soft)", fontSize: "0.75rem" }}>
+              {cycle.reasoning[0]}
+            </span>
+          </div>
+        )}
 
         <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.5rem" }}>
           {(["Screen", "Rank", "Validate", "Monitor"] as const).map((label, i) => {

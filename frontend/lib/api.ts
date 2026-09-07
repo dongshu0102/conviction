@@ -91,6 +91,13 @@ export interface MarketScreenResponse {
   candidates: MarketScreenCandidate[];
 }
 
+export interface EconomicCycleState {
+  state: string;
+  yield_curve_inverted: boolean | null;
+  sahm_rule_triggered: boolean | null;
+  reasoning: string[];
+}
+
 export interface AnalystGrade {
   grading_company: string;
   date: string;
@@ -1117,6 +1124,7 @@ export const api = {
     }
     return request<MarketScreenResponse>(`/companies/screen-market?${params.toString()}`);
   },
+  getEconomicCycle: () => request<EconomicCycleState>("/companies/economic-cycle"),
   getAnalystRatings: (ticker: string) =>
     request<AnalystRatings | null>(`/companies/${ticker}/analyst-ratings`),
   getStockCandles: (ticker: string, fromDate: string, toDate: string, resolution = "D") =>

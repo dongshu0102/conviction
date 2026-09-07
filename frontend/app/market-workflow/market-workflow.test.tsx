@@ -19,6 +19,14 @@ beforeEach(() => {
   localStorage.setItem("conviction_api_key", "fi_live_test123");
   vi.restoreAllMocks();
   pushMock.mockClear();
+  // A default, real-shaped mock so every existing test's own mount
+  // doesn't hit an unmocked fetch call from this page's own
+  // getEconomicCycle effect -- tests that specifically care about the
+  // real cycle banner override this individually.
+  vi.spyOn(api, "getEconomicCycle").mockResolvedValue({
+    state: "Expansion", yield_curve_inverted: false, sahm_rule_triggered: false,
+    reasoning: ["Neither the Sahm Rule nor yield curve inversion is currently present."],
+  });
 });
 
 const SAMPLE_CANDIDATES = [
@@ -132,5 +140,27 @@ describe("Market Workflow page", () => {
     fireEvent.click(screen.getByText("Screen"));
 
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/login"));
+  });
+
+  it("shows the real economic cycle state and reasoning on mount", async () => {
+    vi.spyOn(api, "getEconomicCycle").mockResolvedValue({
+      state: "Late-cycle warning", yield_curve_inverted: true, sahm_rule_triggered: false,
+      reasoning: ["The yield curve is genuinely inverted — a real, leading warning sign, though not itself a confirmed recession signal."],
+    });
+    render(<MarketWorkflowPage />);
+
+    await waitFor(() => screen.getByText("Late-cycle warning"));
+    expect(screen.getByText(/leading warning sign/)).toBeInTheDocument();
+  });
+
+  it("shows an honest error message when the real cycle request fails, without breaking the rest of the page", async () => {
+    vi.spyOn(api, "getEconomicCycle").mockRejectedValue(new Error("Rate signals unavailable"));
+    vi.spyOn(api, "screenMarket").mockResolvedValue({ candidates: SAMPLE_CANDIDATES });
+    render(<MarketWorkflowPage />);
+
+    await waitFor(() => screen.getByText("Rate signals unavailable"));
+    // The rest of the page must still work correctly.
+    fireEvent.click(screen.getByText("Screen"));
+    await waitFor(() => screen.getByText("AAPL"));
   });
 });
