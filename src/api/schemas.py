@@ -1247,6 +1247,18 @@ class AnalystRatingsSchema(BaseModel):
     last_year_count: int
 
 
+class DemandSignalsSchema(BaseModel):
+    ticker: str
+    latest_revenue_growth_yoy: float | None
+    prior_revenue_growth_yoy: float | None
+    revenue_growth_accelerating: bool | None
+    recent_upgrades: int
+    recent_downgrades: int
+    analyst_consensus_direction: str
+    last_quarter_avg_price_target: float | None
+    economic_cycle_state: str
+
+
 class WatchlistNewsResponseSchema(BaseModel):
     news: dict[str, list[NewsArticleSchema]]
     tickers_failed: list[str]

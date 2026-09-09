@@ -14,6 +14,7 @@ from src.api.schemas import (
     DcfAssumptionsSchema,
     DcfProjectionYearSchema,
     DcfResponseSchema,
+    DemandSignalsSchema,
     EconomicCycleStateSchema,
     EconomicIndicatorSchema,
     EtfIngestResultSchema,
@@ -110,6 +111,7 @@ from src.infrastructure.data_providers.marketdata_stock_provider import MarketDa
 from src.application.interfaces.stock_data_provider import StockDataProviderError
 from src.application.use_cases.classify_economic_cycle import ClassifyEconomicCycleUseCase
 from src.application.use_cases.get_analyst_ratings import GetAnalystRatingsUseCase
+from src.application.use_cases.get_demand_signals import GetDemandSignalsUseCase
 from src.application.use_cases.get_stock_candles import GetStockCandlesUseCase
 from src.application.use_cases.screen_market import ScreenMarketUseCase
 from src.infrastructure.persistence.company_repository_impl import (
@@ -974,6 +976,45 @@ def get_analyst_ratings(
         last_quarter_count=ratings.last_quarter_count,
         last_year_avg_price_target=ratings.last_year_avg_price_target,
         last_year_count=ratings.last_year_count,
+    )
+
+
+def get_demand_signals_use_case(
+    financial_analysis_use_case: ComputeFinancialAnalysisUseCase = Depends(get_analysis_use_case),
+    analyst_ratings_use_case: GetAnalystRatingsUseCase = Depends(get_analyst_ratings_use_case),
+    economic_cycle_use_case: ClassifyEconomicCycleUseCase = Depends(get_economic_cycle_use_case),
+) -> GetDemandSignalsUseCase:
+    return GetDemandSignalsUseCase(
+        financial_analysis_use_case, analyst_ratings_use_case, economic_cycle_use_case,
+    )
+
+
+@router.get("/{ticker}/demand-signals", response_model=DemandSignalsSchema)
+def get_demand_signals(
+    ticker: str,
+    use_case: GetDemandSignalsUseCase = Depends(get_demand_signals_use_case),
+) -> DemandSignalsSchema:
+    """Combines three, real, already-existing signals into a real,
+    honest read on demand-side momentum: real revenue growth trend
+    (market-size proxy), real analyst grade activity and price targets
+    (expectations proxy), and the real economic cycle state (spending
+    backdrop proxy). Deliberately does not attempt related-goods
+    pricing, tastes, or policy -- no real data source for those exists
+    in this app."""
+    try:
+        result = use_case.execute(ticker)
+    except CompanyNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return DemandSignalsSchema(
+        ticker=result.ticker,
+        latest_revenue_growth_yoy=result.latest_revenue_growth_yoy,
+        prior_revenue_growth_yoy=result.prior_revenue_growth_yoy,
+        revenue_growth_accelerating=result.revenue_growth_accelerating,
+        recent_upgrades=result.recent_upgrades,
+        recent_downgrades=result.recent_downgrades,
+        analyst_consensus_direction=result.analyst_consensus_direction,
+        last_quarter_avg_price_target=result.last_quarter_avg_price_target,
+        economic_cycle_state=result.economic_cycle_state,
     )
 
 
