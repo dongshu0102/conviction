@@ -27,6 +27,15 @@ beforeEach(() => {
     state: "Expansion", yield_curve_inverted: false, sahm_rule_triggered: false,
     reasoning: ["Neither the Sahm Rule nor yield curve inversion is currently present."],
   });
+  // Same reasoning as the getEconomicCycle default above -- any
+  // existing test that clicks "Rank →" now also triggers this real
+  // call via handleSelectForRanking's own Promise.allSettled.
+  vi.spyOn(api, "getDemandSignals").mockResolvedValue({
+    ticker: "AAPL", latest_revenue_growth_yoy: 0.064, prior_revenue_growth_yoy: 0.020,
+    revenue_growth_accelerating: true, recent_upgrades: 1, recent_downgrades: 2,
+    analyst_consensus_direction: "More bearish", last_quarter_avg_price_target: 327.18,
+    economic_cycle_state: "Expansion",
+  });
 });
 
 const SAMPLE_CANDIDATES = [
@@ -162,5 +171,33 @@ describe("Market Workflow page", () => {
     // The rest of the page must still work correctly.
     fireEvent.click(screen.getByText("Screen"));
     await waitFor(() => screen.getByText("AAPL"));
+  });
+
+  it("shows real demand signals after selecting a candidate for ranking", async () => {
+    vi.spyOn(api, "screenMarket").mockResolvedValue({ candidates: SAMPLE_CANDIDATES });
+    vi.spyOn(api, "getAnalystRatings").mockResolvedValue(SAMPLE_RATINGS);
+    render(<MarketWorkflowPage />);
+
+    fireEvent.click(screen.getByText("Screen"));
+    await waitFor(() => screen.getByText("Rank →"));
+    fireEvent.click(screen.getByText("Rank →"));
+
+    await waitFor(() => screen.getByText(/6\.4%/));
+    expect(screen.getAllByText(/accelerating/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/1 upgrades, 2 downgrades/)).toBeInTheDocument();
+    expect(screen.getByText("More bearish")).toBeInTheDocument();
+  });
+
+  it("shows an honest error message when the real demand signals request fails", async () => {
+    vi.spyOn(api, "screenMarket").mockResolvedValue({ candidates: SAMPLE_CANDIDATES });
+    vi.spyOn(api, "getAnalystRatings").mockResolvedValue(SAMPLE_RATINGS);
+    vi.spyOn(api, "getDemandSignals").mockRejectedValue(new Error("Company not found"));
+    render(<MarketWorkflowPage />);
+
+    fireEvent.click(screen.getByText("Screen"));
+    await waitFor(() => screen.getByText("Rank →"));
+    fireEvent.click(screen.getByText("Rank →"));
+
+    await waitFor(() => screen.getByText("Company not found"));
   });
 });

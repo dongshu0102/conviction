@@ -12,6 +12,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { AppShell } from "@/components/AppShell";
 import {
   api, getApiKey, ApiError, MarketScreenCandidate, AnalystRatings, StockCandle, EconomicCycleState,
+  DemandSignals,
 } from "@/lib/api";
 
 const usd = (n: number) =>
@@ -54,6 +55,8 @@ export default function MarketWorkflowPage() {
   const [ratings, setRatings] = useState<AnalystRatings | null>(null);
   const [ratingsLoading, setRatingsLoading] = useState(false);
   const [ratingsError, setRatingsError] = useState<string | null>(null);
+  const [demandSignals, setDemandSignals] = useState<DemandSignals | null>(null);
+  const [demandSignalsError, setDemandSignalsError] = useState<string | null>(null);
 
   // Step 3: Validate
   const [candles, setCandles] = useState<StockCandle[] | null>(null);
@@ -103,13 +106,29 @@ export default function MarketWorkflowPage() {
     setRatingsLoading(true);
     setRatingsError(null);
     setRatings(null);
-    try {
-      const result = await api.getAnalystRatings(ticker);
-      setRatings(result);
-    } catch (err) {
-      setRatingsError(err instanceof Error ? err.message : `Couldn't load ratings for ${ticker}`);
-    } finally {
-      setRatingsLoading(false);
+    setDemandSignals(null);
+    setDemandSignalsError(null);
+
+    const [ratingsResult, demandResult] = await Promise.allSettled([
+      api.getAnalystRatings(ticker),
+      api.getDemandSignals(ticker),
+    ]);
+
+    if (ratingsResult.status === "fulfilled") {
+      setRatings(ratingsResult.value);
+    } else {
+      setRatingsError(
+        ratingsResult.reason instanceof Error ? ratingsResult.reason.message : `Couldn't load ratings for ${ticker}`
+      );
+    }
+    setRatingsLoading(false);
+
+    if (demandResult.status === "fulfilled") {
+      setDemandSignals(demandResult.value);
+    } else {
+      setDemandSignalsError(
+        demandResult.reason instanceof Error ? demandResult.reason.message : `Couldn't load demand signals for ${ticker}`
+      );
     }
   }
 
@@ -314,6 +333,55 @@ export default function MarketWorkflowPage() {
                 ))}
               </>
             )}
+
+            {demandSignalsError && (
+              <p className="num loss" style={{ fontSize: "0.82rem", marginTop: "1rem" }}>{demandSignalsError}</p>
+            )}
+            {demandSignals && (
+              <div style={{ marginTop: "1.25rem", paddingTop: "1rem", borderTop: "1px solid var(--rule)" }}>
+                <p className="eyebrow" style={{ fontSize: "0.65rem", marginBottom: "0.6rem" }}>
+                  Demand signals — real revenue growth, analyst activity, and the economic backdrop
+                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", fontSize: "0.82rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ color: "var(--text-soft)" }}>Revenue growth (YoY)</span>
+                    <span className="num">
+                      {demandSignals.latest_revenue_growth_yoy !== null
+                        ? `${(demandSignals.latest_revenue_growth_yoy * 100).toFixed(1)}%`
+                        : "—"}
+                      {demandSignals.revenue_growth_accelerating !== null && (
+                        <span
+                          className={demandSignals.revenue_growth_accelerating ? "gain" : "loss"}
+                          style={{ marginLeft: "0.4rem" }}
+                        >
+                          ({demandSignals.revenue_growth_accelerating ? "accelerating" : "decelerating"})
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ color: "var(--text-soft)" }}>Analyst activity</span>
+                    <span className="num">
+                      {demandSignals.recent_upgrades} upgrades, {demandSignals.recent_downgrades} downgrades —{" "}
+                      <span
+                        className={
+                          demandSignals.analyst_consensus_direction === "More bullish" ? "gain"
+                          : demandSignals.analyst_consensus_direction === "More bearish" ? "loss"
+                          : ""
+                        }
+                      >
+                        {demandSignals.analyst_consensus_direction}
+                      </span>
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ color: "var(--text-soft)" }}>Economic backdrop</span>
+                    <span className="num">{demandSignals.economic_cycle_state}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <button onClick={handleValidate} className="btn-primary" style={{ marginTop: "1rem", padding: "0.5rem 1.1rem", fontSize: "0.85rem" }}>
               Validate price trend →
             </button>

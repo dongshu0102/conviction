@@ -98,6 +98,18 @@ export interface EconomicCycleState {
   reasoning: string[];
 }
 
+export interface DemandSignals {
+  ticker: string;
+  latest_revenue_growth_yoy: number | null;
+  prior_revenue_growth_yoy: number | null;
+  revenue_growth_accelerating: boolean | null;
+  recent_upgrades: number;
+  recent_downgrades: number;
+  analyst_consensus_direction: string;
+  last_quarter_avg_price_target: number | null;
+  economic_cycle_state: string;
+}
+
 export interface AnalystGrade {
   grading_company: string;
   date: string;
@@ -1125,6 +1137,7 @@ export const api = {
     return request<MarketScreenResponse>(`/companies/screen-market?${params.toString()}`);
   },
   getEconomicCycle: () => request<EconomicCycleState>("/companies/economic-cycle"),
+  getDemandSignals: (ticker: string) => request<DemandSignals>(`/companies/${ticker}/demand-signals`),
   getAnalystRatings: (ticker: string) =>
     request<AnalystRatings | null>(`/companies/${ticker}/analyst-ratings`),
   getStockCandles: (ticker: string, fromDate: string, toDate: string, resolution = "D") =>
